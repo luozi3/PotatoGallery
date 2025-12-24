@@ -1,9 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-cd /opt/PotatoGallery
-export PYTHONPATH=/opt/PotatoGallery
-PYTHON="/opt/PotatoGallery/venv/bin/python"
+GALLERY_ROOT=${GALLERY_ROOT:-/opt/PotatoGallery}
+if [ -f /etc/gallery/gallery_root.env ]; then
+  # shellcheck disable=SC1090
+  . /etc/gallery/gallery_root.env
+  GALLERY_ROOT=${GALLERY_ROOT:-/opt/PotatoGallery}
+fi
+
+cd "$GALLERY_ROOT"
+export GALLERY_ROOT
+export PYTHONPATH="$GALLERY_ROOT"
+PYTHON="$GALLERY_ROOT/venv/bin/python"
 RUN_AS="gallery"
 
 echo "[refresh] ensure dirs, rebuild, publish, write status..."
@@ -28,7 +36,7 @@ PY
 fi
 
 if command -v chown >/dev/null 2>&1; then
-  chown -R gallery:www-data /opt/PotatoGallery/storage/www || true
+  chown -R gallery:www-data "$GALLERY_ROOT/storage/www" || true
 fi
 
 if command -v systemctl >/dev/null 2>&1; then

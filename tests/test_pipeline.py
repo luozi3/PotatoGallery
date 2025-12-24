@@ -12,10 +12,13 @@ import pytest
 from PIL import Image
 
 
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+
 def seed_test_root(tmp_root: Path):
-    static_src = Path("/opt/PotatoGallery/static")
+    static_src = PROJECT_ROOT / "static"
     shutil.copytree(static_src, tmp_root / "static", dirs_exist_ok=True)
-    schema_src = Path("/opt/PotatoGallery/db/schema.sql")
+    schema_src = PROJECT_ROOT / "db" / "schema.sql"
     schema_dst = tmp_root / "db" / "schema.sql"
     schema_dst.parent.mkdir(parents=True, exist_ok=True)
     schema_dst.write_text(schema_src.read_text(), encoding="utf-8")
@@ -524,7 +527,7 @@ def test_disk_guard_pause_and_resume(tmp_path, monkeypatch):
     config.UPLOAD_PAUSE_FLAG.unlink(missing_ok=True)
 
     import importlib.util
-    spec = importlib.util.spec_from_file_location("disk_guard", "/opt/PotatoGallery/bin/disk_guard.py")
+    spec = importlib.util.spec_from_file_location("disk_guard", str(PROJECT_ROOT / "bin" / "disk_guard.py"))
     disk_guard = importlib.util.module_from_spec(spec)
     assert spec.loader
     spec.loader.exec_module(disk_guard)

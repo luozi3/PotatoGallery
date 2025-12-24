@@ -2,7 +2,7 @@ from pathlib import Path
 import re
 
 
-BASE_DIR = Path("/opt/PotatoGallery")
+BASE_DIR = Path(__file__).resolve().parents[1]
 
 
 def read_text(rel_path: str) -> str:

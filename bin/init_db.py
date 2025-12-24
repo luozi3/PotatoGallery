@@ -3,10 +3,11 @@
 初始化 SQLite 数据库，应用 schema.sql，确保 WAL / 外键开启。
 """
 from pathlib import Path
+import os
 import sqlite3
 import sys
 
-ROOT = Path("/opt/PotatoGallery")
+ROOT = Path(os.environ.get("GALLERY_ROOT", "/opt/PotatoGallery"))
 DB_PATH = ROOT / "db" / "gallery.db"
 SCHEMA_PATH = ROOT / "db" / "schema.sql"
 
