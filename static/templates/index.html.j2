@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ site_name }} ｜ luozi_sama 的画廊</title>
+  <meta name="description" content="{{ site_description }}">
+  <meta name="theme-color" content="{{ site.theme_color }}">
+  {% if site_url %}
+  <link rel="canonical" href="{{ site_url }}/">
+  {% endif %}
+  <meta property="og:title" content="{{ site_name }}">
+  <meta property="og:description" content="{{ site_description }}">
+  <meta property="og:type" content="website">
+  <meta property="og:locale" content="{{ site.locale }}">
+  {% if site_url %}
+  <meta property="og:url" content="{{ site_url }}/">
+  {% endif %}
+  {% if og_image %}
+  <meta property="og:image" content="{{ og_image }}">
+  {% endif %}
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="stylesheet" href="/static/styles/gallery.css?v={{ static_version }}">
+  {% if site.live2d.enabled %}
+  <link rel="stylesheet" href="{{ site.live2d.base_url }}/live2d/css/live2d.css">
+  {% endif %}
+  {% if json_ld %}
+  <script type="application/ld+json">{{ json_ld | safe }}</script>
+  {% endif %}
+</head>
+<body class="page-home">
+  {% set orientation_labels = {"portrait": "竖屏", "landscape": "横屏", "square": "方形", "unknown": "未标"} %}
+  {% set size_labels = {"ultra": "超清", "large": "高清", "medium": "中等", "compact": "轻量", "unknown": "未标"} %}
+  <a class="skip-link" href="#main-content">跳到主要内容</a>
+  <header class="topbar">
+    <div class="topbar-left">
+      <a class="brand" href="/" aria-label="返回首页">
+        <span class="logo-dot" aria-hidden="true"></span>
+        <div class="brand-text">
+          <strong>luozi_sama</strong>
+          <span>Illustration Gallery</span>
+        </div>
+      </a>
+      <button class="icon-button theme-toggle" type="button" data-theme-toggle aria-label="切换主题">
+        <span class="icon" aria-hidden="true">◐</span>
+      </button>
+    </div>
+    <nav class="topnav" aria-label="顶栏导航">
+      <a href="#collections">全部作品</a>
+      <a href="/tags/">标签</a>
+      <a href="/wall.html">互动墙</a>
+      <a href="/flow.html">上传检测</a>
+    </nav>
+    <div class="topbar-right">
+      <button class="search-trigger" type="button" data-search-open aria-label="打开搜索">搜索标题、描述、#标签</button>
+      {% if site.live2d.enabled %}
+      <button class="icon-button live2d-toggle" type="button" data-live2d-toggle aria-label="切换 Live2D">Live2D</button>
+      {% endif %}
+      <a class="icon-link admin-entry" href="/admin/" data-admin-entry hidden>管理</a>
+    </div>
+  </header>
+
+  <main id="main-content" tabindex="-1">
+    <section class="hero">
+      <div class="hero-copy">
+        <p class="eyebrow">Pixiv 风格 · 二次元插画</p>
+        <h1>{{ site_name }}</h1>
+        <p class="lede">作品按上传时间排序，懒加载 + 主色占位，搜索与标签可快速定位。</p>
+        <div class="hero-actions">
+          {% if collections_list %}
+          <a class="btn primary" href="#collections" data-jump-collection="{{ collections_list[0].slug }}">浏览 {{ collections_list[0].title }}</a>
+          {% endif %}
+          {% if collections_list|length > 1 %}
+          <a class="btn ghost" href="#collections" data-jump-collection="{{ collections_list[1].slug }}">看看 {{ collections_list[1].title }}</a>
+          {% endif %}
+        </div>
+        <div class="hero-stats">
+          <span>{{ stats.total }} 件作品</span>
+          {% for collection in collections_list %}
+          <span>{{ collection.count }} {{ collection.title }}</span>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="hero-preview" aria-hidden="true">
+        <div class="preview-card">
+          <span class="pill soft">静态生成</span>
+          <p class="preview-title">访问路径全静态，主题切换与动效在前端完成。</p>
+          <div class="preview-bg"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="collection-highlights" id="collections" aria-label="分区总览">
+      {% for collection in collections_list %}
+      <article class="highlight-card" data-jump-collection="{{ collection.slug }}">
+        <div class="badge">{{ collection.title }}</div>
+        <h2>{{ collection.title }}</h2>
+        <p>{{ collection.description or "" }}</p>
+        <div class="highlight-footer">
+          <span class="count">{{ collection.count }} 件</span>
+          <span class="link">打开分区 →</span>
+        </div>
+      </article>
+      {% endfor %}
+    </section>
+
+    <section class="controls" aria-label="筛选与子集">
+      <div class="tabs" role="tablist" aria-label="分区切换">
+        <button class="tab active" role="tab" aria-selected="true" data-collection-tab data-collection="all">
+          全部 <span class="count">{{ stats.total }}</span>
+        </button>
+        {% for collection in collections_list %}
+        <button class="tab" role="tab" aria-selected="false" data-collection-tab data-collection="{{ collection.slug }}">
+          {{ collection.title }} <span class="count">{{ collection.count }}</span>
+        </button>
+        {% endfor %}
+      </div>
+      <div class="filters">
+        <div class="filter-group" aria-label="方向">
+          <span class="label">方向</span>
+          <button class="pill active" aria-pressed="true" data-filter-pill data-filter="orientation" data-value="all">全部</button>
+          <button class="pill" aria-pressed="false" data-filter-pill data-filter="orientation" data-value="portrait">竖屏</button>
+          <button class="pill" aria-pressed="false" data-filter-pill data-filter="orientation" data-value="landscape">横屏</button>
+          <button class="pill" aria-pressed="false" data-filter-pill data-filter="orientation" data-value="square">方形</button>
+        </div>
+        <div class="filter-group" aria-label="清晰度">
+          <span class="label">清晰度</span>
+          <button class="pill active" aria-pressed="true" data-filter-pill data-filter="size" data-value="all">全部</button>
+          <button class="pill" aria-pressed="false" data-filter-pill data-filter="size" data-value="ultra">超清</button>
+          <button class="pill" aria-pressed="false" data-filter-pill data-filter="size" data-value="large">高清</button>
+          <button class="pill" aria-pressed="false" data-filter-pill data-filter="size" data-value="medium">中等</button>
+          <button class="pill" aria-pressed="false" data-filter-pill data-filter="size" data-value="compact">轻量</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="gallery" data-gallery-grid data-masonry aria-live="polite">
+      {% for image in images %}
+      <article class="illust-card" data-image-card data-masonry-item data-collection="{{ image.collection }}" data-orientation="{{ image.orientation }}" data-size="{{ image.size_bucket }}">
+        <a class="thumb-link" href="/images/{{ image.uuid }}/index.html" aria-label="{{ image.title }}">
+          <div class="thumb-shell" style="background: {{ image.dominant_color or '#eef1f5' }}; aspect-ratio: {{ image.thumb_width }}/{{ image.thumb_height }};">
+            <img class="thumb" src="/thumb/{{ image.thumb_filename }}" alt="{{ image.title }}" loading="lazy" width="{{ image.thumb_width }}" height="{{ image.thumb_height }}" onerror="this.onerror=null;this.src='/raw/{{ image.raw_filename }}';">
+          </div>
+        </a>
+        <div class="card-body">
+          <div class="title">{{ image.title }}</div>
+          {% if image.description %}
+          <p class="desc">{{ image.description }}</p>
+          {% endif %}
+          <div class="meta">
+            <span>{{ image.width }}×{{ image.height }}</span>
+            <span>{{ image.bytes_human }}</span>
+            <span>{{ collections.get(image.collection, {}).get('title', image.collection) }}</span>
+          </div>
+          <div class="tags">
+            <span class="tag accent">{{ orientation_labels.get(image.orientation, "未标") }}</span>
+            <span class="tag">{{ size_labels.get(image.size_bucket, "未标") }}</span>
+            {% for tag in image.tags[:3] %}
+            <a class="tag ghost" href="/tags/{{ tag|urlencode }}/">#{{ tag }}</a>
+            {% endfor %}
+          </div>
+        </div>
+      </article>
+      {% endfor %}
+      <div class="empty" data-empty-state>当前筛选暂无作品，换个筛选试试。</div>
+    </section>
+  </main>
+
+  <div class="search-overlay" data-search-overlay aria-hidden="true">
+    <div class="search-panel" role="dialog" aria-modal="true">
+      <button class="icon-button close-button" type="button" data-search-close aria-label="关闭搜索">×</button>
+      <p class="search-title">搜索作品</p>
+      <form action="/search/" method="get" class="search-form">
+        <input type="search" name="q" placeholder="搜索标题、描述、#标签" autocomplete="off" data-search-input>
+        <button class="btn primary" type="submit">搜索</button>
+      </form>
+      <p class="search-hint">支持 #标签、标题与描述匹配。</p>
+    </div>
+  </div>
+
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <div class="footer-slot" aria-hidden="true"></div>
+      {% if site.counter.enabled and site.counter.img_url %}
+      <div class="counter">
+        <img src="{{ site.counter.img_url }}" alt="访问统计" loading="lazy" referrerpolicy="no-referrer">
+      </div>
+      {% endif %}
+    </div>
+  </footer>
+
+  {% if site.live2d.enabled %}
+  <div id="landlord" class="live2d-root" aria-hidden="true">
+    <div class="message" style="opacity:0"></div>
+    <canvas id="{{ site.live2d.canvas_id }}" width="375" height="420" class="live2d"></canvas>
+  </div>
+  <script src="{{ site.live2d.base_url }}/live2d/js/Setting.js" defer onerror="var r=document.getElementById('landlord');if(r){r.style.display='none';}"></script>
+  <script src="{{ site.live2d.base_url }}/jquery.min.js" defer onerror="var r=document.getElementById('landlord');if(r){r.style.display='none';}"></script>
+  <script src="{{ site.live2d.base_url }}/live2d/js/message.js" defer onerror="var r=document.getElementById('landlord');if(r){r.style.display='none';}"></script>
+  <script src="{{ site.live2d.base_url }}/bundle.js" defer onerror="var r=document.getElementById('landlord');if(r){r.style.display='none';}"></script>
+  <script>
+    window.addEventListener('load', function () {
+      if (!window.loadlive2d) return;
+      try {
+        loadlive2d("{{ site.live2d.canvas_id }}", "{{ site.live2d.model }}");
+      } catch (e) {
+        const root = document.getElementById('landlord');
+        if (root) root.style.display = 'none';
+      }
+    });
+  </script>
+  {% endif %}
+
+  <script src="/static/js/ui.js?v={{ static_version }}" defer></script>
+  <script src="/static/js/gallery.js?v={{ static_version }}" defer></script>
+</body>
+</html>

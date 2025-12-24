@@ -1,0 +1,17 @@
+{
+  "site_name": "luozi_sama 的插画馆",
+  "site_description": "静态插画展示站点，包含原创与精选收藏。",
+  "site_url": "https://luozi.de5.net",
+  "theme_color": "#4c7cff",
+  "locale": "zh_CN",
+  "live2d": {
+    "enabled": true,
+    "base_url": "/static/live2d",
+    "model": "/static/live2d/assets/Pio/Pio.model.json",
+    "canvas_id": "live2dcanvas"
+  },
+  "counter": {
+    "enabled": true,
+    "img_url": "//luozi.de5.net/counter/get/@luozisamaworld?theme=gelbooru"
+  }
+}

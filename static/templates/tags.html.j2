@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>标签 ｜ {{ site_name }}</title>
+  <meta name="description" content="{{ site_description }}">
+  <meta name="theme-color" content="{{ site.theme_color }}">
+  {% if site_url %}
+  <link rel="canonical" href="{{ site_url }}/tags/">
+  {% endif %}
+  <link rel="stylesheet" href="/static/styles/gallery.css?v={{ static_version }}">
+</head>
+<body class="page-tags">
+  <a class="skip-link" href="#main-content">跳到主要内容</a>
+  <header class="topbar">
+    <div class="topbar-left">
+      <a class="brand" href="/" aria-label="返回首页">
+        <span class="logo-dot" aria-hidden="true"></span>
+        <div class="brand-text">
+          <strong>luozi_sama</strong>
+          <span>Illustration Gallery</span>
+        </div>
+      </a>
+      <button class="icon-button theme-toggle" type="button" data-theme-toggle aria-label="切换主题">
+        <span class="icon" aria-hidden="true">◐</span>
+      </button>
+    </div>
+    <nav class="topnav" aria-label="顶栏导航">
+      <a href="/">首页</a>
+      <a href="/search/">搜索</a>
+      <a href="/wall.html">互动墙</a>
+      <a href="/flow.html">上传检测</a>
+    </nav>
+    <div class="topbar-right">
+      <button class="search-trigger" type="button" data-search-open aria-label="打开搜索">搜索标题、描述、#标签</button>
+      <a class="icon-link admin-entry" href="/admin/" data-admin-entry hidden>管理</a>
+    </div>
+  </header>
+
+  <main id="main-content" tabindex="-1">
+    <section class="tags-hero">
+      <h1>标签</h1>
+      <p class="lede">点击标签查看对应作品合集。</p>
+    </section>
+    <section class="tag-grid" aria-label="标签列表">
+      {% for tag in tags %}
+      <a class="tag-card" href="/tags/{{ tag.slug }}/">
+        <span class="tag-title">#{{ tag.tag }}</span>
+        <span class="tag-count">{{ tag.count }} 件</span>
+      </a>
+      {% endfor %}
+    </section>
+  </main>
+
+  <div class="search-overlay" data-search-overlay aria-hidden="true">
+    <div class="search-panel" role="dialog" aria-modal="true">
+      <button class="icon-button close-button" type="button" data-search-close aria-label="关闭搜索">×</button>
+      <p class="search-title">搜索作品</p>
+      <form action="/search/" method="get" class="search-form">
+        <input type="search" name="q" placeholder="搜索标题、描述、#标签" autocomplete="off" data-search-input>
+        <button class="btn primary" type="submit">搜索</button>
+      </form>
+      <p class="search-hint">支持 #标签、标题与描述匹配。</p>
+    </div>
+  </div>
+
+  <script src="/static/js/ui.js?v={{ static_version }}" defer></script>
+</body>
+</html>

@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Status ｜ {{ site_name }}</title>
+  <meta name="description" content="{{ site_description }}">
+  <meta name="theme-color" content="{{ site.theme_color }}">
+  {% if site_url %}
+  <link rel="canonical" href="{{ site_url }}/status/">
+  {% endif %}
+  <link rel="stylesheet" href="/static/styles/gallery.css?v={{ static_version }}">
+  <style>
+    .status-page { max-width: 960px; margin: 0 auto; padding: 24px; }
+    .status-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+    .card { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow); }
+    .card h2 { margin: 0 0 6px; font-size: 16px; }
+    .muted { color: var(--muted); font-size: 13px; }
+    pre { margin: 0; font-size: 13px; background: #0b1221; color: #e8eefc; padding: 12px; border-radius: 10px; overflow-x: auto; }
+    canvas { width: 100%; height: 120px; }
+    .charts { margin-top: 20px; display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }
+    .chart-card { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow); }
+    .chart-card h3 { margin: 0 0 8px; font-size: 15px; }
+    .chart-meta { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+  </style>
+</head>
+<body class="page-home">
+  <a class="skip-link" href="#main-content">跳到主要内容</a>
+  <header class="topbar">
+    <div class="topbar-left">
+      <a class="brand" href="/" aria-label="返回首页">
+        <span class="logo-dot" aria-hidden="true"></span>
+        <div class="brand-text">
+          <strong>luozi_sama</strong>
+          <span>Illustration Gallery</span>
+        </div>
+      </a>
+      <button class="icon-button theme-toggle" type="button" data-theme-toggle aria-label="切换主题">
+        <span class="icon" aria-hidden="true">◐</span>
+      </button>
+    </div>
+  </header>
+  <div class="status-page" id="main-content" tabindex="-1">
+    <h1>运行状态</h1>
+    <p class="muted">静态探针，每次刷新从 <code>/static/status.json</code> 拉取最新数据。</p>
+    <div class="status-grid" id="status-cards">
+      <div class="card">
+        <h2>磁盘</h2>
+        <div class="muted" id="disk"></div>
+      </div>
+      <div class="card">
+        <h2>图片计数</h2>
+        <div class="muted" id="images"></div>
+      </div>
+      <div class="card">
+        <h2>文件计数</h2>
+        <div class="muted" id="files"></div>
+      </div>
+      <div class="card">
+        <h2>最近发布</h2>
+        <div class="muted" id="build"></div>
+      </div>
+      <div class="card">
+        <h2>CPU/Load</h2>
+        <div class="muted" id="cpu"></div>
+      </div>
+      <div class="card">
+        <h2>内存/Swap</h2>
+        <div class="muted" id="mem"></div>
+      </div>
+    </div>
+    <h2 style="margin-top:20px;">趋势（近期历史）</h2>
+    <div class="charts">
+      <div class="chart-card">
+        <h3>Load (1m)</h3>
+        <div class="chart-meta" id="load-meta"></div>
+        <canvas id="load-chart-large"></canvas>
+      </div>
+      <div class="chart-card">
+        <h3>内存占用 (%)</h3>
+        <div class="chart-meta" id="mem-meta"></div>
+        <canvas id="mem-chart-large"></canvas>
+      </div>
+    </div>
+    <h2>原始数据</h2>
+    <pre id="raw">加载中...</pre>
+  </div>
+  <script>
+    async function loadStatus() {
+      try {
+        const ts = Date.now();
+        const resp = await fetch(`/static/status.json?v=${ts}`, { cache: 'no-cache' });
+        const data = await resp.json();
+        document.getElementById('raw').textContent = JSON.stringify(data, null, 2);
+        const disk = data.disk || {};
+        const fmt = (n) => typeof n === 'number' ? (n / 1024 / 1024).toFixed(1) + ' MB' : '未知';
+        document.getElementById('disk').textContent =
+          `剩余 ${fmt(disk.free)} / 总计 ${fmt(disk.total)} · 磁盘保护：${disk.paused ? '开启' : '关闭'}`;
+        const imgs = data.images || {};
+        document.getElementById('images').textContent =
+          `总数 ${imgs.total || 0} · 已发布 ${imgs.published || 0} · 待发布 ${imgs.processed || 0} · 隔离 ${imgs.quarantined || 0}`;
+        document.getElementById('files').textContent =
+          `raw ${data.raw_files || 0} · thumb ${data.thumb_files || 0}`;
+        const build = data.last_build || {};
+        document.getElementById('build').textContent =
+          build.id ? `${build.id} @ ${build.published_at || '未知'}` : '无记录';
+
+        const load = data.load || {};
+        const [l1, l5, l15] = load.avg || [0, 0, 0];
+        const cpus = load.cpus || 1;
+        document.getElementById('cpu').textContent =
+          `Load ${l1.toFixed(2)}/${l5.toFixed(2)}/${l15.toFixed(2)} · CPU ${cpus}`;
+        const mem = data.memory || {};
+        const memUsed = mem.total && mem.available ? mem.total - mem.available : 0;
+        const memPct = mem.total ? (memUsed / mem.total * 100).toFixed(1) : '0';
+        const swapUsed = mem.swap_total && mem.swap_free ? mem.swap_total - mem.swap_free : 0;
+        const swapPct = mem.swap_total ? (swapUsed / mem.swap_total * 100).toFixed(1) : '0';
+        document.getElementById('mem').textContent =
+          `内存 ${fmt(memUsed)} / ${fmt(mem.total)} (${memPct}%) · Swap ${fmt(swapUsed)} / ${fmt(mem.swap_total)} (${swapPct}%)`;
+
+        renderHistory();
+      } catch (err) {
+        document.getElementById('raw').textContent = '加载失败：' + err;
+      }
+    }
+    async function renderHistory() {
+      try {
+        const ts = Date.now();
+        const resp = await fetch(`/static/status_history.json?v=${ts}`, { cache: 'no-cache' });
+        const history = await resp.json();
+        const last = history.slice(-60); // 近期 60 条
+        const loadSeries = last.map(x => x.load && x.load.avg ? x.load.avg[0] : 0);
+        const memSeries = last.map(x => {
+          if (x.memory && x.memory.total) {
+            const used = x.memory.total - (x.memory.available || 0);
+            return (used / x.memory.total) * 100;
+          }
+          return 0;
+        });
+        drawLineChart(document.getElementById('load-chart-large'), loadSeries, 'Load');
+        drawLineChart(document.getElementById('mem-chart-large'), memSeries, '内存%');
+        document.getElementById('load-meta').textContent = loadSeries.length ? `最近 ${loadSeries.length} 条，当前 ${loadSeries[loadSeries.length-1].toFixed(2)}` : '暂无历史';
+        document.getElementById('mem-meta').textContent = memSeries.length ? `最近 ${memSeries.length} 条，当前 ${memSeries[memSeries.length-1].toFixed(1)}%` : '暂无历史';
+      } catch (err) {
+        document.getElementById('load-meta').textContent = '历史加载失败';
+        document.getElementById('mem-meta').textContent = '历史加载失败';
+      }
+    }
+    function drawLineChart(canvas, values, label) {
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      const w = canvas.width = canvas.clientWidth || 320;
+      const h = canvas.height = canvas.clientHeight || 140;
+      ctx.clearRect(0, 0, w, h);
+      if (!values.length) {
+        ctx.fillStyle = '#ccc';
+        ctx.fillText('暂无数据', 10, 20);
+        return;
+      }
+      const min = Math.min(...values);
+      const max = Math.max(...values);
+      const range = max - min || 1;
+      const pad = 24;
+      const plotW = w - pad * 2;
+      const plotH = h - pad * 2;
+      // 轴
+      ctx.strokeStyle = '#d0d6e0';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(pad, pad);
+      ctx.lineTo(pad, h - pad);
+      ctx.lineTo(w - pad, h - pad);
+      ctx.stroke();
+      // 线
+      ctx.strokeStyle = '#4c7cff';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      values.forEach((v, i) => {
+        const x = pad + (i / Math.max(values.length - 1, 1)) * plotW;
+        const y = h - pad - ((v - min) / range) * plotH;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+      // 标注
+      ctx.fillStyle = '#555';
+      ctx.font = '12px sans-serif';
+      ctx.fillText(`${label} max ${max.toFixed(2)}`, pad + 4, pad + 12);
+      ctx.fillText(`min ${min.toFixed(2)}`, pad + 4, pad + 26);
+    }
+    loadStatus();
+    setInterval(loadStatus, 30000);
+  </script>
+  <script src="/static/js/ui.js?v={{ static_version }}" defer></script>
+</body>
+</html>

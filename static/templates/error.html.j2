@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>错误 ｜ {{ site_name }}</title>
+  <meta name="description" content="站点发生错误，请稍后再试。">
+  <meta name="theme-color" content="{{ site.theme_color }}">
+  <meta name="robots" content="noindex">
+  {% if site_url %}
+  <link rel="canonical" href="{{ site_url }}/error/">
+  {% endif %}
+  <link rel="stylesheet" href="/static/styles/gallery.css?v={{ static_version }}">
+</head>
+<body class="page-home">
+  <a class="skip-link" href="#main-content">跳到主要内容</a>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="返回首页">
+      <span class="logo-dot" aria-hidden="true"></span>
+      <div class="brand-text">
+        <strong>luozi_sama</strong>
+        <span>Illustration Gallery</span>
+      </div>
+    </a>
+    <nav class="topnav" aria-label="顶栏导航">
+      <a href="/">首页</a>
+      <a href="/status/">运行状态</a>
+    </nav>
+  </header>
+  <main id="main-content" tabindex="-1">
+    <div class="empty global">
+      <h1>发生错误</h1>
+      <p>当前请求无法处理，请稍后再试。</p>
+      <p class="muted">你可以查看运行状态或返回首页。</p>
+      <div class="hero-actions">
+        <a class="btn primary" href="/">回到首页</a>
+        <a class="btn ghost" href="/status/">查看状态</a>
+      </div>
+    </div>
+  </main>
+</body>
+</html>

@@ -1,0 +1,16 @@
+{
+  "collections": {
+    "mine": {
+      "title": "我的作品",
+      "description": "luozi_sama 的原创插画与练习稿，按上传时间倒序展示。",
+      "uuids": []
+    },
+    "favorites": {
+      "title": "他人作品",
+      "description": "我欣赏的优秀二次元插画，保持原尺寸与主色占位。",
+      "uuids": []
+    }
+  },
+  "default_collection": "favorites",
+  "notes": "将作品 UUID 填入对应 uuids 列表可精确分区；未标记项将落入 default_collection。"
+}

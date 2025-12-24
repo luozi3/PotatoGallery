@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>维护中 ｜ {{ site_name }}</title>
+  <meta name="description" content="站点维护中，请稍后再试。">
+  <meta name="theme-color" content="{{ site.theme_color }}">
+  <meta name="robots" content="noindex">
+  {% if site_url %}
+  <link rel="canonical" href="{{ site_url }}/maintenance.html">
+  {% endif %}
+  <link rel="stylesheet" href="/static/styles/gallery.css?v={{ static_version }}">
+</head>
+<body class="page-home">
+  <a class="skip-link" href="#main-content">跳到主要内容</a>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="返回首页">
+      <span class="logo-dot" aria-hidden="true"></span>
+      <div class="brand-text">
+        <strong>luozi_sama</strong>
+        <span>Illustration Gallery</span>
+      </div>
+    </a>
+    <nav class="topnav" aria-label="顶栏导航">
+      <a href="/">首页</a>
+      <a href="/status/">运行状态</a>
+    </nav>
+  </header>
+  <main id="main-content" tabindex="-1">
+    <div class="empty global">
+      <h1>维护中</h1>
+      <p>站点正在维护或发布中，请稍后刷新。</p>
+      <p class="muted">本页面为静态占位，不影响已发布内容访问。</p>
+    </div>
+  </main>
+</body>
+</html>
