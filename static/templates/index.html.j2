@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{ site_name }} ｜ luozi_sama 的画廊</title>
+  <title>{{ site_name }}{% if site.brand_tagline %} ｜ {{ site.brand_tagline }}{% endif %}</title>
   <meta name="description" content="{{ site_description }}">
   <meta name="theme-color" content="{{ site.theme_color }}">
   {% if site_url %}
@@ -32,113 +32,142 @@
   {% set orientation_labels = {"portrait": "竖屏", "landscape": "横屏", "square": "方形", "unknown": "未标"} %}
   {% set size_labels = {"ultra": "超清", "large": "高清", "medium": "中等", "compact": "轻量", "unknown": "未标"} %}
   <a class="skip-link" href="#main-content">跳到主要内容</a>
-  <header class="topbar">
+  <header class="topbar topbar-home">
     <div class="topbar-left">
-      <a class="brand" href="/" aria-label="返回首页">
+      <button class="icon-button sidebar-toggle" type="button" data-left-toggle aria-label="展开侧栏" aria-expanded="true" aria-controls="left-sidebar">
+        <span class="hamburger" aria-hidden="true"></span>
+      </button>
+      <a class="brand brand-compact" href="/" aria-label="返回首页">
         <span class="logo-dot" aria-hidden="true"></span>
         <div class="brand-text">
-          <strong>luozi_sama</strong>
-          <span>Illustration Gallery</span>
+          <strong>{{ site.brand_name or site_name }}</strong>
+          <span>{{ site.brand_tagline }}</span>
         </div>
       </a>
       <button class="icon-button theme-toggle" type="button" data-theme-toggle aria-label="切换主题">
         <span class="icon" aria-hidden="true">◐</span>
       </button>
     </div>
-    <nav class="topnav" aria-label="顶栏导航">
-      <a href="#collections">全部作品</a>
-      <a href="/tags/">标签</a>
-      <a href="/wall.html">互动墙</a>
-      <a href="/flow.html">上传检测</a>
-    </nav>
+    <div class="topbar-center">
+      <form class="top-search" action="/search/" method="get" role="search" data-search-host>
+        <button class="search-icon" type="button" aria-label="聚焦搜索"></button>
+        <input type="search" name="q" placeholder="搜索作品" autocomplete="off" data-search-input>
+        <button class="search-submit" type="submit">搜索</button>
+      </form>
+    </div>
     <div class="topbar-right">
-      <button class="search-trigger" type="button" data-search-open aria-label="打开搜索">搜索标题、描述、#标签</button>
-      {% if site.live2d.enabled %}
-      <button class="icon-button live2d-toggle" type="button" data-live2d-toggle aria-label="切换 Live2D">Live2D</button>
+      <a class="icon-link" href="/auth/login/" data-auth-login-link>登录</a>
+      {% if auth.registration_mode != "closed" %}
+      <a class="icon-link" href="/auth/register/" data-auth-register-link>注册</a>
       {% endif %}
-      <a class="icon-link admin-entry" href="/admin/" data-admin-entry hidden>管理</a>
+      <div class="avatar-menu" data-avatar-menu data-user-avatar hidden>
+        <button class="avatar-button" type="button" data-avatar-toggle aria-label="打开用户菜单" aria-expanded="false">
+          <img src="{{ site.auth_avatar_url }}" alt="用户头像" loading="lazy" width="32" height="32" data-user-avatar-img>
+          <span class="avatar-caret" aria-hidden="true"></span>
+        </button>
+        <div class="avatar-dropdown" data-avatar-dropdown hidden>
+          <a class="dropdown-item" href="/my/" data-auth-user-link hidden>我的作品</a>
+          <a class="dropdown-item" href="/favorites/" data-auth-user-link hidden>我的收藏</a>
+        </div>
+      </div>
     </div>
   </header>
 
+  <div class="search-dim" data-search-dim aria-hidden="true"></div>
+  <div class="sidebar-dim" data-sidebar-dim aria-hidden="true"></div>
+  <button class="sidebar-close" type="button" data-left-toggle aria-label="关闭侧栏"></button>
+
   <main id="main-content" tabindex="-1">
-    <section class="hero">
-      <div class="hero-copy">
-        <p class="eyebrow">Pixiv 风格 · 二次元插画</p>
-        <h1>{{ site_name }}</h1>
-        <p class="lede">作品按上传时间排序，懒加载 + 主色占位，搜索与标签可快速定位。</p>
-        <div class="hero-actions">
-          {% if collections_list %}
-          <a class="btn primary" href="#collections" data-jump-collection="{{ collections_list[0].slug }}">浏览 {{ collections_list[0].title }}</a>
+    <div class="home-layout">
+      <aside class="left-sidebar" id="left-sidebar" data-left-sidebar>
+        <div class="left-sidebar-inner">
+          <details class="side-group" open>
+            <summary>收藏夹</summary>
+            <div class="side-list">
+              <a class="side-link" href="/favorites/">我的收藏</a>
+            </div>
+          </details>
+          {% if site.live2d.enabled %}
+          <div class="side-group">
+            <button class="side-toggle" type="button" data-live2d-toggle aria-label="切换 Live2D">Live2D 开</button>
+          </div>
           {% endif %}
-          {% if collections_list|length > 1 %}
-          <a class="btn ghost" href="#collections" data-jump-collection="{{ collections_list[1].slug }}">看看 {{ collections_list[1].title }}</a>
-          {% endif %}
+          <div class="side-group">
+            <div class="side-heading">Wiki / status</div>
+            <a class="side-link" href="/wiki/">Wiki</a>
+            <a class="side-link" href="/status/">status</a>
+          </div>
+          <div class="side-group">
+            <div class="side-heading" data-admin-entry hidden>管理</div>
+            <a class="side-link admin-entry" href="/admin/" data-admin-entry hidden>管理后台</a>
+            <a class="side-link admin-entry" href="/admin/tags/" data-admin-entry hidden>标签管理</a>
+            <a class="side-link admin-entry" href="/status/" data-admin-entry hidden>状态监控</a>
+          </div>
+          <div class="side-group side-legal" aria-label="版权声明">
+            <p class="side-legal-text">© {{ site.copyright_year }} {{ site.copyright_holder }}.</p>
+            <p class="side-legal-text">图片版权归原作者，侵权请 <a class="side-legal-link" href="/dmca/">联系我们</a>。</p>
+          </div>
         </div>
-        <div class="hero-stats">
-          <span>{{ stats.total }} 件作品</span>
-          {% for collection in collections_list %}
-          <span>{{ collection.count }} {{ collection.title }}</span>
-          {% endfor %}
-        </div>
-      </div>
-      <div class="hero-preview" aria-hidden="true">
-        <div class="preview-card">
-          <span class="pill soft">静态生成</span>
-          <p class="preview-title">访问路径全静态，主题切换与动效在前端完成。</p>
-          <div class="preview-bg"></div>
-        </div>
-      </div>
-    </section>
+      </aside>
+      <div class="home-main">
+        <section class="home-tag-strip" aria-label="热门标签">
+          <div class="tag-strip-label">标签</div>
+          <div class="tag-strip-list">
+            {% if top_tags %}
+            {% for tag in top_tags[:6] %}
+            <a class="tag-chip" href="/tags/{{ tag.slug }}/">#{{ tag.tag }}</a>
+            {% endfor %}
+            {% else %}
+            <span class="tag-chip muted">暂无标签</span>
+            {% endif %}
+            <a class="tag-chip tag-chip-more" href="/tags/">→全部标签</a>
+          </div>
+        </section>
 
-    <section class="collection-highlights" id="collections" aria-label="分区总览">
-      {% for collection in collections_list %}
-      <article class="highlight-card" data-jump-collection="{{ collection.slug }}">
-        <div class="badge">{{ collection.title }}</div>
-        <h2>{{ collection.title }}</h2>
-        <p>{{ collection.description or "" }}</p>
-        <div class="highlight-footer">
-          <span class="count">{{ collection.count }} 件</span>
-          <span class="link">打开分区 →</span>
-        </div>
-      </article>
-      {% endfor %}
-    </section>
+        <section class="controls" aria-label="筛选与子集">
+          <div class="tabs" role="tablist" aria-label="分区切换">
+            <button class="tab active" role="tab" aria-selected="true" data-collection-tab data-collection="all">
+              全部 <span class="count">{{ stats.total }}</span>
+            </button>
+            {% for collection in collections_list %}
+            <button class="tab" role="tab" aria-selected="false" data-collection-tab data-collection="{{ collection.slug }}">
+              {{ collection.title }} <span class="count">{{ collection.count }}</span>
+            </button>
+            {% endfor %}
+          </div>
+          <div class="filters">
+            <div class="filter-group" aria-label="方向">
+              <span class="label">方向</span>
+              <div class="filter-pills">
+                <button class="pill active" aria-pressed="true" data-filter-pill data-filter="orientation" data-value="all">全部</button>
+                <button class="pill" aria-pressed="false" data-filter-pill data-filter="orientation" data-value="portrait">竖屏</button>
+                <button class="pill" aria-pressed="false" data-filter-pill data-filter="orientation" data-value="landscape">横屏</button>
+                <button class="pill" aria-pressed="false" data-filter-pill data-filter="orientation" data-value="square">方形</button>
+              </div>
+            </div>
+            <div class="filter-group" aria-label="清晰度">
+              <span class="label">清晰度</span>
+              <div class="filter-pills">
+                <button class="pill active" aria-pressed="true" data-filter-pill data-filter="size" data-value="all">全部</button>
+                <button class="pill" aria-pressed="false" data-filter-pill data-filter="size" data-value="ultra">超清</button>
+                <button class="pill" aria-pressed="false" data-filter-pill data-filter="size" data-value="large">高清</button>
+                <button class="pill" aria-pressed="false" data-filter-pill data-filter="size" data-value="medium">中等</button>
+                <button class="pill" aria-pressed="false" data-filter-pill data-filter="size" data-value="compact">轻量</button>
+              </div>
+            </div>
+          </div>
+          <div class="filter-summary" data-filter-summary hidden>
+            <span class="filter-summary-label">当前筛选</span>
+            <div class="filter-summary-list" data-filter-summary-list></div>
+            <button class="filter-summary-clear" type="button" data-filter-summary-clear>清空</button>
+          </div>
+        </section>
 
-    <section class="controls" aria-label="筛选与子集">
-      <div class="tabs" role="tablist" aria-label="分区切换">
-        <button class="tab active" role="tab" aria-selected="true" data-collection-tab data-collection="all">
-          全部 <span class="count">{{ stats.total }}</span>
-        </button>
-        {% for collection in collections_list %}
-        <button class="tab" role="tab" aria-selected="false" data-collection-tab data-collection="{{ collection.slug }}">
-          {{ collection.title }} <span class="count">{{ collection.count }}</span>
-        </button>
-        {% endfor %}
-      </div>
-      <div class="filters">
-        <div class="filter-group" aria-label="方向">
-          <span class="label">方向</span>
-          <button class="pill active" aria-pressed="true" data-filter-pill data-filter="orientation" data-value="all">全部</button>
-          <button class="pill" aria-pressed="false" data-filter-pill data-filter="orientation" data-value="portrait">竖屏</button>
-          <button class="pill" aria-pressed="false" data-filter-pill data-filter="orientation" data-value="landscape">横屏</button>
-          <button class="pill" aria-pressed="false" data-filter-pill data-filter="orientation" data-value="square">方形</button>
-        </div>
-        <div class="filter-group" aria-label="清晰度">
-          <span class="label">清晰度</span>
-          <button class="pill active" aria-pressed="true" data-filter-pill data-filter="size" data-value="all">全部</button>
-          <button class="pill" aria-pressed="false" data-filter-pill data-filter="size" data-value="ultra">超清</button>
-          <button class="pill" aria-pressed="false" data-filter-pill data-filter="size" data-value="large">高清</button>
-          <button class="pill" aria-pressed="false" data-filter-pill data-filter="size" data-value="medium">中等</button>
-          <button class="pill" aria-pressed="false" data-filter-pill data-filter="size" data-value="compact">轻量</button>
-        </div>
-      </div>
-    </section>
-
-    <section class="gallery" data-gallery-grid data-masonry aria-live="polite">
+        <section class="gallery" data-gallery-grid data-masonry aria-live="polite">
       {% for image in images %}
-      <article class="illust-card" data-image-card data-masonry-item data-collection="{{ image.collection }}" data-orientation="{{ image.orientation }}" data-size="{{ image.size_bucket }}">
+      <article class="illust-card" data-image-card data-masonry-item data-card-link="/images/{{ image.uuid }}/index.html" data-collection="{{ image.collection }}" data-orientation="{{ image.orientation }}" data-size="{{ image.size_bucket }}" tabindex="0" role="link" aria-label="{{ image.title }}">
         <a class="thumb-link" href="/images/{{ image.uuid }}/index.html" aria-label="{{ image.title }}">
-          <div class="thumb-shell" style="background: {{ image.dominant_color or '#eef1f5' }}; aspect-ratio: {{ image.thumb_width }}/{{ image.thumb_height }};">
+          <div class="thumb-shell" style="--thumb-ratio: {{ image.thumb_width }}/{{ image.thumb_height }};">
             <img class="thumb" src="/thumb/{{ image.thumb_filename }}" alt="{{ image.title }}" loading="lazy" width="{{ image.thumb_width }}" height="{{ image.thumb_height }}" onerror="this.onerror=null;this.src='/raw/{{ image.raw_filename }}';">
           </div>
         </a>
@@ -156,25 +185,28 @@
             <span class="tag accent">{{ orientation_labels.get(image.orientation, "未标") }}</span>
             <span class="tag">{{ size_labels.get(image.size_bucket, "未标") }}</span>
             {% for tag in image.tags[:3] %}
-            <a class="tag ghost" href="/tags/{{ tag|urlencode }}/">#{{ tag }}</a>
+            <a class="tag ghost" href="/tags/{{ tag_slug_map.get(tag, tag)|urlencode }}/">#{{ tag }}</a>
             {% endfor %}
           </div>
         </div>
       </article>
       {% endfor %}
       <div class="empty" data-empty-state>当前筛选暂无作品，换个筛选试试。</div>
-    </section>
+        </section>
+      </div>
+    </div>
   </main>
+
 
   <div class="search-overlay" data-search-overlay aria-hidden="true">
     <div class="search-panel" role="dialog" aria-modal="true">
       <button class="icon-button close-button" type="button" data-search-close aria-label="关闭搜索">×</button>
       <p class="search-title">搜索作品</p>
       <form action="/search/" method="get" class="search-form">
-        <input type="search" name="q" placeholder="搜索标题、描述、#标签" autocomplete="off" data-search-input>
+        <input type="search" name="q" placeholder="搜索标题、描述、标签" autocomplete="off" data-search-input>
         <button class="btn primary" type="submit">搜索</button>
       </form>
-      <p class="search-hint">支持 #标签、标题与描述匹配。</p>
+      <p class="search-hint">支持标签、标题与描述匹配（# 可选）。</p>
     </div>
   </div>
 
@@ -190,9 +222,11 @@
   </footer>
 
   {% if site.live2d.enabled %}
-  <div id="landlord" class="live2d-root" aria-hidden="true">
+  {% set live2d_width = site.live2d.width or 300 %}
+  {% set live2d_height = site.live2d.height or 336 %}
+  <div id="landlord" class="live2d-root" aria-hidden="true" style="--live2d-width: {{ live2d_width }}px; --live2d-height: {{ live2d_height }}px;">
     <div class="message" style="opacity:0"></div>
-    <canvas id="{{ site.live2d.canvas_id }}" width="375" height="420" class="live2d"></canvas>
+    <canvas id="{{ site.live2d.canvas_id }}" width="{{ live2d_width }}" height="{{ live2d_height }}" class="live2d"></canvas>
   </div>
   <script src="{{ site.live2d.base_url }}/live2d/js/Setting.js" defer onerror="var r=document.getElementById('landlord');if(r){r.style.display='none';}"></script>
   <script src="{{ site.live2d.base_url }}/jquery.min.js" defer onerror="var r=document.getElementById('landlord');if(r){r.style.display='none';}"></script>

@@ -1,0 +1,46 @@
+{
+  "_notes": {
+    "site_name": "Primary site title used in HTML <title> and as a brand fallback.",
+    "site_description": "Meta/OG description for pages.",
+    "site_url": "Base URL for canonical/OG/sitemap (leave empty for relative URLs).",
+    "brand_name": "Topbar brand name; defaults to site_name when empty.",
+    "brand_tagline": "Topbar small tagline and homepage title suffix.",
+    "theme_color": "Meta theme-color value.",
+    "locale": "OG locale (e.g. zh_CN).",
+    "copyright_year": "Footer/DMCA copyright year.",
+    "copyright_holder": "Footer/DMCA copyright holder name.",
+    "live2d.enabled": "Toggle Live2D block.",
+    "live2d.base_url": "Base URL for Live2D assets.",
+    "live2d.model": "Live2D model JSON path.",
+    "live2d.canvas_id": "Canvas id for Live2D init.",
+    "live2d.width": "Live2D canvas width.",
+    "live2d.height": "Live2D canvas height.",
+    "counter.enabled": "Toggle visit counter image.",
+    "counter.img_url": "Counter image URL.",
+    "auth_avatar_url": "Default avatar image URL.",
+    "thumb_bg_color": "Background color for thumbnail containers."
+  },
+  "site_name": "My Gallery",
+  "site_description": "Static illustration gallery for originals and favorites.",
+  "site_url": "https://example.com",
+  "theme_color": "#4c7cff",
+  "locale": "zh_CN",
+  "brand_name": "MyGallery",
+  "brand_tagline": "Illustration Gallery",
+  "copyright_year": 2025,
+  "copyright_holder": "MyGallery",
+  "live2d": {
+    "enabled": false,
+    "base_url": "/static/live2d",
+    "model": "/static/live2d/assets/Pio/Pio.model.json",
+    "canvas_id": "live2dcanvas",
+    "width": 300,
+    "height": 336
+  },
+  "counter": {
+    "enabled": false,
+    "img_url": ""
+  },
+  "auth_avatar_url": "/thumb/39e2f18e62ab45f5aa871860919516d0.webp",
+  "thumb_bg_color": "#f3e7ff"
+}

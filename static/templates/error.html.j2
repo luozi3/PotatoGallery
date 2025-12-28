@@ -12,14 +12,14 @@
   {% endif %}
   <link rel="stylesheet" href="/static/styles/gallery.css?v={{ static_version }}">
 </head>
-<body class="page-home">
+<body class="page-error">
   <a class="skip-link" href="#main-content">跳到主要内容</a>
   <header class="topbar">
     <a class="brand" href="/" aria-label="返回首页">
       <span class="logo-dot" aria-hidden="true"></span>
       <div class="brand-text">
-        <strong>luozi_sama</strong>
-        <span>Illustration Gallery</span>
+        <strong>{{ site.brand_name or site_name }}</strong>
+        <span>{{ site.brand_tagline }}</span>
       </div>
     </a>
     <nav class="topnav" aria-label="顶栏导航">
@@ -27,16 +27,48 @@
       <a href="/status/">运行状态</a>
     </nav>
   </header>
-  <main id="main-content" tabindex="-1">
-    <div class="empty global">
-      <h1>发生错误</h1>
-      <p>当前请求无法处理，请稍后再试。</p>
-      <p class="muted">你可以查看运行状态或返回首页。</p>
-      <div class="hero-actions">
-        <a class="btn primary" href="/">回到首页</a>
-        <a class="btn ghost" href="/status/">查看状态</a>
+  <main id="main-content" class="error-main" tabindex="-1">
+    <section class="error-hero">
+      <div class="error-card">
+        <div class="error-eyebrow">很抱歉</div>
+        <h1 class="error-title">您浏览的页面暂时无法访问</h1>
+        <p class="error-lead">服务可能正在处理拥堵或短暂故障。我们已在处理，感谢你的耐心等待。</p>
+        <div class="error-actions">
+          <a class="btn primary" href="/">回到首页</a>
+          <a class="btn ghost" href="/status/">查看状态</a>
+          <a class="btn ghost" href="/search/">继续浏览</a>
+        </div>
+        <div class="error-meta">
+          <span class="error-code">500</span>
+          <span class="error-tag">Server Error</span>
+        </div>
       </div>
-    </div>
+      <figure class="error-figure">
+        <div class="error-figure-frame">
+          <img src="/static/images/error-figure.webp" alt="等待中的小人插画" width="950" height="1200" loading="lazy" decoding="async">
+        </div>
+        <figcaption>请稍后重试，或前往状态页查看当前服务运行情况。</figcaption>
+      </figure>
+    </section>
+    <section class="error-tips" aria-label="提示">
+      <div class="error-tip">
+        <h2>提示</h2>
+        <ul>
+          <li>稍后刷新页面，通常可以恢复正常。</li>
+          <li>如果正在上传或编辑，请避免重复提交。</li>
+          <li>频繁出现时请截图并记录时间。</li>
+        </ul>
+      </div>
+      <div class="error-tip">
+        <h2>可能原因</h2>
+        <p>高峰访问、发布更新或网络波动都可能导致临时错误。</p>
+      </div>
+      <div class="error-tip">
+        <h2>需要帮助？</h2>
+        <p>请保留本页截图和错误码 500，方便我们快速定位。</p>
+      </div>
+    </section>
   </main>
+  <script src="/static/js/ui.js?v={{ static_version }}" defer></script>
 </body>
 </html>

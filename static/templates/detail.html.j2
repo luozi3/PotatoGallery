@@ -37,8 +37,8 @@
       <a class="brand" href="/" aria-label="返回首页">
         <span class="logo-dot" aria-hidden="true"></span>
         <div class="brand-text">
-          <strong>luozi_sama</strong>
-          <span>Illustration Gallery</span>
+          <strong>{{ site.brand_name or site_name }}</strong>
+          <span>{{ site.brand_tagline }}</span>
         </div>
       </a>
       <button class="icon-button theme-toggle" type="button" data-theme-toggle aria-label="切换主题">
@@ -48,21 +48,31 @@
     <nav class="topnav" aria-label="顶栏导航">
       <a href="/">首页</a>
       <a href="/tags/">标签</a>
-      <a href="/wall.html">互动墙</a>
-      <a href="/flow.html">上传检测</a>
+      <a href="/favorites/" data-auth-user-link hidden>收藏</a>
     </nav>
     <div class="topbar-right">
-      <button class="search-trigger" type="button" data-search-open aria-label="打开搜索">搜索标题、描述、#标签</button>
+      <button class="search-trigger" type="button" data-search-open aria-label="打开搜索">搜索标题、描述、标签</button>
       {% if site.live2d.enabled %}
       <button class="icon-button live2d-toggle" type="button" data-live2d-toggle aria-label="切换 Live2D">Live2D</button>
       {% endif %}
+      <span class="user-avatar" data-user-avatar hidden>
+        <img src="{{ site.auth_avatar_url }}" alt="用户头像" loading="lazy" width="32" height="32" data-user-avatar-img>
+      </span>
+      <a class="icon-link" href="/my/" data-auth-user-link hidden>我的作品</a>
+      <a class="icon-link" href="/favorites/" data-auth-user-link hidden>我的收藏</a>
+      <a class="icon-link" href="/auth/login/" data-auth-login-link>登录</a>
+      {% if auth.registration_mode != "closed" %}
+      <a class="icon-link" href="/auth/register/" data-auth-register-link>注册</a>
+      {% endif %}
       <a class="icon-link admin-entry" href="/admin/" data-admin-entry hidden>管理</a>
+      <a class="icon-link admin-entry" href="/admin/tags/" data-admin-entry hidden>标签管理</a>
+      <a class="icon-link admin-entry" href="/status/" data-admin-entry hidden>状态</a>
     </div>
   </header>
 
   <main class="detail-layout" id="main-content" tabindex="-1">
     <div class="visual">
-      <div class="frame" style="background: {{ image.dominant_color or '#eef1f5' }}; aspect-ratio: {{ image.width }}/{{ image.height }};">
+      <div class="frame" style="aspect-ratio: {{ image.width }}/{{ image.height }};">
         <img src="/raw/{{ image.raw_filename }}"
              alt="{{ image.original_name }}"
              loading="eager"
@@ -88,7 +98,7 @@
       {% if image.tags %}
       <div class="tags">
         {% for tag in image.tags %}
-        <a class="tag ghost" href="/tags/{{ tag|urlencode }}/">#{{ tag }}</a>
+        <a class="tag ghost" href="/tags/{{ tag_slug_map.get(tag, tag)|urlencode }}/">#{{ tag }}</a>
         {% endfor %}
       </div>
       {% endif %}
@@ -122,6 +132,24 @@
         <a class="btn primary" href="/raw/{{ image.raw_filename }}" download>下载原图</a>
         <a class="btn ghost" href="/">回到首页</a>
       </div>
+      <section class="panel edit-panel" data-image-editor data-image-uuid="{{ image.uuid }}" hidden>
+        <h2>作品管理</h2>
+        <div class="admin-fields">
+          <label class="label">标题</label>
+          <input class="admin-input" type="text" data-image-field="title">
+          <label class="label">正文说明</label>
+          <textarea class="admin-textarea" data-image-field="description"></textarea>
+          <label class="label">标签</label>
+          <input class="admin-tag-input" type="text" data-image-field="tags" placeholder="tag1 tag2" data-tag-input>
+          <p class="hint">编辑标签无需 #，用空格分隔即可。</p>
+          <label class="label">分区</label>
+          <select class="admin-select" data-image-field="collection"></select>
+          <div class="admin-actions-row">
+            <button class="btn primary" type="button" data-image-save>保存</button>
+            <p class="hint" data-image-status></p>
+          </div>
+        </div>
+      </section>
     </div>
   </main>
 
@@ -130,10 +158,10 @@
       <button class="icon-button close-button" type="button" data-search-close aria-label="关闭搜索">×</button>
       <p class="search-title">搜索作品</p>
       <form action="/search/" method="get" class="search-form">
-        <input type="search" name="q" placeholder="搜索标题、描述、#标签" autocomplete="off" data-search-input>
+        <input type="search" name="q" placeholder="搜索标题、描述、标签" autocomplete="off" data-search-input>
         <button class="btn primary" type="submit">搜索</button>
       </form>
-      <p class="search-hint">支持 #标签、标题与描述匹配。</p>
+      <p class="search-hint">支持标签、标题与描述匹配（# 可选）。</p>
     </div>
   </div>
 
@@ -144,9 +172,11 @@
   {% endif %}
 
   {% if site.live2d.enabled %}
-  <div id="landlord" class="live2d-root" aria-hidden="true">
+  {% set live2d_width = site.live2d.width or 300 %}
+  {% set live2d_height = site.live2d.height or 336 %}
+  <div id="landlord" class="live2d-root" aria-hidden="true" style="--live2d-width: {{ live2d_width }}px; --live2d-height: {{ live2d_height }}px;">
     <div class="message" style="opacity:0"></div>
-    <canvas id="{{ site.live2d.canvas_id }}" width="375" height="420" class="live2d"></canvas>
+    <canvas id="{{ site.live2d.canvas_id }}" width="{{ live2d_width }}" height="{{ live2d_height }}" class="live2d"></canvas>
   </div>
   <script src="{{ site.live2d.base_url }}/live2d/js/Setting.js" defer onerror="var r=document.getElementById('landlord');if(r){r.style.display='none';}"></script>
   <script src="{{ site.live2d.base_url }}/jquery.min.js" defer onerror="var r=document.getElementById('landlord');if(r){r.style.display='none';}"></script>
@@ -167,5 +197,6 @@
 
   <script src="/static/js/ui.js?v={{ static_version }}" defer></script>
   <script src="/static/js/gallery.js?v={{ static_version }}" defer></script>
+  <script src="/static/js/user.js?v={{ static_version }}" defer></script>
 </body>
 </html>

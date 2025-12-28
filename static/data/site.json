@@ -1,17 +1,25 @@
 {
-  "site_name": "luozi_sama 的插画馆",
+  "site_name": "PotatoGallery 插画馆",
   "site_description": "静态插画展示站点，包含原创与精选收藏。",
-  "site_url": "https://luozi.de5.net",
+  "site_url": "",
   "theme_color": "#4c7cff",
   "locale": "zh_CN",
+  "brand_name": "PotatoGallery",
+  "brand_tagline": "Illustration Gallery",
+  "copyright_year": 2025,
+  "copyright_holder": "PotatoGallery",
   "live2d": {
-    "enabled": true,
+    "enabled": false,
     "base_url": "/static/live2d",
     "model": "/static/live2d/assets/Pio/Pio.model.json",
-    "canvas_id": "live2dcanvas"
+    "canvas_id": "live2dcanvas",
+    "width": 300,
+    "height": 336
   },
   "counter": {
-    "enabled": true,
-    "img_url": "//luozi.de5.net/counter/get/@luozisamaworld?theme=gelbooru"
-  }
+    "enabled": false,
+    "img_url": ""
+  },
+  "auth_avatar_url": "/thumb/39e2f18e62ab45f5aa871860919516d0.webp",
+  "thumb_bg_color": "#f3e7ff"
 }

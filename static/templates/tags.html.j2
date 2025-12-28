@@ -18,8 +18,8 @@
       <a class="brand" href="/" aria-label="返回首页">
         <span class="logo-dot" aria-hidden="true"></span>
         <div class="brand-text">
-          <strong>luozi_sama</strong>
-          <span>Illustration Gallery</span>
+          <strong>{{ site.brand_name or site_name }}</strong>
+          <span>{{ site.brand_tagline }}</span>
         </div>
       </a>
       <button class="icon-button theme-toggle" type="button" data-theme-toggle aria-label="切换主题">
@@ -29,12 +29,22 @@
     <nav class="topnav" aria-label="顶栏导航">
       <a href="/">首页</a>
       <a href="/search/">搜索</a>
-      <a href="/wall.html">互动墙</a>
-      <a href="/flow.html">上传检测</a>
+      <a href="/favorites/" data-auth-user-link hidden>收藏</a>
     </nav>
     <div class="topbar-right">
-      <button class="search-trigger" type="button" data-search-open aria-label="打开搜索">搜索标题、描述、#标签</button>
+      <button class="search-trigger" type="button" data-search-open aria-label="打开搜索">搜索标题、描述、标签</button>
+      <span class="user-avatar" data-user-avatar hidden>
+        <img src="{{ site.auth_avatar_url }}" alt="用户头像" loading="lazy" width="32" height="32" data-user-avatar-img>
+      </span>
+      <a class="icon-link" href="/my/" data-auth-user-link hidden>我的作品</a>
+      <a class="icon-link" href="/favorites/" data-auth-user-link hidden>我的收藏</a>
+      <a class="icon-link" href="/auth/login/" data-auth-login-link>登录</a>
+      {% if auth.registration_mode != "closed" %}
+      <a class="icon-link" href="/auth/register/" data-auth-register-link>注册</a>
+      {% endif %}
       <a class="icon-link admin-entry" href="/admin/" data-admin-entry hidden>管理</a>
+      <a class="icon-link admin-entry" href="/admin/tags/" data-admin-entry hidden>标签管理</a>
+      <a class="icon-link admin-entry" href="/status/" data-admin-entry hidden>状态</a>
     </div>
   </header>
 
@@ -45,7 +55,7 @@
     </section>
     <section class="tag-grid" aria-label="标签列表">
       {% for tag in tags %}
-      <a class="tag-card" href="/tags/{{ tag.slug }}/">
+      <a class="tag-card" href="/tags/{{ tag.slug|urlencode }}/">
         <span class="tag-title">#{{ tag.tag }}</span>
         <span class="tag-count">{{ tag.count }} 件</span>
       </a>
@@ -58,10 +68,10 @@
       <button class="icon-button close-button" type="button" data-search-close aria-label="关闭搜索">×</button>
       <p class="search-title">搜索作品</p>
       <form action="/search/" method="get" class="search-form">
-        <input type="search" name="q" placeholder="搜索标题、描述、#标签" autocomplete="off" data-search-input>
+        <input type="search" name="q" placeholder="搜索标题、描述、标签" autocomplete="off" data-search-input>
         <button class="btn primary" type="submit">搜索</button>
       </form>
-      <p class="search-hint">支持 #标签、标题与描述匹配。</p>
+      <p class="search-hint">支持标签、标题与描述匹配（# 可选）。</p>
     </div>
   </div>
 

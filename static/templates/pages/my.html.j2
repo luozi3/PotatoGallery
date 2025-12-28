@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>我的作品 ｜ {{ site_name }}</title>
+  <meta name="description" content="{{ site_description }}">
+  <meta name="theme-color" content="{{ site.theme_color }}">
+  <link rel="stylesheet" href="/static/styles/gallery.css?v={{ static_version }}">
+</head>
+<body class="page-my" data-user-page>
+  <a class="skip-link" href="#main-content">跳到主要内容</a>
+  <header class="topbar">
+    <div class="topbar-left">
+      <a class="brand" href="/" aria-label="返回首页">
+        <span class="logo-dot" aria-hidden="true"></span>
+        <div class="brand-text">
+          <strong>{{ site.brand_name or site_name }}</strong>
+          <span>{{ site.brand_tagline }}</span>
+        </div>
+      </a>
+      <button class="icon-button theme-toggle" type="button" data-theme-toggle aria-label="切换主题">
+        <span class="icon" aria-hidden="true">◐</span>
+      </button>
+    </div>
+    <nav class="topnav" aria-label="顶栏导航">
+      <a href="/">首页</a>
+      <a href="/tags/">标签</a>
+      <a href="/search/">搜索</a>
+      <a href="/favorites/" data-auth-user-link hidden>收藏</a>
+      <a href="/my/">我的作品</a>
+    </nav>
+    <div class="topbar-right">
+      <button class="search-trigger" type="button" data-search-open aria-label="打开搜索">搜索标题、描述、标签</button>
+      <span class="user-avatar" data-user-avatar hidden>
+        <img src="{{ site.auth_avatar_url }}" alt="用户头像" loading="lazy" width="32" height="32" data-user-avatar-img>
+      </span>
+      <a class="icon-link" href="/auth/login/" data-auth-login-link>登录</a>
+      {% if auth.registration_mode != "closed" %}
+      <a class="icon-link" href="/auth/register/" data-auth-register-link>注册</a>
+      {% endif %}
+      <a class="icon-link admin-entry" href="/admin/" data-admin-entry hidden>管理</a>
+      <a class="icon-link admin-entry" href="/admin/tags/" data-admin-entry hidden>标签管理</a>
+      <a class="icon-link admin-entry" href="/status/" data-admin-entry hidden>状态</a>
+    </div>
+  </header>
+
+  <main id="main-content" class="admin-main" tabindex="-1">
+    <section class="card upload-card">
+      <div class="section-header">
+        <h1>上传作品</h1>
+        <p class="muted">登录后可上传并管理自己的作品。</p>
+      </div>
+      <form class="admin-form" data-user-upload-form>
+        <label>选择图片</label>
+        <input type="file" name="file" accept="image/*" required>
+        <label>标题</label>
+        <input class="admin-input" type="text" name="title" placeholder="可留空">
+        <label>正文说明</label>
+        <textarea class="admin-textarea" name="description" placeholder="描述/注释"></textarea>
+        <label>标签</label>
+        <input class="admin-tag-input" type="text" name="tags" placeholder="#tag1 #tag2" data-tag-input data-tag-require-hash="1">
+        <p class="hint">发布作品需使用 # 标签，选择子标签后会提示补全父标签。</p>
+        <label>分区</label>
+        <select class="admin-select" name="collection" data-user-upload-collection>
+          <option value="">自动</option>
+        </select>
+        <div class="admin-actions-row">
+          <button class="btn primary" type="submit">开始上传</button>
+          <p class="hint" data-user-upload-hint></p>
+        </div>
+      </form>
+    </section>
+
+    <section class="admin-toolbar">
+      <div>
+        <h2>我的作品列表</h2>
+        <p class="muted" data-user-login-hint>未登录时无法加载。</p>
+      </div>
+    </section>
+    <section class="gallery user-gallery" data-user-gallery data-masonry aria-live="polite"></section>
+    <div class="empty" data-user-empty>暂无作品，先上传一张吧。</div>
+  </main>
+
+  <div class="search-overlay" data-search-overlay aria-hidden="true">
+    <div class="search-panel" role="dialog" aria-modal="true">
+      <button class="icon-button close-button" type="button" data-search-close aria-label="关闭搜索">×</button>
+      <p class="search-title">搜索作品</p>
+      <form action="/search/" method="get" class="search-form">
+        <input type="search" name="q" placeholder="搜索标题、描述、标签" autocomplete="off" data-search-input>
+        <button class="btn primary" type="submit">搜索</button>
+      </form>
+      <p class="search-hint">支持标签、标题与描述匹配（# 可选）。</p>
+    </div>
+  </div>
+
+  <script src="/static/js/ui.js?v={{ static_version }}" defer></script>
+  <script src="/static/js/user.js?v={{ static_version }}" defer></script>
+</body>
+</html>

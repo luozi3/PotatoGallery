@@ -12,14 +12,14 @@
   {% endif %}
   <link rel="stylesheet" href="/static/styles/gallery.css?v={{ static_version }}">
 </head>
-<body class="page-home">
+<body class="page-error">
   <a class="skip-link" href="#main-content">跳到主要内容</a>
   <header class="topbar">
     <a class="brand" href="/" aria-label="返回首页">
       <span class="logo-dot" aria-hidden="true"></span>
       <div class="brand-text">
-        <strong>luozi_sama</strong>
-        <span>Illustration Gallery</span>
+        <strong>{{ site.brand_name or site_name }}</strong>
+        <span>{{ site.brand_tagline }}</span>
       </div>
     </a>
     <nav class="topnav" aria-label="顶栏导航">
@@ -27,12 +27,47 @@
       <a href="/status/">运行状态</a>
     </nav>
   </header>
-  <main id="main-content" tabindex="-1">
-    <div class="empty global">
-      <h1>维护中</h1>
-      <p>站点正在维护或发布中，请稍后刷新。</p>
-      <p class="muted">本页面为静态占位，不影响已发布内容访问。</p>
-    </div>
+  <main id="main-content" class="error-main" tabindex="-1">
+    <section class="error-hero">
+      <div class="error-card">
+        <div class="error-eyebrow">很抱歉</div>
+        <h1 class="error-title">站点维护中</h1>
+        <p class="error-lead">您浏览的页面正在维护或发布，请稍后再来。已发布内容仍可正常访问。</p>
+        <div class="error-actions">
+          <a class="btn primary" href="/">回到首页</a>
+          <a class="btn ghost" href="/status/">查看状态</a>
+        </div>
+        <div class="error-meta">
+          <span class="error-code">503</span>
+          <span class="error-tag">Maintenance</span>
+        </div>
+      </div>
+      <figure class="error-figure">
+        <div class="error-figure-frame">
+          <img src="/static/images/error-figure.webp" alt="维护中的小人插画" width="950" height="1200" loading="lazy" decoding="async">
+        </div>
+        <figcaption>维护期间如需帮助，可先查看状态页了解进度。</figcaption>
+      </figure>
+    </section>
+    <section class="error-tips" aria-label="提示">
+      <div class="error-tip">
+        <h2>提示</h2>
+        <ul>
+          <li>维护完成后页面会自动恢复访问。</li>
+          <li>若你是管理员，可检查发布或维护日志。</li>
+          <li>长时间未恢复时，请稍后刷新或查看状态。</li>
+        </ul>
+      </div>
+      <div class="error-tip">
+        <h2>为什么会维护？</h2>
+        <p>维护通常用于发布新内容、清理缓存或进行系统优化。</p>
+      </div>
+      <div class="error-tip">
+        <h2>感谢理解</h2>
+        <p>感谢你的耐心等待，我们会尽快恢复服务。</p>
+      </div>
+    </section>
   </main>
+  <script src="/static/js/ui.js?v={{ static_version }}" defer></script>
 </body>
 </html>

@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>版权与 DMCA ｜ {{ site_name }}</title>
+  <meta name="description" content="版权声明与侵权通知处理方式">
+  <meta name="theme-color" content="{{ site.theme_color }}">
+  {% if site_url %}
+  <link rel="canonical" href="{{ site_url }}/dmca/">
+  {% endif %}
+  <link rel="stylesheet" href="/static/styles/gallery.css?v={{ static_version }}">
+</head>
+<body class="page-dmca">
+  <a class="skip-link" href="#main-content">跳到主要内容</a>
+  <header class="topbar">
+    <div class="topbar-left">
+      <a class="brand" href="/" aria-label="返回首页">
+        <span class="logo-dot" aria-hidden="true"></span>
+        <div class="brand-text">
+          <strong>{{ site.brand_name or site_name }}</strong>
+          <span>{{ site.brand_tagline }}</span>
+        </div>
+      </a>
+      <button class="icon-button theme-toggle" type="button" data-theme-toggle aria-label="切换主题">
+        <span class="icon" aria-hidden="true">◐</span>
+      </button>
+    </div>
+    <nav class="topnav" aria-label="顶栏导航">
+      <a href="/">首页</a>
+      <a href="/tags/">标签</a>
+      <a href="/search/">搜索</a>
+      <a href="/wiki/">Wiki</a>
+    </nav>
+    <div class="topbar-right">
+      <button class="search-trigger" type="button" data-search-open aria-label="打开搜索">搜索标题、描述、标签</button>
+      <span class="user-avatar" data-user-avatar hidden>
+        <img src="{{ site.auth_avatar_url }}" alt="用户头像" loading="lazy" width="32" height="32" data-user-avatar-img>
+      </span>
+      <a class="icon-link" href="/auth/login/" data-auth-login-link>登录</a>
+      {% if auth.registration_mode != "closed" %}
+      <a class="icon-link" href="/auth/register/" data-auth-register-link>注册</a>
+      {% endif %}
+      <a class="icon-link admin-entry" href="/admin/" data-admin-entry hidden>管理</a>
+      <a class="icon-link admin-entry" href="/admin/tags/" data-admin-entry hidden>标签管理</a>
+      <a class="icon-link admin-entry" href="/status/" data-admin-entry hidden>状态</a>
+    </div>
+  </header>
+
+  <main id="main-content" class="dmca-shell" tabindex="-1">
+    <section class="dmca-hero">
+      <div class="dmca-hero-main">
+        <p class="dmca-eyebrow">版权与 DMCA</p>
+        <h1>版权/侵权删除申请</h1>
+        <p class="dmca-lead">© 2025 PotatoGallery by luozi_sama。图片版权归原作者，本站仅用于展示与交流。</p>
+      </div>
+    </section>
+
+    <section class="dmca-board" aria-label="提交要求">
+      <article class="dmca-tile">
+        <div class="dmca-tile-mark">01</div>
+        <h2>身份与联系</h2>
+        <p>填写姓名、所在地区与可用邮箱，用于核验与后续通知。</p>
+      </article>
+      <article class="dmca-tile">
+        <div class="dmca-tile-mark">02</div>
+        <h2>权利归属</h2>
+        <p>明确选择权利身份，并可补充授权来源或说明。</p>
+      </article>
+      <article class="dmca-tile">
+        <div class="dmca-tile-mark">03</div>
+        <h2>指定作品</h2>
+        <p>提供本站单个作品链接（URL），每次仅提交一张作品。</p>
+      </article>
+      <article class="dmca-tile">
+        <div class="dmca-tile-mark">04</div>
+        <h2>证明材料</h2>
+        <p>补充原始来源与证明信息，帮助快速核验与处理。</p>
+      </article>
+    </section>
+
+    <section class="dmca-form-shell" aria-label="删除申请表">
+      <header class="dmca-form-header">
+        <div>
+          <p class="dmca-eyebrow">信息填写</p>
+          <h2>删除申请表</h2>
+          <p class="dmca-note">本表单为预留入口，后续将接入处理流程。</p>
+        </div>
+        <div class="dmca-form-meta">
+          <span>每次仅提交一张作品</span>
+          <span>请务必填写完整</span>
+        </div>
+      </header>
+      <form class="dmca-form" action="#" method="post">
+        <div class="dmca-form-grid">
+          <label class="dmca-cell" data-required-field>
+            <span>姓名 <span class="dmca-required">*</span></span>
+            <input class="admin-input" type="text" name="full_name" required autocomplete="name">
+          </label>
+          <label class="dmca-cell" data-required-field>
+            <span>有效邮箱 <span class="dmca-required">*</span></span>
+            <input class="admin-input" type="email" name="email" required autocomplete="email">
+          </label>
+          <label class="dmca-cell" data-required-field>
+            <span>国家/地区 <span class="dmca-required">*</span></span>
+            <input class="admin-input" type="text" name="region" required placeholder="国家 / 地区">
+          </label>
+          <label class="dmca-cell">
+            <span>备用联系方式</span>
+            <input class="admin-input" type="text" name="contact" placeholder="社交账号 / 电话（可选）">
+          </label>
+          <label class="dmca-cell dmca-cell-wide" data-required-field>
+            <span>作品链接（本站 URL）<span class="dmca-required">*</span></span>
+            <input class="admin-input" type="url" name="work_url" required placeholder="https://luozi.de5.net/images/.../index.html">
+            <span class="dmca-hint">必须填写本站具体图片链接，不能提交模糊描述或批量删除要求。</span>
+          </label>
+          <label class="dmca-cell dmca-cell-wide" data-required-field>
+            <span>原始作品来源（URL）<span class="dmca-required">*</span></span>
+            <input class="admin-input" type="url" name="source_url" required placeholder="原始发布页或个人主页">
+          </label>
+          <label class="dmca-cell dmca-cell-wide" data-required-field>
+            <span>侵权说明 <span class="dmca-required">*</span></span>
+            <textarea class="admin-textarea" name="claim" required placeholder="说明版权归属与侵权原因"></textarea>
+          </label>
+          <label class="dmca-cell dmca-cell-wide" data-required-field>
+            <span>证明材料 <span class="dmca-required">*</span></span>
+            <textarea class="admin-textarea" name="evidence" required placeholder="填写授权说明、作品出处、证明链接"></textarea>
+          </label>
+        </div>
+
+        <fieldset class="dmca-fieldset" data-required-group="authority">
+          <legend>授权声明 <span class="dmca-required">*</span></legend>
+          <div class="dmca-fieldset-grid">
+            <label class="dmca-option">
+              <input type="radio" name="authority" value="owner" required>
+              我是版权所有者。
+            </label>
+            <label class="dmca-option">
+              <input type="radio" name="authority" value="authorized" required>
+              我已获得版权所有者的合法授权。
+            </label>
+            <label class="dmca-cell dmca-cell-wide">
+              <span>授权说明</span>
+              <input class="admin-input" type="text" name="authority_note" placeholder="授权来源 / 授权说明（可选）">
+            </label>
+          </div>
+        </fieldset>
+
+        <div class="dmca-fieldset" data-required-group="truthfulness">
+          <div class="dmca-fieldset-title">真实性宣誓 <span class="dmca-required">*</span></div>
+          <div class="dmca-checks">
+            <label class="dmca-option">
+              <input type="checkbox" name="single_work" required>
+              我确认本次仅申请删除一张作品，并已提供对应链接。
+            </label>
+            <label class="dmca-option">
+              <input type="checkbox" name="truthful" required>
+              我保证以上提供的信息是真实准确的。
+            </label>
+          </div>
+        </div>
+
+        <div class="dmca-actions">
+          <button class="btn primary" type="submit">提交申请</button>
+          <p class="dmca-hint">提交后请耐心等待处理。</p>
+        </div>
+      </form>
+    </section>
+  </main>
+
+  <div class="search-overlay" data-search-overlay aria-hidden="true">
+    <div class="search-panel" role="dialog" aria-modal="true">
+      <button class="icon-button close-button" type="button" data-search-close aria-label="关闭搜索">×</button>
+      <p class="search-title">搜索作品</p>
+      <form action="/search/" method="get" class="search-form">
+        <input type="search" name="q" placeholder="搜索标题、描述、标签" autocomplete="off" data-search-input>
+        <button class="btn primary" type="submit">搜索</button>
+      </form>
+      <p class="search-hint">支持标签、标题与描述匹配（# 可选）。</p>
+    </div>
+  </div>
+
+  <script src="/static/js/ui.js?v={{ static_version }}" defer></script>
+  <script>
+    (() => {
+      const form = document.querySelector(".dmca-form");
+      if (!form) {
+        return;
+      }
+
+      const requiredFields = Array.from(form.querySelectorAll("[data-required-field]"));
+      const requiredGroups = Array.from(form.querySelectorAll("[data-required-group]"));
+
+      const markInvalid = (container, invalid) => {
+        container.classList.toggle("dmca-field-invalid", invalid);
+      };
+
+      const updateField = (label) => {
+        const field = label.querySelector("input, textarea, select");
+        if (!field) {
+          return;
+        }
+        markInvalid(label, !field.checkValidity());
+      };
+
+      const updateGroup = (group) => {
+        const radios = group.querySelectorAll("input[type=\"radio\"][required]");
+        if (radios.length > 0) {
+          const name = radios[0].name;
+          const checked = form.querySelector(`input[name="${name}"]:checked`);
+          markInvalid(group, !checked);
+          return;
+        }
+        const checks = group.querySelectorAll("input[type=\"checkbox\"][required]");
+        if (checks.length > 0) {
+          const allChecked = Array.from(checks).every((checkbox) => checkbox.checked);
+          markInvalid(group, !allChecked);
+          return;
+        }
+        const requiredInputs = group.querySelectorAll("[required]");
+        const allValid = Array.from(requiredInputs).every((field) => field.checkValidity());
+        markInvalid(group, !allValid);
+      };
+
+      const updateAll = () => {
+        requiredFields.forEach(updateField);
+        requiredGroups.forEach(updateGroup);
+      };
+
+      form.addEventListener("submit", (event) => {
+        form.dataset.validated = "1";
+        updateAll();
+        if (!form.checkValidity()) {
+          event.preventDefault();
+          form.reportValidity();
+        }
+      });
+
+      const handleInput = (event) => {
+        if (!form.dataset.validated) {
+          return;
+        }
+        const fieldLabel = event.target.closest("[data-required-field]");
+        if (fieldLabel) {
+          updateField(fieldLabel);
+        }
+        const group = event.target.closest("[data-required-group]");
+        if (group) {
+          updateGroup(group);
+        }
+      };
+
+      form.addEventListener("input", handleInput);
+      form.addEventListener("change", handleInput);
+    })();
+  </script>
+</body>
+</html>

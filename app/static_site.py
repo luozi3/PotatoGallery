@@ -9,36 +9,67 @@ from typing import Dict, Iterable, List, Mapping, Optional, Tuple
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from . import config
+from . import tagging
 from .storage import fsync_path
 
 TEMPLATE_DIR = config.STATIC / "templates"
 ASSET_DIR = config.STATIC
+PAGES_TEMPLATE_DIR = TEMPLATE_DIR / "pages"
+PAGES_STATIC_DIR = ASSET_DIR / "pages"
+RESERVED_PAGE_PREFIXES = {
+    "api",
+    "admin",
+    "auth",
+    "error",
+    "images",
+    "legal",
+    "raw",
+    "search",
+    "static",
+    "status",
+    "tags",
+    "thumb",
+    "upload",
+}
+RESERVED_PAGE_FILES = {
+    "404.html",
+    "index.html",
+    "maintenance.html",
+    "robots.txt",
+    "sitemap.xml",
+    "status.html",
+}
 DEFAULT_COLLECTION_META = {
     "mine": {
         "title": "我的作品",
-        "description": "luozi_sama 的原创插画，持续更新与打磨。",
+        "description": "站点原创插画与练习稿，持续更新与打磨。",
     },
     "favorites": {
         "title": "他人作品",
-        "description": "精挑细选的二次元插画，展示我喜欢的画风。",
+        "description": "精挑细选的二次元插画，展示收藏的画风。",
     },
 }
 DEFAULT_SITE_CONFIG = {
-    "site_name": "luozi_sama 的插画馆",
+    "site_name": "PotatoGallery 插画馆",
     "site_description": "静态插画展示站点，包含原创与精选收藏。",
-    "site_url": "https://luozi.de5.net",
+    "site_url": "",
     "theme_color": "#4c7cff",
     "locale": "zh_CN",
+    "brand_name": "",
+    "brand_tagline": "Illustration Gallery",
+    "copyright_year": None,
+    "copyright_holder": "",
     "live2d": {
         "enabled": False,
         "base_url": "/static/live2d",
         "model": "/static/live2d/assets/Pio/Pio.model.json",
         "canvas_id": "live2dcanvas",
+        "width": 300,
+        "height": 336,
     },
-    "counter": {
-        "enabled": False,
-        "img_url": "https://luozi.de5.net/counter/get/@luozisamaworld?theme=gelbooru",
-    },
+    "counter": {"enabled": False, "img_url": ""},
+    "auth_avatar_url": "/thumb/39e2f18e62ab45f5aa871860919516d0.webp",
+    "thumb_bg_color": "#f3e7ff",
 }
 
 
@@ -119,19 +150,38 @@ def _merge_dict(base: dict, overrides: dict) -> dict:
     return merged
 
 
-def load_site_config() -> dict:
-    cfg_path = config.SITE_CONFIG_PATH
-    site = dict(DEFAULT_SITE_CONFIG)
-    if not cfg_path.exists():
-        return site
+def _read_json_dict(path: Path) -> Optional[dict]:
+    if not path.exists():
+        return None
     try:
-        raw = json.loads(cfg_path.read_text(encoding="utf-8"))
-        if isinstance(raw, dict):
-            site = _merge_dict(site, raw)
+        raw = json.loads(path.read_text(encoding="utf-8"))
     except Exception:
-        return site
+        return None
+    if isinstance(raw, dict):
+        return raw
+    return None
+
+
+def load_site_config() -> dict:
+    site = dict(DEFAULT_SITE_CONFIG)
+    for cfg_path in (config.SITE_CONFIG_PATH, config.SITE_CONFIG_LOCAL_PATH):
+        raw = _read_json_dict(cfg_path)
+        if raw:
+            site = _merge_dict(site, raw)
     site_url = str(site.get("site_url") or "").rstrip("/")
     site["site_url"] = site_url
+    if not site.get("brand_name"):
+        site["brand_name"] = site.get("site_name") or ""
+    if not site.get("copyright_holder"):
+        site["copyright_holder"] = site.get("brand_name") or site.get("site_name") or ""
+    current_year = time.gmtime().tm_year
+    try:
+        year_value = site.get("copyright_year")
+        if year_value in (None, ""):
+            raise ValueError
+        site["copyright_year"] = int(year_value)
+    except (TypeError, ValueError):
+        site["copyright_year"] = current_year
     return site
 
 
@@ -170,20 +220,84 @@ def human_bytes(num: int) -> str:
     return f"{num:.1f}TB"
 
 
-def parse_tags(raw: Optional[str]) -> List[str]:
-    if not raw:
-        return []
-    try:
-        data = json.loads(raw)
-    except Exception:
-        return []
-    if isinstance(data, list):
-        return [str(tag) for tag in data if str(tag).strip()]
-    return []
+def parse_tags(raw: Optional[str], alias_map: Optional[Dict[str, str]] = None) -> List[str]:
+    return tagging.parse_tags_json(raw, alias_map, drop_unknown=True)
 
 
 def tag_slug(tag: str) -> str:
-    return quote(tag, safe="")
+    return tagging.safe_tag_slug(tag)
+
+
+def _strip_template_suffix(name: str) -> str:
+    if name.endswith(".html.j2"):
+        return name[:-8]
+    if name.endswith(".j2"):
+        return name[:-3]
+    return Path(name).stem
+
+
+def _ensure_extra_page_allowed(url_path: str, source: Path, seen: set) -> None:
+    cleaned = url_path.lstrip("/")
+    if not cleaned:
+        raise ValueError(f"extra page path is empty: {source}")
+    first = cleaned.split("/", 1)[0]
+    if first in RESERVED_PAGE_PREFIXES:
+        raise ValueError(f"extra page path {url_path} conflicts with reserved prefix: {source}")
+    if cleaned in RESERVED_PAGE_FILES:
+        raise ValueError(f"extra page path {url_path} conflicts with reserved file: {source}")
+    if url_path in seen:
+        raise ValueError(f"duplicate extra page path {url_path}: {source}")
+    seen.add(url_path)
+
+
+def _render_extra_pages(
+    env: Environment,
+    staging_dir: Path,
+    context: Dict[str, object],
+) -> List[str]:
+    extra_urls: List[str] = []
+    seen_urls: set = set()
+
+    if PAGES_TEMPLATE_DIR.exists():
+        for tpl_path in sorted(PAGES_TEMPLATE_DIR.rglob("*.html.j2")):
+            rel = tpl_path.relative_to(PAGES_TEMPLATE_DIR)
+            base_name = _strip_template_suffix(rel.name)
+            if base_name == "index" and rel.parent == Path("."):
+                continue
+            if base_name == "index":
+                target_dir = staging_dir.joinpath(*rel.parent.parts)
+                url_parts = rel.parent.parts
+            else:
+                target_dir = staging_dir.joinpath(*rel.parent.parts, base_name)
+                url_parts = (*rel.parent.parts, base_name)
+            if not url_parts:
+                continue
+            url_path = "/" + "/".join(url_parts) + "/"
+            _ensure_extra_page_allowed(url_path, tpl_path, seen_urls)
+            target = target_dir / "index.html"
+            if target.exists():
+                raise ValueError(f"extra page output already exists: {target}")
+            target_dir.mkdir(parents=True, exist_ok=True)
+            template_name = str(tpl_path.relative_to(TEMPLATE_DIR))
+            html = env.get_template(template_name).render(**context)
+            target.write_text(html, encoding="utf-8")
+            extra_urls.append(url_path)
+
+    if PAGES_STATIC_DIR.exists():
+        for src in sorted(PAGES_STATIC_DIR.rglob("*.html")):
+            rel = src.relative_to(PAGES_STATIC_DIR)
+            if rel.name.startswith("."):
+                continue
+            url_path = "/" + "/".join(rel.parts)
+            _ensure_extra_page_allowed(url_path, src, seen_urls)
+            target = staging_dir / rel
+            if target.exists():
+                raise ValueError(f"extra page output already exists: {target}")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, target)
+            extra_urls.append(url_path)
+
+    return extra_urls
 
 
 def build_site(images: Iterable[Mapping[str, object]]) -> Path:
@@ -199,11 +313,26 @@ def build_site(images: Iterable[Mapping[str, object]]) -> Path:
     env.filters["urlencode"] = lambda value: quote(str(value), safe="")
 
     site = load_site_config()
-    site_name = site.get("site_name", "luozi_sama 的插画馆")
+    auth_config = dict(config.AUTH_CONFIG)
+    auth_config["registration_mode"] = config.AUTH_REGISTRATION_MODE
+    auth_config["require_https"] = config.AUTH_REQUIRE_HTTPS
+    site_name = site.get("site_name", DEFAULT_SITE_CONFIG.get("site_name", "PotatoGallery 插画馆"))
     site_description = site.get("site_description", "")
     site_url = site.get("site_url", "")
 
     collections_meta, default_collection, collection_order = load_collections_config()
+    tags_meta, tag_order = tagging.load_tags_config()
+    alias_map = tagging.build_alias_map(tags_meta)
+    parent_map = tagging.build_parent_map(tags_meta, alias_map)
+    child_map: Dict[str, List[str]] = {}
+    for tag, parents in parent_map.items():
+        for parent in parents:
+            child_map.setdefault(parent, []).append(tag)
+    tag_slug_map = {
+        tag: (info.get("slug") or tag_slug(tag))
+        for tag, info in tags_meta.items()
+        if not info.get("alias_to")
+    }
     collections_ctx = {
         key: {
             "title": value["title"],
@@ -219,12 +348,14 @@ def build_site(images: Iterable[Mapping[str, object]]) -> Path:
     for img in images:
         img_ctx = dict(img)
         thumb_path_value = img_ctx.get("thumb_path")
-        img_ctx["thumb_filename"] = Path(thumb_path_value).name if thumb_path_value else f"{img['uuid']}.jpg"
+        img_ctx["thumb_filename"] = (
+            Path(thumb_path_value).name if thumb_path_value else f"{img['uuid']}{config.THUMB_EXT}"
+        )
         img_ctx["raw_filename"] = f"{img['uuid']}{img['ext']}"
         img_ctx["bytes_human"] = human_bytes(int(img["bytes"]))
         img_ctx["title"] = img_ctx.get("title_override") or simple_title(str(img["original_name"]))
         img_ctx["description"] = img_ctx.get("description") or ""
-        img_ctx["tags"] = parse_tags(img_ctx.get("tags_json"))
+        img_ctx["tags"] = parse_tags(img_ctx.get("tags_json"), alias_map)
         img_ctx["orientation"] = classify_orientation(
             int(img["width"]) if img["width"] else None,
             int(img["height"]) if img["height"] else None,
@@ -263,16 +394,93 @@ def build_site(images: Iterable[Mapping[str, object]]) -> Path:
             }
         )
 
-    tag_counts: Dict[str, int] = {}
     tag_images: Dict[str, List[dict]] = {}
+    tag_seen: Dict[str, set] = {}
+
+    def get_ancestors(tag: str, cache: Dict[str, List[str]]) -> List[str]:
+        if tag in cache:
+            return cache[tag]
+        parents = parent_map.get(tag, [])
+        ancestors: List[str] = []
+        for parent in parents:
+            if parent not in ancestors:
+                ancestors.append(parent)
+            for ancestor in get_ancestors(parent, cache):
+                if ancestor not in ancestors:
+                    ancestors.append(ancestor)
+        cache[tag] = ancestors
+        return ancestors
+
+    ancestors_cache: Dict[str, List[str]] = {}
     for img in images_ctx:
+        uu = img.get("uuid")
         for tag in img.get("tags", []):
-            tag_counts[tag] = tag_counts.get(tag, 0) + 1
-            tag_images.setdefault(tag, []).append(img)
-    tags_list = [
-        {"tag": tag, "slug": tag_slug(tag), "count": count}
-        for tag, count in sorted(tag_counts.items(), key=lambda x: (-x[1], x[0]))
-    ]
+            for resolved in [tag] + get_ancestors(tag, ancestors_cache):
+                tag_seen.setdefault(resolved, set())
+                if uu in tag_seen[resolved]:
+                    continue
+                tag_seen[resolved].add(uu)
+                tag_images.setdefault(resolved, []).append(img)
+
+    tag_counts: Dict[str, int] = {tag: len(items) for tag, items in tag_seen.items()}
+    tags_list = []
+    ordered_tags = (tag_order or []) + sorted(tags_meta.keys())
+    seen_tags = set()
+    for tag in ordered_tags:
+        if tag in seen_tags:
+            continue
+        seen_tags.add(tag)
+        meta = tags_meta.get(tag, {})
+        if not meta or meta.get("alias_to"):
+            continue
+        slug = meta.get("slug") or tag_slug(tag)
+        tags_list.append(
+            {
+                "tag": tag,
+                "slug": slug,
+                "count": tag_counts.get(tag, 0),
+                "intro": meta.get("intro") or "",
+                "aliases": meta.get("aliases") or [],
+                "parents": parent_map.get(tag, []),
+                "children": child_map.get(tag, []),
+                "type": meta.get("type") or "general",
+            }
+        )
+    top_tags = sorted(
+        tags_list,
+        key=lambda item: (-int(item.get("count") or 0), str(item.get("tag") or "")),
+    )
+    alias_pages = []
+    seen_alias = set()
+    for tag in ordered_tags:
+        if tag in seen_alias:
+            continue
+        seen_alias.add(tag)
+        meta = tags_meta.get(tag, {})
+        if not meta:
+            continue
+        alias_to = tagging.normalize_tag(meta.get("alias_to") or "")
+        if not alias_to:
+            continue
+        canonical_meta = tags_meta.get(alias_to)
+        if not canonical_meta or canonical_meta.get("alias_to"):
+            continue
+        canonical_slug = canonical_meta.get("slug") or tag_slug(alias_to)
+        alias_slug = meta.get("slug") or tag_slug(tag)
+        if alias_slug == canonical_slug:
+            continue
+        alias_pages.append(
+            {
+                "tag": tag,
+                "slug": alias_slug,
+                "count": tag_counts.get(alias_to, 0),
+                "intro": meta.get("intro") or "",
+                "aliases": meta.get("aliases") or [],
+                "alias_of": alias_to,
+                "alias_of_slug": canonical_slug,
+                "type": canonical_meta.get("type") or "general",
+            }
+        )
 
     og_image = ""
     if images_ctx:
@@ -329,6 +537,52 @@ def build_site(images: Iterable[Mapping[str, object]]) -> Path:
     (data_dir / "search_index.json").write_text(
         json.dumps(search_index, ensure_ascii=False), encoding="utf-8"
     )
+    tag_index_tags = []
+    ordered_tags_all = (tag_order or []) + sorted(tags_meta.keys())
+    seen_all: set = set()
+    for tag in ordered_tags_all:
+        if tag in seen_all:
+            continue
+        seen_all.add(tag)
+        meta = tags_meta.get(tag) or {}
+        alias_to = tagging.normalize_tag(meta.get("alias_to") or "")
+        canonical = alias_to or tag
+        canonical_meta = tags_meta.get(canonical) or {}
+        canonical_slug = canonical_meta.get("slug") or tag_slug(canonical)
+        tag_type = canonical_meta.get("type") or meta.get("type") or "general"
+        tag_index_tags.append(
+            {
+                "tag": tag,
+                "slug": meta.get("slug") or tag_slug(tag),
+                "aliases": meta.get("aliases") or [],
+                "parents": parent_map.get(tag, []) if not alias_to else [],
+                "alias_of": alias_to,
+                "alias_of_slug": canonical_slug if alias_to else "",
+                "type": tag_type,
+            }
+        )
+    tag_index = {
+        "generated_at": int(time.time()),
+        "tags": tag_index_tags,
+    }
+    (data_dir / "tag_index.json").write_text(
+        json.dumps(tag_index, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    manifest = {
+        "version": 1,
+        "chunked": False,
+        "generated_at": int(time.time()),
+        "chunks": [
+            {
+                "path": "search_index.json",
+                "images": len(images_ctx),
+                "tags": len(tags_list),
+            }
+        ],
+    }
+    (data_dir / "search_manifest.json").write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
 
     index_html = env.get_template("index.html.j2").render(
         images=images_ctx,
@@ -336,34 +590,30 @@ def build_site(images: Iterable[Mapping[str, object]]) -> Path:
         collections=collections_ctx,
         collections_list=collections_list,
         tags=tags_list,
+        top_tags=top_tags,
         site=site,
+        auth=auth_config,
         site_name=site_name,
         site_description=site_description,
         site_url=site_url,
         og_image=og_image,
         json_ld=index_json_ld,
+        tag_slug_map=tag_slug_map,
         static_version=static_version,
     )
     (staging_dir / "index.html").write_text(index_html, encoding="utf-8")
-
-    flow_html = env.get_template("flow.html.j2").render(
-        site=site,
-        site_name=site_name,
-        site_description=site_description,
-        site_url=site_url,
-        static_version=static_version,
-    )
-    (staging_dir / "flow.html").write_text(flow_html, encoding="utf-8")
 
     search_dir = staging_dir / "search"
     search_dir.mkdir(parents=True, exist_ok=True)
     search_html = env.get_template("search.html.j2").render(
         site=site,
+        auth=auth_config,
         site_name=site_name,
         site_description=site_description,
         site_url=site_url,
         collections_list=collections_list,
         tags=tags_list,
+        tag_slug_map=tag_slug_map,
         static_version=static_version,
     )
     (search_dir / "index.html").write_text(search_html, encoding="utf-8")
@@ -372,10 +622,12 @@ def build_site(images: Iterable[Mapping[str, object]]) -> Path:
     tags_dir.mkdir(parents=True, exist_ok=True)
     tags_index_html = env.get_template("tags.html.j2").render(
         site=site,
+        auth=auth_config,
         site_name=site_name,
         site_description=site_description,
         site_url=site_url,
         tags=tags_list,
+        tag_slug_map=tag_slug_map,
         static_version=static_version,
     )
     (tags_dir / "index.html").write_text(tags_index_html, encoding="utf-8")
@@ -385,6 +637,7 @@ def build_site(images: Iterable[Mapping[str, object]]) -> Path:
         tag_dir.mkdir(parents=True, exist_ok=True)
         tag_html = tag_tpl.render(
             site=site,
+            auth=auth_config,
             site_name=site_name,
             site_description=site_description,
             site_url=site_url,
@@ -392,6 +645,24 @@ def build_site(images: Iterable[Mapping[str, object]]) -> Path:
             images=tag_images.get(tag["tag"], []),
             collections=collections_ctx,
             collections_list=collections_list,
+            tag_slug_map=tag_slug_map,
+            static_version=static_version,
+        )
+        (tag_dir / "index.html").write_text(tag_html, encoding="utf-8")
+    for alias in alias_pages:
+        tag_dir = tags_dir / alias["slug"]
+        tag_dir.mkdir(parents=True, exist_ok=True)
+        tag_html = tag_tpl.render(
+            site=site,
+            auth=auth_config,
+            site_name=site_name,
+            site_description=site_description,
+            site_url=site_url,
+            tag=alias,
+            images=tag_images.get(alias["alias_of"], []),
+            collections=collections_ctx,
+            collections_list=collections_list,
+            tag_slug_map=tag_slug_map,
             static_version=static_version,
         )
         (tag_dir / "index.html").write_text(tag_html, encoding="utf-8")
@@ -400,6 +671,7 @@ def build_site(images: Iterable[Mapping[str, object]]) -> Path:
     admin_dir.mkdir(parents=True, exist_ok=True)
     admin_html = env.get_template("admin.html.j2").render(
         site=site,
+        auth=auth_config,
         site_name=site_name,
         site_description=site_description,
         site_url=site_url,
@@ -408,21 +680,95 @@ def build_site(images: Iterable[Mapping[str, object]]) -> Path:
     )
     (admin_dir / "index.html").write_text(admin_html, encoding="utf-8")
 
+    admin_images_dir = admin_dir / "images"
+    admin_images_dir.mkdir(parents=True, exist_ok=True)
+    admin_images_html = env.get_template("admin_images.html.j2").render(
+        site=site,
+        auth=auth_config,
+        site_name=site_name,
+        site_description=site_description,
+        site_url=site_url,
+        collections_list=collections_list,
+        static_version=static_version,
+    )
+    (admin_images_dir / "index.html").write_text(admin_images_html, encoding="utf-8")
+
+    admin_upload_dir = admin_dir / "upload"
+    admin_upload_dir.mkdir(parents=True, exist_ok=True)
+    admin_upload_html = env.get_template("admin_upload.html.j2").render(
+        site=site,
+        auth=auth_config,
+        site_name=site_name,
+        site_description=site_description,
+        site_url=site_url,
+        collections_list=collections_list,
+        static_version=static_version,
+    )
+    (admin_upload_dir / "index.html").write_text(admin_upload_html, encoding="utf-8")
+
+    admin_collections_dir = admin_dir / "collections"
+    admin_collections_dir.mkdir(parents=True, exist_ok=True)
+    admin_collections_html = env.get_template("admin_collections.html.j2").render(
+        site=site,
+        auth=auth_config,
+        site_name=site_name,
+        site_description=site_description,
+        site_url=site_url,
+        collections_list=collections_list,
+        static_version=static_version,
+    )
+    (admin_collections_dir / "index.html").write_text(admin_collections_html, encoding="utf-8")
+
+    admin_auth_dir = admin_dir / "auth"
+    admin_auth_dir.mkdir(parents=True, exist_ok=True)
+    admin_auth_html = env.get_template("admin_auth.html.j2").render(
+        site=site,
+        auth=auth_config,
+        site_name=site_name,
+        site_description=site_description,
+        site_url=site_url,
+        collections_list=collections_list,
+        static_version=static_version,
+    )
+    (admin_auth_dir / "index.html").write_text(admin_auth_html, encoding="utf-8")
+
     admin_tags_dir = admin_dir / "tags"
     admin_tags_dir.mkdir(parents=True, exist_ok=True)
     admin_tags_html = env.get_template("admin_tags.html.j2").render(
         site=site,
+        auth=auth_config,
         site_name=site_name,
         site_description=site_description,
         site_url=site_url,
         static_version=static_version,
     )
-    (admin_tags_dir / "index.html").write_text(admin_tags_html, encoding="utf-8")
 
-    # 直接拷贝静态根页（例如 wall.html），方便非模板页随发布同步
-    wall_src = ASSET_DIR / "wall.html"
-    if wall_src.exists():
-        shutil.copy2(wall_src, staging_dir / "wall.html")
+    auth_dir = staging_dir / "auth"
+    auth_dir.mkdir(parents=True, exist_ok=True)
+    login_dir = auth_dir / "login"
+    login_dir.mkdir(parents=True, exist_ok=True)
+    login_html = env.get_template("auth_login.html.j2").render(
+        site=site,
+        auth=auth_config,
+        site_name=site_name,
+        site_description=site_description,
+        site_url=site_url,
+        static_version=static_version,
+    )
+    (login_dir / "index.html").write_text(login_html, encoding="utf-8")
+
+    register_dir = auth_dir / "register"
+    register_dir.mkdir(parents=True, exist_ok=True)
+    register_html = env.get_template("auth_register.html.j2").render(
+        site=site,
+        auth=auth_config,
+        site_name=site_name,
+        site_description=site_description,
+        site_url=site_url,
+        static_version=static_version,
+    )
+    (register_dir / "index.html").write_text(register_html, encoding="utf-8")
+    (admin_tags_dir / "index.html").write_text(admin_tags_html, encoding="utf-8")
 
     detail_tpl = env.get_template("detail.html.j2")
     images_dir = staging_dir / "images"
@@ -448,6 +794,7 @@ def build_site(images: Iterable[Mapping[str, object]]) -> Path:
         html = detail_tpl.render(
             image=img,
             site=site,
+            auth=auth_config,
             site_name=site_name,
             site_description=site_description,
             site_url=site_url,
@@ -455,12 +802,14 @@ def build_site(images: Iterable[Mapping[str, object]]) -> Path:
             image_url=image_url,
             json_ld=detail_json_ld,
             collections=collections_ctx,
+            tag_slug_map=tag_slug_map,
             static_version=static_version,
         )
         (page_dir / "index.html").write_text(html, encoding="utf-8")
 
     status_html = env.get_template("status.html.j2").render(
         site=site,
+        auth=auth_config,
         site_name=site_name,
         site_description=site_description,
         site_url=site_url,
@@ -478,6 +827,7 @@ def build_site(images: Iterable[Mapping[str, object]]) -> Path:
     ]:
         html = env.get_template(name).render(
             site=site,
+            auth=auth_config,
             site_name=site_name,
             site_description=site_description,
             site_url=site_url,
@@ -492,6 +842,7 @@ def build_site(images: Iterable[Mapping[str, object]]) -> Path:
         subdir.mkdir(parents=True, exist_ok=True)
         html = env.get_template(name).render(
             site=site,
+            auth=auth_config,
             site_name=site_name,
             site_description=site_description,
             site_url=site_url,
@@ -499,17 +850,39 @@ def build_site(images: Iterable[Mapping[str, object]]) -> Path:
         )
         (subdir / "index.html").write_text(html, encoding="utf-8")
 
+    extra_urls = _render_extra_pages(
+        env,
+        staging_dir,
+        {
+            "site": site,
+            "auth": auth_config,
+            "site_name": site_name,
+            "site_description": site_description,
+            "site_url": site_url,
+            "static_version": static_version,
+            "tags": tags_list,
+            "collections_list": collections_list,
+            "collections": collections_ctx,
+            "stats": stats,
+        },
+    )
+
     urls = [
         {"loc": f"{site_url}/" if site_url else "/"},
-        {"loc": f"{site_url}/wall.html" if site_url else "/wall.html"},
-        {"loc": f"{site_url}/flow.html" if site_url else "/flow.html"},
         {"loc": f"{site_url}/search/" if site_url else "/search/"},
         {"loc": f"{site_url}/tags/" if site_url else "/tags/"},
         {"loc": f"{site_url}/status/" if site_url else "/status/"},
     ]
+    for path in extra_urls:
+        urls.append({"loc": f"{site_url}{path}" if site_url else path})
     for tag in tags_list:
-        tag_loc = f"{site_url}/tags/{tag['slug']}/" if site_url else f"/tags/{tag['slug']}/"
+        tag_slug_value = quote(str(tag["slug"]), safe="")
+        tag_loc = f"{site_url}/tags/{tag_slug_value}/" if site_url else f"/tags/{tag_slug_value}/"
         urls.append({"loc": tag_loc})
+    for alias in alias_pages:
+        alias_slug_value = quote(str(alias["slug"]), safe="")
+        alias_loc = f"{site_url}/tags/{alias_slug_value}/" if site_url else f"/tags/{alias_slug_value}/"
+        urls.append({"loc": alias_loc})
     for img in images_ctx:
         loc = f"{site_url}/images/{img['uuid']}/index.html" if site_url else f"/images/{img['uuid']}/index.html"
         lastmod = str(img.get("created_at") or "")

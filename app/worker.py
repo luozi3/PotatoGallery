@@ -23,7 +23,7 @@ def parse_uuid_from_name(path: Path) -> Optional[str]:
     return match.group(1).lower() if match else None
 
 
-THUMB_NAME_PATTERN = re.compile(r"^L(\d{8})A(\d{3})\.jpg$")
+THUMB_NAME_PATTERN = re.compile(r"^L(\d{8})A(\d{3})\.(?:jpg|webp)$")
 
 
 def next_thumb_filename(today: Optional[datetime.date] = None) -> str:
@@ -44,7 +44,7 @@ def next_thumb_filename(today: Optional[datetime.date] = None) -> str:
         match = THUMB_NAME_PATTERN.match(name)
         if match:
             max_seq = max(max_seq, int(match.group(2)))
-    return f"L{date_str}A{max_seq + 1:03d}.jpg"
+    return f"L{date_str}A{max_seq + 1:03d}{config.THUMB_EXT}"
 
 
 def next_raw_file() -> Optional[Path]:
@@ -105,6 +105,14 @@ def process_file(path: Path) -> bool:
         return False
 
     with db.transaction() as conn:
+        pending = conn.execute(
+            """
+            SELECT owner_user_id, title, description, tags_json, collection_override
+            FROM upload_requests
+            WHERE uuid=?
+            """,
+            (uuid,),
+        ).fetchone()
         conn.execute(
             """
             INSERT INTO images (uuid, original_name, ext, mime, width, height, bytes, sha256, status, stored_path, thumb_path, thumb_width, thumb_height, dominant_color, created_at, updated_at)
@@ -140,6 +148,23 @@ def process_file(path: Path) -> bool:
                 color,
             ),
         )
+        if pending:
+            conn.execute(
+                """
+                UPDATE images
+                SET title_override=?, description=?, tags_json=?, collection_override=?, owner_user_id=?, updated_at=CURRENT_TIMESTAMP
+                WHERE uuid=?
+                """,
+                (
+                    pending["title"],
+                    pending["description"],
+                    pending["tags_json"],
+                    pending["collection_override"],
+                    pending["owner_user_id"],
+                    uuid,
+                ),
+            )
+            conn.execute("DELETE FROM upload_requests WHERE uuid=?", (uuid,))
         conn.execute(
             "INSERT INTO jobs (image_uuid, stage, status, message) VALUES (?, ?, ?, ?)",
             (uuid, "process", "done", ""),
@@ -239,6 +264,100 @@ def clear_force_flag() -> None:
             pass
 
 
+def read_uptime_seconds() -> float:
+    try:
+        with open("/proc/uptime", "r", encoding="utf-8") as f:
+            value = f.read().strip().split()[0]
+            return float(value)
+    except Exception:
+        return 0.0
+
+
+def _read_site_start_file(path: Path, tz: datetime.tzinfo) -> tuple[float, str]:
+    if not path.exists():
+        return 0.0, ""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        started_ts = float(data.get("started_at_ts", 0) or 0)
+        started_at = str(data.get("started_at") or "")
+        if started_ts <= 0 and started_at:
+            dt = datetime.datetime.fromisoformat(started_at)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=tz)
+            started_ts = dt.timestamp()
+        if started_ts > 0 and not started_at:
+            started_at = datetime.datetime.fromtimestamp(started_ts, tz).isoformat()
+        return started_ts, started_at
+    except Exception:
+        return 0.0, ""
+
+
+def _earliest_image_start(tz: datetime.tzinfo) -> tuple[float, str]:
+    with db.connect() as conn:
+        row = conn.execute(
+            "SELECT created_at FROM images ORDER BY created_at ASC LIMIT 1"
+        ).fetchone()
+    if not row or not row["created_at"]:
+        return 0.0, ""
+    try:
+        dt = datetime.datetime.fromisoformat(row["created_at"])
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=datetime.timezone.utc)
+        ts = dt.timestamp()
+        return ts, dt.astimezone(tz).isoformat()
+    except Exception:
+        return 0.0, ""
+
+
+def _persist_site_start(path: Path, started_ts: float, started_at: str, source: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {"started_at": started_at, "started_at_ts": started_ts, "source": source}
+    tmp_path = path.with_suffix(".tmp")
+    tmp_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp_path.replace(path)
+    try:
+        os.chmod(path, 0o644)
+    except PermissionError:
+        pass
+
+
+def load_site_start(tz: datetime.tzinfo) -> tuple[float, str]:
+    path = config.STATUS_DATA_DIR / "site_start.json"
+    stored_ts, stored_at = _read_site_start_file(path, tz)
+    image_ts, image_at = _earliest_image_start(tz)
+
+    candidates = [(stored_ts, stored_at, "stored"), (image_ts, image_at, "image")]
+    candidates = [(ts, at, src) for ts, at, src in candidates if ts > 0 and at]
+    if candidates:
+        started_ts, started_at, source = min(candidates, key=lambda item: item[0])
+    else:
+        now = datetime.datetime.now(tz)
+        started_ts = now.timestamp()
+        started_at = now.isoformat()
+        source = "fallback"
+
+    if started_ts != stored_ts or started_at != stored_at:
+        _persist_site_start(path, started_ts, started_at, source)
+    return started_ts, started_at
+
+
+def load_request_counts() -> dict:
+    counts_path = config.STATUS_DATA_DIR / "request_counts.json"
+    if not counts_path.exists():
+        return {"total": 0, "pages": 0, "api": 0, "updated_at": "", "started_at": ""}
+    try:
+        data = json.loads(counts_path.read_text(encoding="utf-8"))
+    except Exception:
+        return {"total": 0, "pages": 0, "api": 0, "updated_at": "", "started_at": ""}
+    return {
+        "total": int(data.get("total_requests", 0) or 0),
+        "pages": int(data.get("page_requests", 0) or 0),
+        "api": int(data.get("api_requests", 0) or 0),
+        "updated_at": str(data.get("updated_at") or ""),
+        "started_at": str(data.get("started_at") or ""),
+    }
+
+
 def collect_status_metrics() -> dict:
     """
     汇总运行状态，写入静态探针。
@@ -285,8 +404,15 @@ def collect_status_metrics() -> dict:
     swap_total = meminfo.get("SwapTotal", 0)
     swap_free = meminfo.get("SwapFree", 0)
 
+    now = datetime.datetime.now(tz)
+    site_started_ts, site_started_at = load_site_start(tz)
+    site_age_seconds = max(now.timestamp() - site_started_ts, 0.0)
+    site_age_days = site_age_seconds / 86400 if site_age_seconds else 0.0
+    uptime_seconds = read_uptime_seconds()
+    request_counts = load_request_counts()
+
     metrics = {
-        "generated_at": datetime.datetime.now(tz).isoformat(),
+        "generated_at": now.isoformat(),
         "disk": {
             "total": disk.total,
             "used": disk.used,
@@ -294,6 +420,16 @@ def collect_status_metrics() -> dict:
             "low_watermark": config.DISK_LOW_WATERMARK_BYTES,
             "paused": paused,
         },
+        "site_age": {
+            "started_at": site_started_at,
+            "days": site_age_days,
+            "seconds": site_age_seconds,
+        },
+        "uptime": {
+            "seconds": uptime_seconds,
+            "days": uptime_seconds / 86400 if uptime_seconds else 0.0,
+        },
+        "request_counts": request_counts,
         "images": {
             "total": statuses.get("total", 0),
             "processed": statuses.get("processed", 0),

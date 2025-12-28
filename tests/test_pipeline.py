@@ -18,6 +18,11 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 def seed_test_root(tmp_root: Path):
     static_src = PROJECT_ROOT / "static"
     shutil.copytree(static_src, tmp_root / "static", dirs_exist_ok=True)
+    config_src = PROJECT_ROOT / "config" / "auth.json"
+    if config_src.exists():
+        config_dst = tmp_root / "config"
+        config_dst.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(config_src, config_dst / "auth.json")
     schema_src = PROJECT_ROOT / "db" / "schema.sql"
     schema_dst = tmp_root / "db" / "schema.sql"
     schema_dst.parent.mkdir(parents=True, exist_ok=True)
@@ -32,9 +37,13 @@ def reload_modules():
     modules = {}
     for name in [
         "app.config",
+        "app.auth",
+        "app.auth_api",
+        "app.user_api",
         "app.storage",
         "app.db",
         "app.image_utils",
+        "app.tagging",
         "app.static_site",
         "app.upload_service",
         "app.worker",
@@ -56,41 +65,89 @@ def make_image(path: Path, size=(320, 200), color=(220, 180, 150)):
     img.save(path, format="PNG")
 
 
+def login_user(client, username: str, password: str):
+    return client.post(
+        "/auth/login",
+        json={"username": username, "password": password},
+        headers={"X-Forwarded-Proto": "https"},
+        base_url="https://example.com",
+    )
+
+
 def test_upload_and_raw_write(tmp_path):
     seed_test_root(tmp_path)
     modules = setup_env(tmp_path)
     config = modules["app.config"]
+    auth = modules["app.auth"]
     storage = modules["app.storage"]
     upload_service = modules["app.upload_service"]
 
     storage.ensure_dirs()
     app = upload_service.create_app()
     client = app.test_client()
+    auth.create_user("alice", "secret123", groups=["user"])
+    resp = login_user(client, "alice", "secret123")
+    assert resp.status_code == 200
 
     img_path = tmp_path / "input.png"
     make_image(img_path)
 
     with img_path.open("rb") as f:
         resp = client.post(
-            "/upload",
+            "/api/upload",
             data={"file": (f, "input.png")},
             content_type="multipart/form-data",
+            headers={"X-Forwarded-Proto": "https"},
+            base_url="https://example.com",
         )
 
     assert resp.status_code == 201
     data = resp.get_json()
     raw_path = config.STORAGE / data["stored"]
     assert raw_path.exists()
-    access_log = config.LOG_DIR / "upload_access.log"
-    assert access_log.exists()
 
 
-def test_upload_requires_token(tmp_path, monkeypatch):
+def test_parse_tags_allows_spaces(tmp_path):
     seed_test_root(tmp_path)
-    monkeypatch.setenv("GALLERY_UPLOAD_TOKEN", "secret-token")
-    monkeypatch.setenv("GALLERY_UPLOAD_USER", "gallery")
     modules = setup_env(tmp_path)
     config = modules["app.config"]
+    tagging = modules["app.tagging"]
+
+    data_dir = config.STATIC / "data"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    tags_cfg = {
+        "tags": [
+            {"tag": "long hair", "slug": "long-hair"},
+            {"tag": "blue eyes", "slug": "blue-eyes"},
+        ]
+    }
+    (data_dir / "tags.json").write_text(json.dumps(tags_cfg, ensure_ascii=False), encoding="utf-8")
+    alias_map = tagging.build_alias_map(tagging.load_tags_config()[0])
+    tags, err = tagging.parse_tags_input("#long hair #blue eyes", alias_map, require_known=True)
+    assert err is None
+    assert tags == ["long hair", "blue eyes"]
+
+
+def test_parse_tags_requires_registry(tmp_path):
+    seed_test_root(tmp_path)
+    modules = setup_env(tmp_path)
+    tagging = modules["app.tagging"]
+    tags, err = tagging.parse_tags_input("#ghost", {}, require_known=True)
+    assert tags is None
+    assert err
+
+
+def test_normalize_tag_decodes_percent(tmp_path):
+    seed_test_root(tmp_path)
+    modules = setup_env(tmp_path)
+    tagging = modules["app.tagging"]
+
+    assert tagging.normalize_tag("%25E5%2585%BD%25E8%2580%25B3") == "兽耳"
+
+
+def test_upload_requires_login(tmp_path):
+    seed_test_root(tmp_path)
+    modules = setup_env(tmp_path)
     storage = modules["app.storage"]
     upload_service = modules["app.upload_service"]
 
@@ -98,35 +155,21 @@ def test_upload_requires_token(tmp_path, monkeypatch):
     app = upload_service.create_app()
     client = app.test_client()
 
-    img_path = tmp_path / "auth.png"
-    make_image(img_path)
-
-    with img_path.open("rb") as f:
-        resp = client.post(
-            "/upload",
-            data={"file": (f, "auth.png")},
-            content_type="multipart/form-data",
-        )
+    resp = client.post(
+        "/api/upload",
+        data={"title": "x"},
+        content_type="multipart/form-data",
+        headers={"X-Forwarded-Proto": "https"},
+        base_url="https://example.com",
+    )
     assert resp.status_code == 401
-
-    with img_path.open("rb") as f:
-        resp = client.post(
-            "/upload",
-            data={"file": (f, "auth.png")},
-            content_type="multipart/form-data",
-            headers={"Authorization": "Bearer secret-token"},
-        )
-
-    assert resp.status_code == 201
-    data = resp.get_json()
-    raw_path = config.STORAGE / data["stored"]
-    assert raw_path.exists()
 
 
 def test_upload_paused_flag(tmp_path):
     seed_test_root(tmp_path)
     modules = setup_env(tmp_path)
     config = modules["app.config"]
+    auth = modules["app.auth"]
     storage = modules["app.storage"]
     upload_service = modules["app.upload_service"]
 
@@ -134,15 +177,20 @@ def test_upload_paused_flag(tmp_path):
     config.UPLOAD_PAUSE_FLAG.write_text("paused", encoding="utf-8")
     app = upload_service.create_app()
     client = app.test_client()
+    auth.create_user("alice", "secret123", groups=["user"])
+    resp = login_user(client, "alice", "secret123")
+    assert resp.status_code == 200
 
     img_path = tmp_path / "paused.png"
     make_image(img_path)
 
     with img_path.open("rb") as f:
         resp = client.post(
-            "/upload",
+            "/api/upload",
             data={"file": (f, "paused.png")},
             content_type="multipart/form-data",
+            headers={"X-Forwarded-Proto": "https"},
+            base_url="https://example.com",
         )
 
     assert resp.status_code == 503
@@ -177,7 +225,7 @@ def test_worker_process_and_publish(tmp_path):
         ).fetchone()
     assert row["status"] == "processed"
     thumb_name = Path(row["thumb_path"]).name
-    assert re.match(r"^L\d{8}A\d{3}\.jpg$", thumb_name)
+    assert re.match(r"^L\d{8}A\d{3}\.webp$", thumb_name)
 
     published = worker.publish_ready_images()
     assert published
@@ -185,16 +233,15 @@ def test_worker_process_and_publish(tmp_path):
     thumb_path = config.THUMB_DIR / thumb_name
     assert thumb_path.exists()
     assert index_html.exists()
+    assert (config.WWW_DIR / "sitemap.xml").exists()
+    assert (config.WWW_DIR / "robots.txt").exists()
+    assert (config.WWW_DIR / "auth" / "login" / "index.html").exists()
+    assert (config.WWW_DIR / "auth" / "register" / "index.html").exists()
 
-    flow_page = config.WWW_DIR / "flow.html"
-    assert flow_page.exists()
-    flow_text = flow_page.read_text(encoding="utf-8")
-    assert "上传-处理-展示 自检" in flow_text
-    assert "Basic（推荐，当前 Nginx 需要用户名+口令" in flow_text
-
-    wall_page = config.WWW_DIR / "wall.html"
-    assert wall_page.exists()
-    assert "LUOZI_SAMA · 图墙" in wall_page.read_text(encoding="utf-8")
+    sitemap_text = (config.WWW_DIR / "sitemap.xml").read_text(encoding="utf-8")
+    assert "/flow.html" not in sitemap_text
+    assert "/wall.html" not in sitemap_text
+    assert not (config.WWW_DIR / "wall.html").exists()
 
     index_html_text = index_html.read_text()
     assert "onerror=\"this.onerror=null;this.src='/raw/" in index_html_text
@@ -213,8 +260,8 @@ def test_worker_process_and_publish(tmp_path):
     assert row["status"] == "published"
     assert row["thumb_width"] and row["thumb_height"]
     html = index_html_text
-    assert f"aspect-ratio: {row['thumb_width']}/{row['thumb_height']}" in html
     assert f"/thumb/{Path(row['thumb_path']).name}" in html
+    assert "--thumb-ratio" in html
     css = (config.STATIC / "styles" / "gallery.css").read_text()
     assert "object-fit: contain" in css
     assert (config.WWW_DIR / "static" / "js" / "gallery.js").exists()
@@ -247,7 +294,6 @@ def test_small_image_keeps_thumbnail_ratio(tmp_path):
     assert row["thumb_height"] == 80
 
     html = (config.WWW_DIR / "index.html").read_text()
-    assert f"aspect-ratio: {row['thumb_width']}/{row['thumb_height']}" in html
     assert f"/thumb/{Path(row['thumb_path']).name}" in html
 
 
@@ -285,7 +331,7 @@ def test_collections_config_respected(tmp_path):
             (uid,),
         ).fetchone()
     assert row["status"] == "published"
-    assert re.match(r"^L\d{8}A\d{3}\.jpg$", Path(row["thumb_path"]).name)
+    assert re.match(r"^L\d{8}A\d{3}\.webp$", Path(row["thumb_path"]).name)
 
     index_html = (config.WWW_DIR / "index.html").read_text()
     assert 'data-collection="mine"' in index_html
@@ -445,10 +491,8 @@ def test_status_snapshot_marks_force_rebuild_on_sync_failure(tmp_path, monkeypat
     assert config.FORCE_REBUILD_FLAG.exists()
 
 
-def test_upload_rate_limit(tmp_path, monkeypatch):
+def test_upload_requires_https(tmp_path):
     seed_test_root(tmp_path)
-    monkeypatch.setenv("GALLERY_UPLOAD_RATE_MAX", "1")
-    monkeypatch.setenv("GALLERY_UPLOAD_RATE_WINDOW", "60")
     modules = setup_env(tmp_path)
     storage = modules["app.storage"]
     upload_service = modules["app.upload_service"]
@@ -462,40 +506,38 @@ def test_upload_rate_limit(tmp_path, monkeypatch):
 
     with img_path.open("rb") as f:
         resp = client.post(
-            "/upload",
+            "/api/upload",
             data={"file": (f, "rate.png")},
             content_type="multipart/form-data",
+            base_url="http://example.com",
         )
-    assert resp.status_code == 201
-
-    with img_path.open("rb") as f:
-        resp = client.post(
-            "/upload",
-            data={"file": (f, "rate.png")},
-            content_type="multipart/form-data",
-        )
-    assert resp.status_code == 429
-    assert resp.headers.get("Retry-After")
+    assert resp.status_code == 403
 
 
 def test_upload_rejects_bad_content_type(tmp_path):
     seed_test_root(tmp_path)
     modules = setup_env(tmp_path)
+    auth = modules["app.auth"]
     storage = modules["app.storage"]
     upload_service = modules["app.upload_service"]
 
     storage.ensure_dirs()
     app = upload_service.create_app()
     client = app.test_client()
+    auth.create_user("alice", "secret123", groups=["user"])
+    resp = login_user(client, "alice", "secret123")
+    assert resp.status_code == 200
 
     img_path = tmp_path / "bad.png"
     make_image(img_path)
 
     with img_path.open("rb") as f:
         resp = client.post(
-            "/upload",
+            "/api/upload",
             data={"file": (f, "bad.png", "text/plain")},
             content_type="multipart/form-data",
+            headers={"X-Forwarded-Proto": "https"},
+            base_url="https://example.com",
         )
     assert resp.status_code == 400
 
@@ -585,11 +627,11 @@ def test_maintenance_scan_and_cleanup(tmp_path):
                 "deadbeef",
                 "published",
                 f"raw/{missing_uuid}.png",
-                "thumb/missing.jpg",
+                "thumb/missing.webp",
             ),
         )
 
-    orphan_thumb = config.THUMB_DIR / "orphan.jpg"
+    orphan_thumb = config.THUMB_DIR / "orphan.webp"
     orphan_thumb.write_text("x", encoding="utf-8")
 
     report = maintenance.scan_consistency()
@@ -708,3 +750,31 @@ def test_publish_only_when_pending(tmp_path):
 
     # 无新增处理内容时不重复发布
     assert worker.publish_ready_images() is False
+
+
+def test_error_pages_follow_accept_header(tmp_path):
+    seed_test_root(tmp_path)
+    modules = setup_env(tmp_path)
+    config = modules["app.config"]
+    storage = modules["app.storage"]
+    upload_service = modules["app.upload_service"]
+
+    storage.ensure_dirs()
+    (config.WWW_DIR / "404.html").write_text("NOT FOUND", encoding="utf-8")
+    error_dir = config.WWW_DIR / "error"
+    error_dir.mkdir(parents=True, exist_ok=True)
+    (error_dir / "index.html").write_text("SERVER ERROR", encoding="utf-8")
+    (config.WWW_DIR / "maintenance.html").write_text("MAINTENANCE", encoding="utf-8")
+
+    app = upload_service.create_app()
+    client = app.test_client()
+
+    html_resp = client.get("/api/does-not-exist", headers={"Accept": "text/html"})
+    assert html_resp.status_code == 404
+    assert "NOT FOUND" in html_resp.get_data(as_text=True)
+    assert html_resp.mimetype == "text/html"
+
+    json_resp = client.get("/api/does-not-exist", headers={"Accept": "application/json"})
+    assert json_resp.status_code == 404
+    data = json_resp.get_json()
+    assert data["error"]

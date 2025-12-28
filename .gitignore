@@ -17,3 +17,4 @@ static/js/live2d.js
 *.swp
 *.bak
 *.tmp
+static/data/site.local.json

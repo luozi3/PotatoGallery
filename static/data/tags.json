@@ -1,0 +1,42 @@
+{
+  "tags": [
+    {
+      "tag": "兽耳",
+      "intro": "animal_ears",
+      "aliases": [
+        "animal_ears",
+        "animalears",
+        "动物耳",
+        "动物耳朵"
+      ],
+      "parents": [],
+      "slug": "animal_ears",
+      "alias_to": "",
+      "type": "general"
+    },
+    {
+      "tag": "东方project",
+      "intro": "东方Project（日语：東方プロジェクト・とうほうぷろじぇくと，英语：Touhou Project，Project Shrine Maiden[1]），简称东方，或称东方系列，是日本的同人社团“上海爱丽丝幻乐团”（ZUN）所制作的一系列以弹幕射击游戏为主的游戏，并衍生有漫画、小说等作品。",
+      "aliases": [
+        "东方，toho，touhou，东宝"
+      ],
+      "parents": [],
+      "slug": "touhou_project",
+      "alias_to": "",
+      "type": "general"
+    },
+    {
+      "tag": "芙兰朵露·斯卡雷特",
+      "intro": "芙兰朵露·斯卡蕾特是日本的《东方Project》系列弹幕游戏及其衍生作品的登场角色之一。  初登场于《东方红魔乡》，作为EX面BOSS登场。",
+      "aliases": [
+        "フランドール・スカーレット，furandōru sukāretto，flandre scarlet，flandre scarlet"
+      ],
+      "parents": [
+        "东方project"
+      ],
+      "slug": "flandre_scarlet",
+      "alias_to": "",
+      "type": "character"
+    }
+  ]
+}

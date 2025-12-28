@@ -11,80 +11,475 @@
   {% endif %}
   <link rel="stylesheet" href="/static/styles/gallery.css?v={{ static_version }}">
   <style>
-    .status-page { max-width: 960px; margin: 0 auto; padding: 24px; }
-    .status-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
-    .card { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow); }
-    .card h2 { margin: 0 0 6px; font-size: 16px; }
-    .muted { color: var(--muted); font-size: 13px; }
-    pre { margin: 0; font-size: 13px; background: #0b1221; color: #e8eefc; padding: 12px; border-radius: 10px; overflow-x: auto; }
-    canvas { width: 100%; height: 120px; }
-    .charts { margin-top: 20px; display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }
-    .chart-card { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow); }
-    .chart-card h3 { margin: 0 0 8px; font-size: 15px; }
-    .chart-meta { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+    .page-status {
+      font-family: "Source Han Sans SC", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background-color: var(--bg);
+      background-image: linear-gradient(180deg, rgba(15, 23, 42, 0.04), rgba(15, 23, 42, 0));
+      background-size: 100% 100%;
+      background-repeat: no-repeat;
+      background-attachment: fixed;
+    }
+
+    .page-status .topbar {
+      background: var(--panel);
+      border-bottom: 2px solid var(--border);
+      backdrop-filter: none;
+      padding: 12px 40px;
+      justify-content: flex-start;
+    }
+
+    .page-status .topbar-left {
+      flex: 0 0 auto;
+    }
+
+    .page-status .brand-text strong {
+      font-family: inherit;
+      letter-spacing: 0.04em;
+      text-transform: none;
+      font-weight: 600;
+    }
+
+    .page-status .brand-text span {
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: none;
+    }
+
+    .status-shell {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: calc(var(--topbar-height) + 32px) 80px 72px;
+      display: flex;
+      flex-direction: column;
+      gap: 28px;
+    }
+
+    .status-hero {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 320px;
+      gap: 24px;
+      padding: 24px 26px;
+      border: 1px solid var(--border);
+      background: var(--panel);
+    }
+
+    .status-kicker {
+      font-size: 13px;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+
+    .status-hero h1 {
+      margin: 0 0 6px;
+      font-size: 30px;
+      letter-spacing: 0.02em;
+    }
+
+    .status-subtitle {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .status-meta-block {
+      display: grid;
+      gap: 10px;
+      align-content: start;
+      padding: 14px 16px;
+      border: 1px solid var(--border);
+      background: var(--panel-strong);
+    }
+
+    .status-meta-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      font-size: 13px;
+      letter-spacing: 0.02em;
+      font-weight: 500;
+    }
+
+    .status-meta-row code {
+      font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+      font-size: 12px;
+      color: var(--text);
+      background: transparent;
+    }
+
+    .status-section {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .status-section-title {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 15px;
+      letter-spacing: 0.04em;
+      color: var(--text);
+      font-weight: 600;
+      padding-left: 12px;
+      border-left: 3px solid var(--text);
+    }
+
+    .status-section-title::after {
+      content: "";
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+
+    .status-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 1px;
+      background: var(--border);
+      border: 1px solid var(--border);
+    }
+
+    .status-block {
+      background: var(--panel);
+      padding: 18px 20px;
+      min-height: 104px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .status-label {
+      font-size: 13px;
+      letter-spacing: 0.04em;
+      color: var(--muted);
+      font-weight: 600;
+    }
+
+    .status-value {
+      font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+      font-size: 15px;
+      color: var(--text);
+      line-height: 1.7;
+      word-break: break-word;
+    }
+
+    .status-charts {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+      gap: 1px;
+      background: var(--border);
+      border: 1px solid var(--border);
+    }
+
+    .status-chart {
+      background: var(--panel);
+      padding: 16px 18px 18px;
+      display: grid;
+      gap: 10px;
+    }
+
+    .status-chart-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .status-meta {
+      font-size: 12px;
+      color: var(--muted);
+      letter-spacing: 0.02em;
+    }
+
+    canvas {
+      width: 100%;
+      height: 180px;
+      border: 1px solid var(--border);
+      background: var(--panel-strong);
+    }
+
+    .status-raw {
+      border: 1px solid var(--border);
+      background: var(--panel);
+      padding: 12px 16px;
+    }
+
+    .status-raw summary {
+      cursor: pointer;
+      font-weight: 600;
+      color: var(--text);
+      list-style: none;
+      letter-spacing: 0.02em;
+    }
+
+    .status-raw summary::-webkit-details-marker { display: none; }
+
+    .status-raw summary::before {
+      content: "▸";
+      display: inline-block;
+      margin-right: 8px;
+      transition: transform 0.2s var(--ease);
+    }
+
+    .status-raw[open] summary::before { transform: rotate(90deg); }
+
+    .status-raw pre {
+      margin: 12px 0 0;
+      font-size: 13px;
+      background: #0b1221;
+      color: #e8eefc;
+      padding: 12px;
+      border-radius: 0;
+      overflow-x: auto;
+    }
+
+    @media (max-width: 900px) {
+      .status-hero {
+        grid-template-columns: 1fr;
+      }
+
+      .status-meta-block {
+        width: 100%;
+      }
+    }
+
+    @media (max-width: 600px) {
+      .page-status {
+        --topbar-height: calc(44px + env(safe-area-inset-top));
+      }
+
+      .page-status .topbar {
+        min-height: var(--topbar-height);
+        height: auto;
+        padding: calc(6px + env(safe-area-inset-top)) 12px 6px;
+        align-items: center;
+      }
+
+      .page-status .topbar-left {
+        flex: 1 1 auto;
+        min-width: 0;
+        justify-content: flex-start;
+      }
+
+      .page-status .brand {
+        gap: 6px;
+        margin-right: auto;
+      }
+
+      .page-status .logo-dot {
+        width: 9px;
+        height: 9px;
+        box-shadow: 0 0 0 2px var(--accent-ring);
+      }
+
+      .page-status .brand-text {
+        line-height: 1;
+      }
+
+      .page-status .brand-text strong {
+        font-size: 13px;
+        line-height: 1;
+        white-space: nowrap;
+      }
+
+      .page-status .brand-text span {
+        display: none;
+      }
+
+      .status-shell {
+        padding: calc(var(--topbar-height) + 18px) 18px 40px;
+        gap: 20px;
+      }
+
+      .status-hero {
+        grid-template-columns: 1fr;
+        gap: 12px;
+        padding: 16px;
+      }
+
+      .status-kicker {
+        display: none;
+      }
+
+      .status-hero h1 {
+        font-size: 22px;
+      }
+
+      .status-subtitle {
+        font-size: 12px;
+        line-height: 1.5;
+      }
+
+      .status-meta-block {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 8px;
+        padding: 10px 12px;
+      }
+
+      .status-meta-row {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 2px;
+        font-size: 11px;
+      }
+
+      .status-meta-row code {
+        font-size: 10px;
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .status-section-title {
+        letter-spacing: 0.02em;
+        font-size: 13px;
+      }
+
+      .status-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .status-block {
+        padding: 12px;
+        min-height: 84px;
+      }
+
+      .status-label {
+        font-size: 11px;
+        line-height: 1.2;
+      }
+
+      .status-value {
+        font-size: 12px;
+        line-height: 1.5;
+      }
+
+      .status-charts {
+        grid-template-columns: 1fr;
+      }
+
+      .status-chart {
+        padding: 12px;
+        overflow: hidden;
+      }
+
+      canvas {
+        height: 140px;
+      }
+
+      .status-raw summary {
+        font-size: 12px;
+      }
+
+      .status-raw pre {
+        font-size: 11px;
+      }
+    }
   </style>
 </head>
-<body class="page-home">
+<body class="page-status">
   <a class="skip-link" href="#main-content">跳到主要内容</a>
   <header class="topbar">
     <div class="topbar-left">
       <a class="brand" href="/" aria-label="返回首页">
         <span class="logo-dot" aria-hidden="true"></span>
         <div class="brand-text">
-          <strong>luozi_sama</strong>
-          <span>Illustration Gallery</span>
+          <strong>{{ site.brand_name or site_name }}</strong>
+          <span>{{ site.brand_tagline }}</span>
         </div>
       </a>
-      <button class="icon-button theme-toggle" type="button" data-theme-toggle aria-label="切换主题">
-        <span class="icon" aria-hidden="true">◐</span>
-      </button>
     </div>
   </header>
-  <div class="status-page" id="main-content" tabindex="-1">
-    <h1>运行状态</h1>
-    <p class="muted">静态探针，每次刷新从 <code>/static/status.json</code> 拉取最新数据。</p>
-    <div class="status-grid" id="status-cards">
-      <div class="card">
-        <h2>磁盘</h2>
-        <div class="muted" id="disk"></div>
+  <main class="status-shell" id="main-content" tabindex="-1">
+    <section class="status-hero">
+      <div>
+        <div class="status-kicker">系统状态</div>
+        <h1>运行状态</h1>
+        <p class="status-subtitle">静态探针，每次刷新从 <code>/static/status.json</code> 拉取最新数据。</p>
       </div>
-      <div class="card">
-        <h2>图片计数</h2>
-        <div class="muted" id="images"></div>
+      <div class="status-meta-block">
+        <div class="status-meta-row">
+          <span>来源</span>
+          <code>/static/status.json</code>
+        </div>
+        <div class="status-meta-row">
+          <span>刷新间隔</span>
+          <span>30 秒</span>
+        </div>
+        <div class="status-meta-row">
+          <span>模式</span>
+          <span>只读</span>
+        </div>
       </div>
-      <div class="card">
-        <h2>文件计数</h2>
-        <div class="muted" id="files"></div>
+    </section>
+
+    <section class="status-section">
+      <div class="status-section-title">总览</div>
+      <div class="status-grid" id="status-cards">
+        <div class="status-block">
+          <div class="status-label">磁盘</div>
+          <div class="status-value" id="disk"></div>
+        </div>
+        <div class="status-block">
+          <div class="status-label">图片计数</div>
+          <div class="status-value" id="images"></div>
+        </div>
+        <div class="status-block">
+          <div class="status-label">文件计数</div>
+          <div class="status-value" id="files"></div>
+        </div>
+        <div class="status-block">
+          <div class="status-label">最近发布</div>
+          <div class="status-value" id="build"></div>
+        </div>
+        <div class="status-block">
+          <div class="status-label">CPU / 负载</div>
+          <div class="status-value" id="cpu"></div>
+        </div>
+        <div class="status-block">
+          <div class="status-label">内存 / Swap</div>
+          <div class="status-value" id="mem"></div>
+        </div>
+        <div class="status-block">
+          <div class="status-label">运行天数</div>
+          <div class="status-value" id="uptime"></div>
+        </div>
+        <div class="status-block">
+          <div class="status-label">请求计数</div>
+          <div class="status-value" id="requests"></div>
+        </div>
       </div>
-      <div class="card">
-        <h2>最近发布</h2>
-        <div class="muted" id="build"></div>
+    </section>
+
+    <section class="status-section">
+      <div class="status-section-title">趋势</div>
+      <div class="status-charts">
+        <div class="status-chart">
+          <div class="status-chart-head">
+            <div class="status-label">负载（1m）</div>
+            <div class="status-meta" id="load-meta"></div>
+          </div>
+          <canvas id="load-chart-large"></canvas>
+        </div>
+        <div class="status-chart">
+          <div class="status-chart-head">
+            <div class="status-label">内存占用 (%)</div>
+            <div class="status-meta" id="mem-meta"></div>
+          </div>
+          <canvas id="mem-chart-large"></canvas>
+        </div>
       </div>
-      <div class="card">
-        <h2>CPU/Load</h2>
-        <div class="muted" id="cpu"></div>
-      </div>
-      <div class="card">
-        <h2>内存/Swap</h2>
-        <div class="muted" id="mem"></div>
-      </div>
-    </div>
-    <h2 style="margin-top:20px;">趋势（近期历史）</h2>
-    <div class="charts">
-      <div class="chart-card">
-        <h3>Load (1m)</h3>
-        <div class="chart-meta" id="load-meta"></div>
-        <canvas id="load-chart-large"></canvas>
-      </div>
-      <div class="chart-card">
-        <h3>内存占用 (%)</h3>
-        <div class="chart-meta" id="mem-meta"></div>
-        <canvas id="mem-chart-large"></canvas>
-      </div>
-    </div>
-    <h2>原始数据</h2>
-    <pre id="raw">加载中...</pre>
-  </div>
+    </section>
+
+    <details class="status-raw">
+      <summary>原始数据（点击展开）</summary>
+      <pre id="raw">加载中...</pre>
+    </details>
+  </main>
+
   <script>
     async function loadStatus() {
       try {
@@ -118,6 +513,30 @@
         document.getElementById('mem').textContent =
           `内存 ${fmt(memUsed)} / ${fmt(mem.total)} (${memPct}%) · Swap ${fmt(swapUsed)} / ${fmt(mem.swap_total)} (${swapPct}%)`;
 
+        const uptime = data.uptime || {};
+        const siteAge = data.site_age || {};
+        const siteSeconds = typeof siteAge.seconds === 'number' ? siteAge.seconds : (siteAge.days || 0) * 86400;
+        const bootSeconds = typeof uptime.seconds === 'number' ? uptime.seconds : (uptime.days || 0) * 86400;
+        const formatDuration = (seconds) => {
+          if (!seconds || seconds <= 0) return '不足 1 小时';
+          const days = Math.floor(seconds / 86400);
+          const hours = Math.floor((seconds % 86400) / 3600);
+          if (days <= 0) {
+            return hours <= 0 ? '不足 1 小时' : `${hours} 小时`;
+          }
+          return `${days} 天 ${hours} 小时`;
+        };
+        document.getElementById('uptime').textContent =
+          `站点运行 ${formatDuration(siteSeconds)} · 服务器上次重启距今 ${formatDuration(bootSeconds)}`;
+
+        const req = data.request_counts || {};
+        const reqTotal = req.total || 0;
+        const reqPage = req.pages || 0;
+        const reqApi = req.api || 0;
+        const reqUpdated = req.updated_at ? req.updated_at.split('T')[0] : '';
+        document.getElementById('requests').textContent =
+          `总请求 ${reqTotal} · 页面 ${reqPage} · API ${reqApi}${reqUpdated ? ` · 更新 ${reqUpdated}` : ''}`;
+
         renderHistory();
       } catch (err) {
         document.getElementById('raw').textContent = '加载失败：' + err;
@@ -139,8 +558,8 @@
         });
         drawLineChart(document.getElementById('load-chart-large'), loadSeries, 'Load');
         drawLineChart(document.getElementById('mem-chart-large'), memSeries, '内存%');
-        document.getElementById('load-meta').textContent = loadSeries.length ? `最近 ${loadSeries.length} 条，当前 ${loadSeries[loadSeries.length-1].toFixed(2)}` : '暂无历史';
-        document.getElementById('mem-meta').textContent = memSeries.length ? `最近 ${memSeries.length} 条，当前 ${memSeries[memSeries.length-1].toFixed(1)}%` : '暂无历史';
+        document.getElementById('load-meta').textContent = loadSeries.length ? `最近 ${loadSeries.length} 条，当前 ${loadSeries[loadSeries.length - 1].toFixed(2)}` : '暂无历史';
+        document.getElementById('mem-meta').textContent = memSeries.length ? `最近 ${memSeries.length} 条，当前 ${memSeries[memSeries.length - 1].toFixed(1)}%` : '暂无历史';
       } catch (err) {
         document.getElementById('load-meta').textContent = '历史加载失败';
         document.getElementById('mem-meta').textContent = '历史加载失败';

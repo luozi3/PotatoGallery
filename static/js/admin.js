@@ -82,6 +82,15 @@
   const saveCollectionsBtn = document.querySelector("[data-admin-save-collections]");
   const collectionsHint = document.querySelector("[data-admin-collections-hint]");
   const defaultCollectionSelect = document.querySelector("[data-admin-default-collection]");
+  const authModeSelect = document.querySelector("[data-admin-auth-mode]");
+  const authSaveBtn = document.querySelector("[data-admin-auth-save]");
+  const authHint = document.querySelector("[data-admin-auth-hint]");
+  const uploadForm = document.querySelector("[data-admin-upload-form]");
+  const uploadCollection = document.querySelector("[data-admin-upload-collection]");
+  const uploadHint = document.querySelector("[data-admin-upload-hint]");
+  const tagAddBtn = document.querySelector("[data-admin-tag-add]");
+  const tagsHint = document.querySelector("[data-admin-tags-hint]");
+  const masonry = window.GalleryMasonry ? window.GalleryMasonry.init(grid) : null;
 
   let images = [];
   let collections = [];
@@ -95,6 +104,114 @@
       .replace(/>/g, "&gt;")
       .replace(/\"/g, "&quot;")
       .replace(/'/g, "&#39;");
+  }
+
+  function parseTagTokens(raw) {
+    const rawValue = String(raw || "");
+    const hasHash = rawValue.includes("#");
+    const trimmed = rawValue.trim();
+    if (!trimmed) {
+      return { tags: [], hasHash };
+    }
+    let parts = [];
+    if (hasHash) {
+      const chunks = rawValue.replace(/,/g, " ").split("#");
+      parts = chunks.map((chunk) => chunk.trim()).filter(Boolean);
+    } else {
+      parts = rawValue.split(/[,\s|]+/).filter(Boolean);
+    }
+    const tags = [];
+    const seen = new Set();
+    parts.forEach((item) => {
+      let tag = item.trim();
+      if (!tag) return;
+      if (tag.startsWith("#")) {
+        tag = tag.slice(1).trim();
+      }
+      if (!tag) return;
+      const key = tag.toLowerCase();
+      if (seen.has(key)) return;
+      seen.add(key);
+      tags.push(tag);
+    });
+    return { tags, hasHash };
+  }
+
+  function formatTagsValue(tags, useHash) {
+    const unique = [];
+    const seen = new Set();
+    tags.forEach((tag) => {
+      const cleaned = String(tag || "").trim();
+      if (!cleaned) return;
+      const key = cleaned.toLowerCase();
+      if (seen.has(key)) return;
+      seen.add(key);
+      unique.push(cleaned);
+    });
+    const prefix = useHash ? "#" : "";
+    return unique.map((tag) => `${prefix}${tag}`).join("\n");
+  }
+
+  function renderTagChips(editor, tags, useHash) {
+    const chips = editor.querySelector("[data-tag-chips]");
+    if (!chips) return;
+    chips.innerHTML = tags
+      .map((tag) => {
+        const display = `${useHash ? "#" : ""}${tag}`;
+        return `<button class="tag-chip" type="button" data-tag-chip="${escapeHtml(
+          tag
+        )}" aria-label="移除 ${escapeHtml(display)}">
+          <span>${escapeHtml(display)}</span>
+          <span class="tag-chip-close" aria-hidden="true">×</span>
+        </button>`;
+      })
+      .join("");
+    editor.classList.toggle("has-chips", tags.length > 0);
+  }
+
+  function initTagEditors(scope) {
+    const host = scope || document;
+    const editors = Array.from(host.querySelectorAll("[data-tag-editor]"));
+    if (!editors.length) return;
+    editors.forEach((editor) => {
+      if (editor.dataset.tagEditorReady === "1") return;
+      const input = editor.querySelector("[data-tag-input]");
+      if (!input) return;
+      const requireHash = input.dataset.tagRequireHash === "1";
+      const formatBtn = editor.querySelector("[data-tag-format]");
+      const update = () => {
+        const parsed = parseTagTokens(input.value);
+        renderTagChips(editor, parsed.tags, requireHash || parsed.hasHash);
+      };
+      editor.dataset.tagEditorReady = "1";
+      input.addEventListener("input", update);
+      input.addEventListener("blur", update);
+      if (formatBtn) {
+        formatBtn.addEventListener("click", () => {
+          const parsed = parseTagTokens(input.value);
+          const useHash = requireHash || parsed.hasHash;
+          input.value = formatTagsValue(parsed.tags, useHash);
+          input.dispatchEvent(new Event("input", { bubbles: true }));
+        });
+      }
+      const chips = editor.querySelector("[data-tag-chips]");
+      if (chips) {
+        chips.addEventListener("click", (event) => {
+          const target = event.target.closest("[data-tag-chip]");
+          if (!target) return;
+          if (input.disabled) return;
+          const tag = target.dataset.tagChip || "";
+          const parsed = parseTagTokens(input.value);
+          const remaining = parsed.tags.filter(
+            (item) => item.toLowerCase() !== tag.toLowerCase()
+          );
+          const useHash = requireHash || parsed.hasHash;
+          input.value = formatTagsValue(remaining, useHash);
+          input.dispatchEvent(new Event("input", { bubbles: true }));
+        });
+      }
+      update();
+    });
   }
 
   function renderCollections() {
@@ -134,6 +251,28 @@
     collectionFilter.innerHTML = options.join("");
   }
 
+  function renderUploadCollections() {
+    if (!uploadCollection) return;
+    const options = [
+      '<option value="">自动</option>',
+      ...collections.map(
+        (item) =>
+          `<option value="${escapeHtml(item.slug)}">${escapeHtml(item.title)}</option>`
+      ),
+    ];
+    uploadCollection.innerHTML = options.join("");
+  }
+
+  async function loadCollectionsMeta() {
+    const data = await fetchJSON("/upload/admin/collections");
+    collections = data.collections || [];
+    defaultCollection = data.default_collection || "";
+    renderCollections();
+    renderCollectionFilter();
+    renderUploadCollections();
+    bindCollectionActions();
+  }
+
   function bindCollectionActions() {
     if (!collectionList) return;
     collectionList.querySelectorAll("[data-collection-remove]").forEach((btn) => {
@@ -149,6 +288,11 @@
     if (!list.length) {
       grid.innerHTML = "";
       if (empty) empty.classList.add("show");
+      if (masonry) {
+        masonry.refresh();
+      } else {
+        grid.classList.add("masonry-ready");
+      }
       return;
     }
     if (empty) empty.classList.remove("show");
@@ -157,53 +301,124 @@
         (c) => `<option value="${escapeHtml(c.slug)}">${escapeHtml(c.title)}</option>`
       )
       .join("");
+    const orientationLabels = {
+      portrait: "竖屏",
+      landscape: "横屏",
+      square: "方形",
+      unknown: "未标",
+    };
+    const sizeLabels = {
+      ultra: "超清",
+      large: "高清",
+      medium: "中等",
+      compact: "轻量",
+      unknown: "未标",
+    };
+    const collectionMap = new Map(
+      (collections || []).map((item) => [item.slug, item.title || item.slug])
+    );
+
     grid.innerHTML = list
       .map((img) => {
-        const tagsValue = (img.tags || []).map((t) => `#${t}`).join(" ");
+        const titleText = img.title || "未命名作品";
+        const descriptionText = img.description || "";
+        const tagsValue = (img.tags || []).join("\n");
         const disabled = img.deleted_at ? "disabled" : "";
+        const dimension =
+          img.width && img.height ? `${img.width}×${img.height}` : "尺寸未知";
+        const bytesText = img.bytes_human || "";
+        const collectionTitle =
+          collectionMap.get(img.collection) || img.collection || "未分区";
+        const orientationLabel =
+          orientationLabels[img.orientation] || orientationLabels.unknown;
+        const sizeLabel = sizeLabels[img.size_bucket] || sizeLabels.unknown;
+        const tagLinks = (img.tags || [])
+          .slice(0, 3)
+          .map(
+            (tag) =>
+              `<a class="tag ghost" href="/tags/${encodeURIComponent(
+                tag
+              )}/">#${escapeHtml(tag)}</a>`
+          )
+          .join("");
+        const thumbWidth = img.thumb_width || 1;
+        const thumbHeight = img.thumb_height || 1;
+        const metaItems = [dimension, bytesText, collectionTitle].filter(Boolean);
         return `
         <article class="illust-card admin-card" data-masonry-item data-admin-uuid="${escapeHtml(
           img.uuid
         )}">
           <a class="thumb-link" href="/images/${escapeHtml(img.uuid)}/index.html">
-            <div class="thumb-shell" style="background:${escapeHtml(
-              img.dominant_color || "#eef1f5"
-            )}; aspect-ratio:${img.thumb_width}/${img.thumb_height};">
+            <div class="thumb-shell" style="--thumb-ratio:${thumbWidth}/${thumbHeight};">
               <img class="thumb" src="/thumb/${escapeHtml(
                 img.thumb_filename || ""
-              )}" alt="${escapeHtml(img.title || "")}" loading="lazy" width="${img.thumb_width || ""}" height="${
-          img.thumb_height || ""
-        }" onerror="this.onerror=null;this.src='/raw/${escapeHtml(img.raw_filename || "")}';">
+              )}" alt="${escapeHtml(img.title || "")}" loading="lazy" width="${thumbWidth}" height="${thumbHeight}" onerror="this.onerror=null;this.src='/raw/${escapeHtml(
+          img.raw_filename || ""
+        )}';">
             </div>
           </a>
-          <div class="card-body admin-fields">
-            <label class="label">标题</label>
-            <input class="admin-input" type="text" value="${escapeHtml(
-              img.title || ""
-            )}" data-field="title" ${disabled}>
-            <label class="label">描述</label>
-            <textarea class="admin-textarea" data-field="description" ${disabled}>${escapeHtml(
-              img.description || ""
-            )}</textarea>
-            <label class="label">标签</label>
-            <input class="admin-tag-input" type="text" value="${escapeHtml(
-              tagsValue
-            )}" placeholder="#tag1 #tag2" data-field="tags" ${disabled}>
-            <label class="label">分区</label>
-            <select class="admin-select" data-field="collection" ${disabled}>
-              <option value="">自动</option>
-              ${collectionOptions}
-            </select>
-            <div class="admin-actions-row">
-              <button class="btn primary" type="button" data-action="save" ${disabled}>保存</button>
-              <button class="btn ghost" type="button" data-action="delete" ${disabled}>删除</button>
+          <div class="card-body">
+            <div class="title">${escapeHtml(titleText)}</div>
+            ${descriptionText ? `<p class="desc">${escapeHtml(descriptionText)}</p>` : ""}
+            <div class="meta">
+              ${metaItems.map((item) => `<span>${escapeHtml(item)}</span>`).join("")}
             </div>
-            <p class="hint" data-field="status">${img.deleted_at ? "已进入垃圾桶" : ""}</p>
+            <div class="tags">
+              <span class="tag accent">${escapeHtml(orientationLabel)}</span>
+              <span class="tag">${escapeHtml(sizeLabel)}</span>
+              ${tagLinks}
+            </div>
+          </div>
+          <div class="admin-card-editor">
+            <div class="admin-fields-grid">
+              <div class="admin-field">
+                <label class="label">标题</label>
+                <input class="admin-input" type="text" value="${escapeHtml(
+                  img.title || ""
+                )}" data-field="title" ${disabled}>
+              </div>
+              <div class="admin-field admin-field-wide">
+                <label class="label">描述</label>
+                <textarea class="admin-textarea" data-field="description" ${disabled}>${escapeHtml(
+                  img.description || ""
+                )}</textarea>
+              </div>
+              <div class="admin-field admin-field-wide">
+                <label class="label">标签</label>
+                <div class="tag-editor" data-tag-editor>
+                  <textarea class="admin-tag-input" rows="3" data-field="tags" data-tag-input ${disabled}>${escapeHtml(
+                    tagsValue
+                  )}</textarea>
+                  <div class="tag-editor-meta">
+                    <button class="btn ghost" type="button" data-tag-format ${disabled}>整理标签</button>
+                    <span class="hint">支持换行/逗号/竖线</span>
+                  </div>
+                  <div class="tag-editor-chips" data-tag-chips></div>
+                </div>
+              </div>
+              <div class="admin-field">
+                <label class="label">分区</label>
+                <select class="admin-select" data-field="collection" ${disabled}>
+                  <option value="">自动</option>
+                  ${collectionOptions}
+                </select>
+              </div>
+              <div class="admin-actions-row admin-field-wide">
+                <button class="btn primary" type="button" data-action="save" ${disabled}>保存</button>
+                <button class="btn ghost" type="button" data-action="delete" ${disabled}>删除</button>
+              </div>
+              <p class="hint admin-field-wide" data-field="status">${
+                img.deleted_at ? "已进入垃圾桶" : ""
+              }</p>
+            </div>
           </div>
         </article>
         `;
       })
       .join("");
+
+    initTagSuggest(grid);
+    initTagEditors(grid);
 
     grid.querySelectorAll("[data-admin-uuid]").forEach((card) => {
       const uuid = card.dataset.adminUuid;
@@ -242,6 +457,20 @@
         }
       });
     });
+
+    if (masonry) {
+      masonry.refresh();
+      return;
+    }
+    grid.classList.add("masonry-ready");
+  }
+
+  function initTagSuggest(container) {
+    if (!window.GalleryTagSuggest || !window.GalleryTagSuggest.initTagInputs) return;
+    const scope = container || document;
+    const inputs = scope.querySelectorAll("[data-tag-input]");
+    if (!inputs.length) return;
+    window.GalleryTagSuggest.initTagInputs(inputs);
   }
 
   function applyFilters() {
@@ -268,8 +497,33 @@
     defaultCollection = data.default_collection || "";
     renderCollections();
     renderCollectionFilter();
+    renderUploadCollections();
     bindCollectionActions();
     applyFilters();
+  }
+
+  async function loadAuthConfig() {
+    if (!authModeSelect) return;
+    const data = await fetchJSON("/upload/admin/auth-config");
+    if (data.registration_mode === "open" || data.registration_mode === "invite" || data.registration_mode === "closed") {
+      authModeSelect.value = data.registration_mode;
+    }
+  }
+
+  async function saveAuthConfig() {
+    if (!authModeSelect) return;
+    if (authHint) authHint.textContent = "保存中...";
+    try {
+      const payload = { registration_mode: authModeSelect.value };
+      await fetchJSON("/upload/admin/auth-config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (authHint) authHint.textContent = "已保存";
+    } catch (err) {
+      if (authHint) authHint.textContent = err.message;
+    }
   }
 
   async function saveCollections() {
@@ -309,9 +563,17 @@
       loadImages().catch((err) => {
         if (empty) empty.textContent = err.message;
       });
+    } else if (collectionList || uploadCollection || collectionFilter || defaultCollectionSelect) {
+      loadCollectionsMeta().catch((err) => {
+        if (collectionsHint) collectionsHint.textContent = err.message;
+        if (uploadHint) uploadHint.textContent = err.message;
+      });
     }
+    loadAuthConfig().catch((err) => {
+      if (authHint) authHint.textContent = err.message;
+    });
 
-    if (refreshBtn) {
+    if (grid && refreshBtn) {
       refreshBtn.addEventListener("click", () => loadImages());
     }
 
@@ -343,15 +605,40 @@
       saveCollectionsBtn.addEventListener("click", saveCollections);
     }
 
+    if (authSaveBtn) {
+      authSaveBtn.addEventListener("click", saveAuthConfig);
+    }
+
+    if (uploadForm) {
+      uploadForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        if (uploadHint) uploadHint.textContent = "上传中...";
+        const form = new FormData(uploadForm);
+        try {
+          await fetchJSON("/upload/admin/upload", {
+            method: "POST",
+            body: form,
+          });
+          if (uploadHint) uploadHint.textContent = "上传成功，等待处理";
+          uploadForm.reset();
+          loadImages();
+        } catch (err) {
+          if (uploadHint) uploadHint.textContent = err.message;
+        }
+      });
+    }
+
     initTagsPage();
   }
 
   async function initTagsPage() {
     const tagList = document.querySelector("[data-admin-tag-list]");
     if (!tagList) return;
+    let tags = [];
     async function loadTags() {
       const data = await fetchJSON("/upload/admin/tags");
-      renderTags(data.tags || []);
+      tags = data.tags || [];
+      renderTags(tags);
     }
 
     function renderTags(tags) {
@@ -359,11 +646,58 @@
         .map(
           (item) => `
         <div class="tag-admin-row" data-tag-row>
-          <input type="text" value="#${escapeHtml(item.tag)}" data-tag-field="tag">
-          <input type="text" value="${escapeHtml(item.count)}" disabled>
-          <input type="text" placeholder="#新标签" data-tag-field="new">
-          <div class="admin-actions-row">
-            <button class="btn primary" type="button" data-tag-action="rename">改名</button>
+          <div class="tag-admin-head">
+            <div class="tag-admin-head-main">
+              <label class="tag-field">
+                <span>标签名</span>
+                <input type="text" value="${escapeHtml(item.tag || "")}" placeholder="无需 #，例：long_hair" data-tag-field="tag">
+              </label>
+              <label class="tag-field">
+                <span>URL Slug</span>
+                <input type="text" value="${escapeHtml((item.slug || "").trim())}" placeholder="english-tag" data-tag-field="slug">
+              </label>
+              <label class="tag-field">
+                <span>类型</span>
+                <select data-tag-field="type">
+                  <option value="general" ${item.type === "general" || !item.type ? "selected" : ""}>普通</option>
+                  <option value="artist" ${item.type === "artist" ? "selected" : ""}>画师</option>
+                  <option value="character" ${item.type === "character" ? "selected" : ""}>角色</option>
+                </select>
+              </label>
+            </div>
+            <div class="tag-admin-count">
+              <span>作品数</span>
+              <input type="text" value="${escapeHtml(item.count || 0)}" disabled>
+            </div>
+          </div>
+          <div class="tag-admin-fields">
+            <label class="tag-field tag-field-wide">
+              <span>简介</span>
+              <textarea rows="2" placeholder="标签简介" data-tag-field="intro">${escapeHtml(
+                (item.intro || "").trim()
+              )}</textarea>
+            </label>
+            <label class="tag-field tag-field-wide">
+              <span>别名</span>
+              <textarea rows="2" placeholder="long hair | long_hair | 长发" data-tag-field="aliases">${escapeHtml(
+                (item.aliases || []).join(" | ")
+              )}</textarea>
+            </label>
+            <label class="tag-field tag-field-wide">
+              <span>父标签</span>
+              <textarea rows="2" placeholder="animal_ears | kemonomimi" data-tag-field="parents">${escapeHtml(
+                (item.parents || []).join(" | ")
+              )}</textarea>
+            </label>
+            <label class="tag-field">
+              <span>合并到</span>
+              <input type="text" value="${escapeHtml((item.alias_to || "").trim())}" placeholder="主标签（可空）" data-tag-field="alias-to">
+            </label>
+          </div>
+          <div class="tag-admin-actions">
+            <button class="btn primary" type="button" data-tag-action="save">保存</button>
+            <button class="btn ghost" type="button" data-tag-action="meta-delete">清除简介/别名</button>
+            <button class="btn ghost" type="button" data-tag-action="rename">改名</button>
             <button class="btn ghost" type="button" data-tag-action="delete">删除</button>
           </div>
         </div>
@@ -371,18 +705,69 @@
         )
         .join("");
 
+      tagList.querySelectorAll("[data-tag-action='save']").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          const row = btn.closest("[data-tag-row]");
+          const tag = row.querySelector("[data-tag-field='tag']").value.trim();
+          const slug = row.querySelector("[data-tag-field='slug']").value.trim();
+          const type = row.querySelector("[data-tag-field='type']").value;
+          const intro = row.querySelector("[data-tag-field='intro']").value.trim();
+          const aliases = row.querySelector("[data-tag-field='aliases']").value.trim();
+          const parents = row.querySelector("[data-tag-field='parents']").value.trim();
+          const aliasTo = row.querySelector("[data-tag-field='alias-to']").value.trim();
+          if (tagsHint) tagsHint.textContent = "保存中...";
+          try {
+            await fetchJSON("/upload/admin/tags/meta", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ tag, slug, type, intro, aliases, parents, alias_to: aliasTo }),
+            });
+            if (tagsHint) tagsHint.textContent = "已保存，等待刷新发布";
+            loadTags();
+          } catch (err) {
+            if (tagsHint) tagsHint.textContent = err.message;
+          }
+        });
+      });
+
+      tagList.querySelectorAll("[data-tag-action='meta-delete']").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          const row = btn.closest("[data-tag-row]");
+          const tag = row.querySelector("[data-tag-field='tag']").value.trim();
+          if (!tag) return;
+          if (tagsHint) tagsHint.textContent = "清除中...";
+          try {
+            await fetchJSON("/upload/admin/tags/meta/delete", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ tag }),
+            });
+            if (tagsHint) tagsHint.textContent = "已清除";
+            loadTags();
+          } catch (err) {
+            if (tagsHint) tagsHint.textContent = err.message;
+          }
+        });
+      });
+
       tagList.querySelectorAll("[data-tag-action='rename']").forEach((btn) => {
         btn.addEventListener("click", async () => {
           const row = btn.closest("[data-tag-row]");
           const from = row.querySelector("[data-tag-field='tag']").value.trim();
-          const to = row.querySelector("[data-tag-field='new']").value.trim();
+          const to = prompt("改名为（无需 #）", "");
           if (!to) return;
-          await fetchJSON("/upload/admin/tags/rename", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ from, to }),
-          });
-          loadTags();
+          if (tagsHint) tagsHint.textContent = "改名中...";
+          try {
+            await fetchJSON("/upload/admin/tags/rename", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ from, to }),
+            });
+            if (tagsHint) tagsHint.textContent = "已改名";
+            loadTags();
+          } catch (err) {
+            if (tagsHint) tagsHint.textContent = err.message;
+          }
         });
       });
 
@@ -391,13 +776,29 @@
           const row = btn.closest("[data-tag-row]");
           const tag = row.querySelector("[data-tag-field='tag']").value.trim();
           if (!confirm("确认删除该标签？")) return;
-          await fetchJSON("/upload/admin/tags/delete", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ tag }),
-          });
-          loadTags();
+          if (tagsHint) tagsHint.textContent = "删除中...";
+          try {
+            await fetchJSON("/upload/admin/tags/delete", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ tag }),
+            });
+            if (tagsHint) tagsHint.textContent = "已删除";
+            loadTags();
+          } catch (err) {
+            if (tagsHint) tagsHint.textContent = err.message;
+          }
         });
+      });
+    }
+
+    if (tagAddBtn) {
+      tagAddBtn.addEventListener("click", () => {
+        tags = [
+          { tag: "", slug: "", type: "general", count: 0, intro: "", aliases: [], parents: [], alias_to: "" },
+          ...tags,
+        ];
+        renderTags(tags);
       });
     }
 
@@ -411,4 +812,7 @@
   ensureAuth().then((authed) => {
     if (authed) initAdmin();
   });
+
+  initTagSuggest(document);
+  initTagEditors(document);
 })();

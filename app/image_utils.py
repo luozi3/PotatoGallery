@@ -32,14 +32,20 @@ def make_thumbnail(source: Path, target: Path) -> Tuple[int, int]:
     with Image.open(source) as img:
         img.load()
         img.thumbnail(config.THUMB_SIZE)
-        rgb = img.convert("RGB")
+        if config.THUMB_FORMAT == "WEBP":
+            if img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info):
+                rgb = img.convert("RGBA")
+            else:
+                rgb = img.convert("RGB")
+        else:
+            rgb = img.convert("RGB")
         target.parent.mkdir(parents=True, exist_ok=True)
-        rgb.save(
-            target,
-            format="JPEG",
-            quality=config.THUMB_QUALITY,
-            optimize=True,
-        )
+        save_kwargs = {"quality": config.THUMB_QUALITY}
+        if config.THUMB_FORMAT == "WEBP":
+            save_kwargs["method"] = 6
+        elif config.THUMB_FORMAT == "JPEG":
+            save_kwargs["optimize"] = True
+        rgb.save(target, format=config.THUMB_FORMAT, **save_kwargs)
         return rgb.size
 
 

@@ -6,6 +6,8 @@ from typing import Dict, List, Tuple
 
 from . import config
 from . import db
+from . import image_utils
+from . import static_site
 from . import worker
 
 
@@ -184,4 +186,73 @@ def run_maintenance() -> Dict[str, List[str]]:
     report["removed_tmp"] = cleanup_upload_tmp()
     report["removed_thumb"] = cleanup_orphan_thumbs()
     report["removed_trash"] = cleanup_trash()
+    try:
+        static_site.ensure_www_readable()
+        report["permissions_checked"] = ["ok"]
+    except Exception:
+        report["permissions_checked"] = ["failed"]
     return report
+
+
+def regenerate_thumbnails(publish: bool = True) -> Dict[str, object]:
+    """
+    重新从原图生成缩略图，替换旧 JPG/WebP。
+    """
+    db.ensure_schema()
+    config.THUMB_DIR.mkdir(parents=True, exist_ok=True)
+    updated = 0
+    missing_raw: List[str] = []
+    failed: List[str] = []
+    with db.connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT uuid, stored_path, thumb_path, deleted_at
+            FROM images
+            """
+        ).fetchall()
+
+    for row in rows:
+        if row["deleted_at"]:
+            continue
+        uuid = row["uuid"]
+        stored_path = row["stored_path"]
+        raw_path = config.STORAGE / stored_path
+        if not raw_path.exists():
+            missing_raw.append(uuid)
+            continue
+        old_thumb_path = row["thumb_path"] or ""
+        old_name = Path(old_thumb_path).name if old_thumb_path else ""
+        if old_name:
+            stem = Path(old_name).stem
+            new_name = f"{stem}{config.THUMB_EXT}"
+        else:
+            new_name = worker.next_thumb_filename()
+        new_path = config.THUMB_DIR / new_name
+        try:
+            thumb_width, thumb_height = image_utils.make_thumbnail(raw_path, new_path)
+            color = image_utils.dominant_color(new_path)
+        except Exception as exc:  # noqa: BLE001
+            failed.append(f"{uuid}:{exc}")
+            continue
+        with db.transaction() as conn:
+            conn.execute(
+                """
+                UPDATE images
+                SET thumb_path=?, thumb_width=?, thumb_height=?, dominant_color=?, updated_at=CURRENT_TIMESTAMP
+                WHERE uuid=?
+                """,
+                (f"thumb/{new_name}", thumb_width, thumb_height, color, uuid),
+            )
+        if old_name and old_name != new_name:
+            old_file = config.THUMB_DIR / old_name
+            try:
+                old_file.unlink(missing_ok=True)
+            except Exception:
+                pass
+        updated += 1
+
+    if publish:
+        worker.rebuild_and_publish()
+        worker.write_status_snapshot()
+
+    return {"updated": updated, "missing_raw": missing_raw, "failed": failed}

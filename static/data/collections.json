@@ -2,12 +2,12 @@
   "collections": {
     "mine": {
       "title": "我的作品",
-      "description": "luozi_sama 的原创插画与练习稿，按上传时间倒序展示。",
+      "description": "站点原创插画与练习稿，按上传时间倒序展示。",
       "uuids": []
     },
     "favorites": {
       "title": "他人作品",
-      "description": "我欣赏的优秀二次元插画，保持原尺寸与主色占位。",
+      "description": "精选收藏的二次元插画，保持原尺寸与主色占位。",
       "uuids": []
     }
   },
