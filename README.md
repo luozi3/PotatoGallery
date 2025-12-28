@@ -5,7 +5,14 @@
 ![License](https://img.shields.io/badge/License-MIT-blue?style=flat-square)
 ![Memory](https://img.shields.io/badge/RAM-0.5G_Required-green?style=flat-square)
 
-**PotatoGallery** 是一款专为 0.5G RAM 甚至更低配环境设计的画廊系统。它拒绝在访问时进行昂贵的动态计算，通过“静态发布”与“原子切换”技术，让廉价 VPS 也能拥有丝滑、稳定且防弹的 Pixiv 级体验。<img width="1847" height="1009" alt="目前 README 截图中展示的部分视觉元素（包括图标、布局风格及示例图片）仅用于功能演示与设计效果展示，开发者不拥有相关视觉资产的版权。" src="https://github.com/user-attachments/assets/420c10e5-d871-410e-b202-ebe2cfffd96b" />
+**PotatoGallery** 是一款专为 0.5G RAM 甚至更低配环境设计的画廊系统。它拒绝在访问时进行昂贵的动态计算，通过“静态发布”与“原子切换”技术，让廉价 VPS 也能拥有丝滑、稳定且防弹的 Pixiv 级体验。
+<img 
+  width="1847" 
+  height="1009" 
+  title="目前 README 截图中展示的部分视觉元素仅用于功能演示，开发者不拥有相关版权。" 
+  alt="项目主页截图展示" 
+  src="https://github.com/user-attachments/assets/420c10e5-d871-410e-b202-ebe2cfffd96b" 
+/>
 
 
 ---
