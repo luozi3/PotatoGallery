@@ -17,6 +17,34 @@
     return data;
   }
 
+  function uploadWithProgress(url, formData, onProgress) {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", url, true);
+      xhr.withCredentials = true;
+      xhr.upload.addEventListener("progress", (event) => {
+        if (!event.lengthComputable) return;
+        if (onProgress) onProgress(event.loaded, event.total);
+      });
+      xhr.addEventListener("load", () => {
+        let data = {};
+        try {
+          data = JSON.parse(xhr.responseText || "{}");
+        } catch (err) {
+          data = {};
+        }
+        if (xhr.status >= 200 && xhr.status < 300 && data && data.ok) {
+          resolve(data);
+          return;
+        }
+        const message = data.error || "上传失败";
+        reject(new Error(message));
+      });
+      xhr.addEventListener("error", () => reject(new Error("网络错误")));
+      xhr.send(formData);
+    });
+  }
+
   function escapeHtml(text) {
     return String(text)
       .replace(/&/g, "&amp;")
@@ -24,6 +52,16 @@
       .replace(/>/g, "&gt;")
       .replace(/\"/g, "&quot;")
       .replace(/'/g, "&#39;");
+  }
+
+  function resolveDetailPath(img) {
+    if (!img) return "/images/";
+    if (img.detail_path) return img.detail_path;
+    const shortId = img.short_id || img.image_id || img.id;
+    if (shortId) {
+      return `/images/${shortId}/index.html`;
+    }
+    return `/images/${img.uuid || ""}/index.html`;
   }
 
   function renderCollectionOptions(select, collections, includeAuto) {
@@ -52,8 +90,10 @@
     const masonry = window.GalleryMasonry ? window.GalleryMasonry.init(gallery) : null;
 
     let me = null;
+    let currentUser = "";
     try {
       me = await fetchJSON("/auth/me");
+      currentUser = me.user || "";
     } catch (err) {
       if (loginHint) loginHint.textContent = "请先登录后再管理作品。";
       if (form) {
@@ -85,11 +125,12 @@
       gallery.innerHTML = images
         .map((img) => {
           const tags = (img.tags || []).map((t) => `#${escapeHtml(t)}`).join(" ");
+          const detailPath = escapeHtml(resolveDetailPath(img));
           return `
-          <article class="illust-card user-card" data-masonry-item data-card-link="/images/${escapeHtml(
-            img.uuid
-          )}/index.html" tabindex="0" role="link" aria-label="${escapeHtml(img.title || "")}">
-            <a class="thumb-link" href="/images/${escapeHtml(img.uuid)}/index.html">
+          <article class="illust-card user-card" data-masonry-item data-card-link="${detailPath}" tabindex="0" role="link" aria-label="${escapeHtml(
+            img.title || ""
+          )}">
+            <a class="thumb-link" href="${detailPath}">
               <div class="thumb-shell" style="--thumb-ratio:${img.thumb_width}/${img.thumb_height};">
                 <img class="thumb" src="/thumb/${escapeHtml(
                   img.thumb_filename || ""
@@ -107,7 +148,7 @@
               </div>
               ${tags ? `<div class="tags"><span class="tag ghost">${tags}</span></div>` : ""}
               <div class="admin-actions-row">
-                <a class="btn ghost" href="/images/${escapeHtml(img.uuid)}/index.html">编辑</a>
+                <a class="btn ghost" href="${detailPath}">编辑</a>
               </div>
             </div>
           </article>
@@ -129,16 +170,33 @@
         event.preventDefault();
         if (hint) hint.textContent = "上传中...";
         const formData = new FormData(form);
+        const fileInput = form.querySelector("input[type='file']");
+        const file = fileInput && fileInput.files ? fileInput.files[0] : null;
+        const progress = window.GalleryUploadProgress;
+        const submitBtn = form.querySelector("button[type='submit']");
+        if (submitBtn) submitBtn.disabled = true;
+        if (progress && file && currentUser) {
+          progress.start("user", currentUser, file);
+        }
         try {
-          await fetchJSON("/api/upload", {
-            method: "POST",
-            body: formData,
+          const data = await uploadWithProgress("/api/upload", formData, (loaded, total) => {
+            if (progress && currentUser) {
+              progress.updateUpload("user", currentUser, loaded, total);
+            }
           });
           if (hint) hint.textContent = "上传成功，等待处理";
+          if (progress && currentUser) {
+            progress.finishUpload("user", currentUser, data.uuid);
+          }
           form.reset();
           loadImages();
         } catch (err) {
           if (hint) hint.textContent = err.message;
+          if (progress && currentUser) {
+            progress.fail("user", currentUser, err.message);
+          }
+        } finally {
+          if (submitBtn) submitBtn.disabled = false;
         }
       });
     }

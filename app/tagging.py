@@ -8,7 +8,21 @@ from . import config
 
 TAG_CONFIG_PATH = config.STATIC / "data" / "tags.json"
 SLUG_RE = re.compile(r"^[a-z0-9_-]+$")
-TAG_TYPES = {"general", "artist", "character"}
+TAG_TYPE_RE = re.compile(r"^[a-z0-9_-]+$")
+TAG_COLOR_RE = re.compile(r"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$")
+DEFAULT_TAG_TYPES = [
+    {"type": "artist", "label": "画师", "color": "#f97316"},
+    {"type": "character", "label": "角色", "color": "#8b5cf6"},
+    {"type": "general", "label": "普通", "color": "#7b8794"},
+]
+
+
+def default_tag_type(tag_types_meta: Dict[str, dict], tag_types_order: List[str]) -> str:
+    if "general" in tag_types_meta:
+        return "general"
+    if tag_types_order:
+        return tag_types_order[0]
+    return "general"
 
 
 def _decode_percent(text: str) -> str:
@@ -47,9 +61,94 @@ def is_valid_slug(slug: str) -> bool:
     return bool(slug) and SLUG_RE.match(slug) is not None
 
 
-def normalize_tag_type(raw: object) -> str:
+def normalize_tag_type(raw: object, allowed_types: Optional[set] = None) -> str:
     value = str(raw or "").strip().lower()
-    return value if value in TAG_TYPES else ""
+    if not value:
+        return ""
+    if allowed_types is None:
+        allowed_types = set(load_tag_types_config()[0].keys())
+    return value if value in allowed_types else ""
+
+
+def normalize_tag_type_key(raw: object) -> str:
+    value = str(raw or "").strip().lower()
+    if not value:
+        return ""
+    return value if TAG_TYPE_RE.match(value) else ""
+
+
+def normalize_tag_color(raw: object) -> str:
+    value = str(raw or "").strip()
+    if not value:
+        return ""
+    if not value.startswith("#"):
+        value = f"#{value}"
+    if not TAG_COLOR_RE.match(value):
+        return ""
+    if len(value) == 4:
+        value = "#" + "".join([ch * 2 for ch in value[1:]])
+    return value.lower()
+
+
+def _load_tags_config_raw() -> dict:
+    if not TAG_CONFIG_PATH.exists():
+        return {}
+    try:
+        raw = json.loads(TAG_CONFIG_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return raw if isinstance(raw, dict) else {}
+
+
+def _default_tag_types() -> List[dict]:
+    return [dict(item) for item in DEFAULT_TAG_TYPES]
+
+
+def load_tag_types_config() -> Tuple[Dict[str, dict], List[str]]:
+    raw = _load_tags_config_raw()
+    items = raw.get("types")
+    if not isinstance(items, list):
+        items = []
+    defaults = {item["type"]: item for item in DEFAULT_TAG_TYPES}
+    meta: Dict[str, dict] = {}
+    order: List[str] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        tag_type = normalize_tag_type_key(item.get("type") or "")
+        if not tag_type or tag_type in meta:
+            continue
+        label = str(item.get("label") or item.get("name") or "").strip() or tag_type
+        color = normalize_tag_color(item.get("color"))
+        if not color:
+            color = (defaults.get(tag_type) or {}).get("color") or "#7b8794"
+        meta[tag_type] = {
+            "type": tag_type,
+            "label": label,
+            "color": color,
+        }
+        order.append(tag_type)
+    if not meta:
+        meta = {item["type"]: dict(item) for item in _default_tag_types()}
+        order = [item["type"] for item in DEFAULT_TAG_TYPES]
+    return meta, order
+
+
+def _serialize_tag_types(meta: Dict[str, dict], order: Optional[List[str]] = None) -> List[dict]:
+    types: List[dict] = []
+    seen: set = set()
+    ordered = (order or []) + sorted(meta.keys())
+    for tag_type in ordered:
+        if tag_type in seen:
+            continue
+        info = meta.get(tag_type)
+        if not info:
+            continue
+        label = str(info.get("label") or "").strip() or tag_type
+        color = normalize_tag_color(info.get("color")) or "#7b8794"
+        types.append({"type": tag_type, "label": label, "color": color})
+        seen.add(tag_type)
+    return types
 
 
 def normalize_aliases(raw: object) -> List[str]:
@@ -105,17 +204,14 @@ def normalize_parents(raw: object) -> List[str]:
 
 
 def load_tags_config() -> Tuple[Dict[str, dict], List[str]]:
-    if not TAG_CONFIG_PATH.exists():
-        return {}, []
-    try:
-        raw = json.loads(TAG_CONFIG_PATH.read_text(encoding="utf-8"))
-    except Exception:
-        return {}, []
-    if not isinstance(raw, dict):
-        return {}, []
+    raw = _load_tags_config_raw()
     items = raw.get("tags") or []
     if not isinstance(items, list):
         return {}, []
+
+    tag_types_meta, tag_types_order = load_tag_types_config()
+    allowed_types = set(tag_types_meta.keys())
+    default_type = default_tag_type(tag_types_meta, tag_types_order)
 
     meta: Dict[str, dict] = {}
     order: List[str] = []
@@ -131,7 +227,7 @@ def load_tags_config() -> Tuple[Dict[str, dict], List[str]]:
         slug_raw = normalize_slug(item.get("slug") or "")
         slug = slug_raw if is_valid_slug(slug_raw) else safe_tag_slug(tag)
         alias_to = normalize_tag(item.get("alias_to") or "")
-        tag_type = normalize_tag_type(item.get("type")) or "general"
+        tag_type = normalize_tag_type(item.get("type"), allowed_types) or default_type
         if alias_to == tag:
             alias_to = ""
         if alias_to:
@@ -149,10 +245,19 @@ def load_tags_config() -> Tuple[Dict[str, dict], List[str]]:
     return meta, order
 
 
-def save_tags_config(meta: Dict[str, dict], order: Optional[List[str]] = None) -> None:
+def _serialize_tags(
+    meta: Dict[str, dict],
+    order: Optional[List[str]] = None,
+    allowed_types: Optional[set] = None,
+    default_type: Optional[str] = None,
+) -> List[dict]:
     tags: List[dict] = []
     seen: set = set()
     ordered = (order or []) + sorted(meta.keys())
+    if allowed_types is None or default_type is None:
+        tag_types_meta, tag_types_order = load_tag_types_config()
+        allowed_types = set(tag_types_meta.keys())
+        default_type = default_tag_type(tag_types_meta, tag_types_order)
     for tag in ordered:
         if tag in seen:
             continue
@@ -161,6 +266,7 @@ def save_tags_config(meta: Dict[str, dict], order: Optional[List[str]] = None) -
             continue
         slug_raw = normalize_slug(info.get("slug") or "")
         slug = slug_raw if is_valid_slug(slug_raw) else safe_tag_slug(tag)
+        tag_type = normalize_tag_type(info.get("type"), allowed_types) or default_type
         tags.append(
             {
                 "tag": info.get("tag") or tag,
@@ -169,16 +275,68 @@ def save_tags_config(meta: Dict[str, dict], order: Optional[List[str]] = None) -
                 "parents": info.get("parents") or [],
                 "slug": slug,
                 "alias_to": info.get("alias_to") or "",
-                "type": normalize_tag_type(info.get("type")) or "general",
+                "type": tag_type,
             }
         )
         seen.add(tag)
+    return tags
 
-    data = {"tags": tags}
+
+def save_tags_config(meta: Dict[str, dict], order: Optional[List[str]] = None) -> None:
+    tag_types_meta, tag_types_order = load_tag_types_config()
+    data = {
+        "types": _serialize_tag_types(tag_types_meta, tag_types_order),
+        "tags": _serialize_tags(
+            meta,
+            order,
+            allowed_types=set(tag_types_meta.keys()),
+            default_type=default_tag_type(tag_types_meta, tag_types_order),
+        ),
+    }
     TAG_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
     tmp = TAG_CONFIG_PATH.with_suffix(".tmp")
     tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     tmp.replace(TAG_CONFIG_PATH)
+
+
+def save_tag_types_config(types: List[dict]) -> None:
+    meta, order = normalize_tag_types_payload(types)
+    tags_meta, tags_order = load_tags_config()
+    data = {
+        "types": _serialize_tag_types(meta, order),
+        "tags": _serialize_tags(
+            tags_meta,
+            tags_order,
+            allowed_types=set(meta.keys()),
+            default_type=default_tag_type(meta, order or []),
+        ),
+    }
+    TAG_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    tmp = TAG_CONFIG_PATH.with_suffix(".tmp")
+    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp.replace(TAG_CONFIG_PATH)
+
+
+def normalize_tag_types_payload(types: object) -> Tuple[Dict[str, dict], List[str]]:
+    items = types if isinstance(types, list) else []
+    meta: Dict[str, dict] = {}
+    order: List[str] = []
+    defaults = {item["type"]: item for item in DEFAULT_TAG_TYPES}
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        tag_type = normalize_tag_type_key(item.get("type") or "")
+        if not tag_type or tag_type in meta:
+            continue
+        label = str(item.get("label") or item.get("name") or "").strip()
+        if not label:
+            continue
+        color = normalize_tag_color(item.get("color"))
+        if not color:
+            color = (defaults.get(tag_type) or {}).get("color") or "#7b8794"
+        meta[tag_type] = {"type": tag_type, "label": label, "color": color}
+        order.append(tag_type)
+    return meta, order
 
 
 def build_alias_map(meta: Dict[str, dict]) -> Dict[str, str]:

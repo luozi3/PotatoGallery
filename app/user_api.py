@@ -1,4 +1,5 @@
 import json
+import re
 import uuid
 from pathlib import Path
 from typing import Any, List, Optional, Tuple
@@ -66,6 +67,52 @@ def _load_user_from_cookie() -> Optional[auth.AuthUser]:
     return auth.AuthUser(id=int(row["id"]), username=str(row["username"]), is_active=bool(row["is_active"]))
 
 
+_UPLOAD_UUID_RE = re.compile(r"^[0-9a-f]{32}$")
+
+
+def _normalize_upload_uuid(value: str) -> Optional[str]:
+    cleaned = (value or "").strip().lower()
+    if not cleaned or not _UPLOAD_UUID_RE.fullmatch(cleaned):
+        return None
+    return cleaned
+
+
+def _file_exists_with_uuid(directory: Path, uuid_value: str) -> bool:
+    for ext in set(config.ALLOWED_MIME.values()):
+        if (directory / f"{uuid_value}{ext}").exists():
+            return True
+    return False
+
+
+def _resolve_upload_status(uuid_value: str, owner_user_id: int) -> dict:
+    db.ensure_schema()
+    with db.connect() as conn:
+        row = conn.execute(
+            "SELECT status FROM images WHERE uuid=? AND owner_user_id=?",
+            (uuid_value, owner_user_id),
+        ).fetchone()
+        if row:
+            status = str(row["status"] or "")
+            if status == "published":
+                return {"stage": "published", "percent": 100, "message": "已发布"}
+            if status == "processed":
+                return {"stage": "processed", "percent": 85, "message": "等待发布"}
+            if status == "quarantined":
+                return {"stage": "failed", "percent": 100, "message": "已隔离"}
+        pending = conn.execute(
+            "SELECT 1 FROM upload_requests WHERE uuid=? AND owner_user_id=?",
+            (uuid_value, owner_user_id),
+        ).fetchone()
+        if pending:
+            return {"stage": "queued", "percent": 25, "message": "排队中"}
+
+    if _file_exists_with_uuid(config.RAW_DIR, uuid_value):
+        return {"stage": "processing", "percent": 60, "message": "处理中"}
+    if _file_exists_with_uuid(config.QUARANTINE_DIR, uuid_value):
+        return {"stage": "failed", "percent": 100, "message": "已隔离"}
+    return {"stage": "missing", "percent": 0, "message": "未找到记录"}
+
+
 def _require_user() -> Tuple[Optional[auth.AuthUser], Optional[object]]:
     https_error = _require_https()
     if https_error:
@@ -130,6 +177,7 @@ def _build_image_item(
     default_collection: str,
 ) -> dict:
     uuid = row_dict.get("uuid") or ""
+    image_id = row_dict.get("image_id")
     tags = _load_tags_from_row(row_dict)
     title = row_dict.get("title_override") or static_site.simple_title(row_dict.get("original_name") or "")
     collection = _resolve_collection(row_dict, collections_meta, default_collection)
@@ -138,6 +186,8 @@ def _build_image_item(
     thumb_name = Path(thumb_path_value).name if thumb_path_value else ""
     item = {
         "uuid": uuid,
+        "image_id": image_id,
+        "detail_path": static_site.image_detail_path(image_id, uuid),
         "title": title,
         "description": row_dict.get("description") or "",
         "tags": tags,
@@ -282,6 +332,20 @@ def user_upload():
     ), 201
 
 
+@bp.get("/api/upload/status")
+def user_upload_status():
+    user, err = _require_user()
+    if err:
+        return err
+    uuid_value = _normalize_upload_uuid(request.args.get("uuid") or "")
+    if not uuid_value:
+        return _json_error("参数错误", 400)
+    status = _resolve_upload_status(uuid_value, user.id)
+    resp = jsonify({"ok": True, **status})
+    resp.headers["Cache-Control"] = "no-store, max-age=0"
+    return resp
+
+
 @bp.get("/api/my/images")
 def my_images():
     user, err = _require_user()
@@ -291,7 +355,7 @@ def my_images():
     with db.connect() as conn:
         rows = conn.execute(
             """
-            SELECT uuid, original_name, ext, bytes, width, height, thumb_width, thumb_height,
+            SELECT id AS image_id, uuid, original_name, ext, bytes, width, height, thumb_width, thumb_height,
                    dominant_color, created_at, thumb_path, stored_path,
                    title_override, description, tags_json, collection_override
             FROM images
@@ -344,7 +408,8 @@ def list_favorites():
     with db.connect() as conn:
         rows = conn.execute(
             """
-            SELECT f.image_uuid AS uuid,
+            SELECT i.id AS image_id,
+                   f.image_uuid AS uuid,
                    f.created_at AS favorited_at,
                    i.original_name, i.ext, i.bytes, i.width, i.height,
                    i.thumb_width, i.thumb_height, i.dominant_color, i.created_at,
@@ -519,7 +584,8 @@ def gallery_images(gallery_id: int):
             return _json_error("画廊不存在", 404)
         rows = conn.execute(
             """
-            SELECT i.uuid, i.original_name, i.ext, i.bytes, i.width, i.height,
+            SELECT i.id AS image_id,
+                   i.uuid, i.original_name, i.ext, i.bytes, i.width, i.height,
                    i.thumb_width, i.thumb_height, i.dominant_color, i.created_at,
                    i.thumb_path, i.stored_path,
                    i.title_override, i.description, i.tags_json, i.collection_override,
@@ -592,7 +658,7 @@ def image_meta(uuid: str):
     with db.connect() as conn:
         row = conn.execute(
             """
-            SELECT uuid, original_name, title_override, description, tags_json, collection_override, owner_user_id, deleted_at
+            SELECT id AS image_id, uuid, original_name, title_override, description, tags_json, collection_override, owner_user_id, deleted_at
             FROM images
             WHERE uuid=?
             """,
@@ -621,6 +687,8 @@ def image_meta(uuid: str):
             "is_owner": is_owner,
             "image": {
                 "uuid": row["uuid"],
+                "image_id": row.get("image_id"),
+                "detail_path": static_site.image_detail_path(row.get("image_id"), row["uuid"]),
                 "title": row["title_override"] or static_site.simple_title(row["original_name"] or ""),
                 "description": row["description"] or "",
                 "tags": tags,

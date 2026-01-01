@@ -1,0 +1,30 @@
+<aside class="left-sidebar" id="left-sidebar" data-left-sidebar>
+  <div class="left-sidebar-inner">
+    <details class="side-group" open>
+      <summary>收藏夹</summary>
+      <div class="side-list">
+        <a class="side-link" href="/favorites/">我的收藏</a>
+      </div>
+    </details>
+    {% if site.live2d.enabled %}
+    <div class="side-group">
+      <button class="side-toggle" type="button" data-live2d-toggle aria-label="切换 Live2D">Live2D 开</button>
+    </div>
+    {% endif %}
+    <div class="side-group">
+      <div class="side-heading">Wiki / status</div>
+      <a class="side-link" href="/wiki/">Wiki</a>
+      <a class="side-link" href="/status/">status</a>
+    </div>
+    <div class="side-group">
+      <div class="side-heading" data-admin-entry hidden>管理</div>
+      <a class="side-link admin-entry" href="/admin/" data-admin-entry hidden>管理后台</a>
+      <a class="side-link admin-entry" href="/admin/tags/" data-admin-entry hidden>标签管理</a>
+      <a class="side-link admin-entry" href="/status/" data-admin-entry hidden>状态监控</a>
+    </div>
+    <div class="side-group side-legal" aria-label="版权声明">
+      <p class="side-legal-text">© {{ site.copyright_year }} {{ site.copyright_holder }}.</p>
+      <p class="side-legal-text">图片版权归原作者，侵权请 <a class="side-legal-link" href="/dmca/">联系我们</a>。</p>
+    </div>
+  </div>
+</aside>

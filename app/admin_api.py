@@ -1,6 +1,7 @@
 import datetime
-import uuid
 import json
+import re
+import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -14,6 +15,8 @@ from . import tagging
 from . import storage
 
 bp = Blueprint("admin", __name__)
+
+_UPLOAD_UUID_RE = re.compile(r"^[0-9a-f]{32}$")
 
 
 def _wiki_path() -> Path:
@@ -120,6 +123,49 @@ def _get_user_id(username: str) -> Optional[int]:
     if not row:
         return None
     return int(row["id"])
+
+
+def _normalize_upload_uuid(value: str) -> Optional[str]:
+    cleaned = (value or "").strip().lower()
+    if not cleaned or not _UPLOAD_UUID_RE.fullmatch(cleaned):
+        return None
+    return cleaned
+
+
+def _file_exists_with_uuid(directory: Path, uuid_value: str) -> bool:
+    for ext in set(config.ALLOWED_MIME.values()):
+        if (directory / f"{uuid_value}{ext}").exists():
+            return True
+    return False
+
+
+def _resolve_upload_status(uuid_value: str, owner_user_id: int) -> dict:
+    db.ensure_schema()
+    with db.connect() as conn:
+        row = conn.execute(
+            "SELECT status FROM images WHERE uuid=? AND owner_user_id=?",
+            (uuid_value, owner_user_id),
+        ).fetchone()
+        if row:
+            status = str(row["status"] or "")
+            if status == "published":
+                return {"stage": "published", "percent": 100, "message": "已发布"}
+            if status == "processed":
+                return {"stage": "processed", "percent": 85, "message": "等待发布"}
+            if status == "quarantined":
+                return {"stage": "failed", "percent": 100, "message": "已隔离"}
+        pending = conn.execute(
+            "SELECT 1 FROM upload_requests WHERE uuid=? AND owner_user_id=?",
+            (uuid_value, owner_user_id),
+        ).fetchone()
+        if pending:
+            return {"stage": "queued", "percent": 25, "message": "排队中"}
+
+    if _file_exists_with_uuid(config.RAW_DIR, uuid_value):
+        return {"stage": "processing", "percent": 60, "message": "处理中"}
+    if _file_exists_with_uuid(config.QUARANTINE_DIR, uuid_value):
+        return {"stage": "failed", "percent": 100, "message": "已隔离"}
+    return {"stage": "missing", "percent": 0, "message": "未找到记录"}
 
 
 def _parse_upload_form() -> Tuple[Optional[dict], Optional[str]]:
@@ -388,6 +434,23 @@ def admin_upload():
     ), 201
 
 
+@bp.get("/upload/admin/upload/status")
+def admin_upload_status():
+    user = _require_admin()
+    if not user:
+        return _json_error("未授权", 401)
+    owner_id = _get_user_id(user)
+    if not owner_id:
+        return _json_error("管理员账号不存在", 500)
+    uuid_value = _normalize_upload_uuid(request.args.get("uuid") or "")
+    if not uuid_value:
+        return _json_error("参数错误", 400)
+    status = _resolve_upload_status(uuid_value, owner_id)
+    resp = jsonify({"ok": True, **status})
+    resp.headers["Cache-Control"] = "no-store, max-age=0"
+    return resp
+
+
 @bp.get("/upload/admin/images")
 def admin_images():
     user = _require_admin()
@@ -399,7 +462,7 @@ def admin_images():
     with db.connect() as conn:
         rows = conn.execute(
             f"""
-            SELECT uuid, original_name, ext, bytes, width, height, thumb_width, thumb_height,
+            SELECT id AS image_id, uuid, original_name, ext, bytes, width, height, thumb_width, thumb_height,
                    sha256, dominant_color, created_at, thumb_path, stored_path,
                    title_override, description, tags_json, collection_override, deleted_at, trash_path
             FROM images
@@ -427,6 +490,8 @@ def admin_images():
         thumb_name = Path(thumb_path_value).name if thumb_path_value else ""
         item = {
             "uuid": uuid,
+            "image_id": row_dict.get("image_id"),
+            "detail_path": static_site.image_detail_path(row_dict.get("image_id"), uuid),
             "title": title,
             "description": row_dict.get("description") or "",
             "tags": tags,
@@ -595,6 +660,64 @@ def admin_tags():
     return jsonify({"ok": True, "tags": tags})
 
 
+@bp.get("/upload/admin/tag-types")
+def admin_tag_types():
+    user = _require_admin()
+    if not user:
+        return _json_error("未授权", 401)
+    meta, order = tagging.load_tag_types_config()
+    ordered = (order or []) + sorted(meta.keys())
+    seen = set()
+    types = []
+    for tag_type in ordered:
+        if tag_type in seen:
+            continue
+        info = meta.get(tag_type) or {}
+        types.append(
+            {
+                "type": tag_type,
+                "label": info.get("label") or tag_type,
+                "color": info.get("color") or "#7b8794",
+            }
+        )
+        seen.add(tag_type)
+    return jsonify({"ok": True, "types": types})
+
+
+@bp.post("/upload/admin/tag-types")
+def admin_tag_types_update():
+    user = _require_admin()
+    if not user:
+        return _json_error("未授权", 401)
+    payload = request.get_json(silent=True) or {}
+    items = payload.get("types")
+    if not isinstance(items, list):
+        return _json_error("类型列表格式不正确")
+    cleaned = []
+    seen = set()
+    for item in items:
+        if not isinstance(item, dict):
+            return _json_error("类型列表格式不正确")
+        tag_type = tagging.normalize_tag_type_key(item.get("type") or "")
+        if not tag_type:
+            return _json_error("类型标识仅允许小写英文、数字、- 与 _")
+        if tag_type in seen:
+            return _json_error("类型标识不能重复")
+        label = str(item.get("label") or item.get("name") or "").strip()
+        if not label:
+            return _json_error("类型名称不能为空")
+        color = tagging.normalize_tag_color(item.get("color"))
+        if not color:
+            return _json_error("颜色格式不正确（例：#7b8794）")
+        cleaned.append({"type": tag_type, "label": label, "color": color})
+        seen.add(tag_type)
+    if not cleaned:
+        return _json_error("至少保留一个类型")
+    tagging.save_tag_types_config(cleaned)
+    _touch_rebuild_flag("tag_types_updated")
+    return jsonify({"ok": True, "types": cleaned})
+
+
 @bp.post("/upload/admin/tags/meta")
 def admin_tags_meta():
     user = _require_admin()
@@ -613,7 +736,10 @@ def admin_tags_meta():
     parents = tagging.normalize_parents(payload.get("parents"))
     parents = [parent for parent in parents if parent != tag]
     slug_raw = tagging.normalize_slug(payload.get("slug") or "")
-    tag_type = tagging.normalize_tag_type(payload.get("type"))
+    tag_types_meta, tag_types_order = tagging.load_tag_types_config()
+    allowed_types = set(tag_types_meta.keys())
+    default_type = tagging.default_tag_type(tag_types_meta, tag_types_order)
+    tag_type = tagging.normalize_tag_type(payload.get("type"), allowed_types)
     raw_alias_to = str(payload.get("alias_to") or "").strip()
     if raw_alias_to.startswith("#"):
         raw_alias_to = raw_alias_to[1:]
@@ -624,7 +750,7 @@ def admin_tags_meta():
     existing = meta.get(tag, {})
     slug = slug_raw or (existing.get("slug") or "")
     if not tag_type:
-        tag_type = existing.get("type") or "general"
+        tag_type = existing.get("type") or default_type
     if not slug:
         return _json_error("URL 名称不能为空")
     if not tagging.is_valid_slug(slug):

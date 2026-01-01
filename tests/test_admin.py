@@ -82,6 +82,66 @@ def test_admin_login_requires_group(tmp_path):
     assert resp.status_code == 401
 
 
+def test_admin_upload_status_progress(tmp_path):
+    seed_test_root(tmp_path)
+    modules = setup_env(tmp_path)
+    config = modules["app.config"]
+    auth = modules["app.auth"]
+    storage = modules["app.storage"]
+    worker = modules["app.worker"]
+    upload_service = modules["app.upload_service"]
+
+    storage.ensure_dirs()
+    data_dir = config.STATIC / "data"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    tags_cfg = {"tags": [{"tag": "测试", "slug": "test"}]}
+    (data_dir / "tags.json").write_text(json.dumps(tags_cfg, ensure_ascii=False), encoding="utf-8")
+    auth.create_user("admin", "secret", groups=[config.ADMIN_GROUP])
+    app = upload_service.create_app()
+    client = app.test_client()
+    resp = client.post(
+        "/upload/admin/login",
+        json={"username": "admin", "password": "secret"},
+    )
+    assert resp.status_code == 200
+
+    img_path = tmp_path / "input.png"
+    make_image(img_path)
+    with img_path.open("rb") as f:
+        resp = client.post(
+            "/upload/admin/upload",
+            data={
+                "file": (f, "input.png"),
+                "title": "标题",
+                "description": "说明",
+                "tags": "#测试",
+                "collection": "",
+            },
+            content_type="multipart/form-data",
+        )
+    assert resp.status_code == 201
+    uuid = resp.get_json()["uuid"]
+
+    resp = client.get(f"/upload/admin/upload/status?uuid={uuid}")
+    assert resp.status_code == 200
+    assert "no-store" in resp.headers.get("Cache-Control", "")
+    payload = resp.get_json()
+    assert payload["stage"] in {"queued", "processing"}
+    assert payload["percent"] > 0
+
+    raw_path = config.RAW_DIR / f"{uuid}.png"
+    assert raw_path.exists()
+    assert worker.process_file(raw_path)
+    resp = client.get(f"/upload/admin/upload/status?uuid={uuid}")
+    payload = resp.get_json()
+    assert payload["stage"] == "processed"
+
+    assert worker.publish_ready_images()
+    resp = client.get(f"/upload/admin/upload/status?uuid={uuid}")
+    payload = resp.get_json()
+    assert payload["stage"] == "published"
+
+
 def test_search_index_and_tags_pages(tmp_path):
     seed_test_root(tmp_path)
     modules = setup_env(tmp_path)
@@ -93,7 +153,10 @@ def test_search_index_and_tags_pages(tmp_path):
     storage.ensure_dirs()
     data_dir = config.STATIC / "data"
     data_dir.mkdir(parents=True, exist_ok=True)
-    tags_cfg = {"tags": [{"tag": "猫咪", "slug": "cat"}]}
+    tags_cfg = {
+        "types": [{"type": "general", "label": "普通", "color": "#336699"}],
+        "tags": [{"tag": "猫咪", "slug": "cat"}],
+    }
     (data_dir / "tags.json").write_text(json.dumps(tags_cfg, ensure_ascii=False), encoding="utf-8")
     uid = "b" * 32
     raw_path = config.RAW_DIR / f"{uid}.png"
@@ -116,6 +179,8 @@ def test_search_index_and_tags_pages(tmp_path):
     tag_index_payload = json.loads(tag_index.read_text())
     tagged = {item["tag"]: item for item in tag_index_payload.get("tags", [])}
     assert tagged["猫咪"]["type"] == "general"
+    assert tagged["猫咪"]["type_color"] == "#336699"
+    assert tag_index_payload["types"][0]["type"] == "general"
     tag_slug = "cat"
     tag_page = config.WWW_DIR / "tags" / tag_slug / "index.html"
     assert tag_page.exists()
@@ -164,6 +229,51 @@ def test_admin_tag_meta_crud(tmp_path):
 
     resp = client.post("/upload/admin/tags/meta/delete", json={"tag": "#TestTag"})
     assert resp.status_code == 200
+
+
+def test_admin_tag_types_crud(tmp_path):
+    seed_test_root(tmp_path)
+    modules = setup_env(tmp_path)
+    config = modules["app.config"]
+    auth = modules["app.auth"]
+    upload_service = modules["app.upload_service"]
+
+    auth.create_user("admin", "secret", groups=[config.ADMIN_GROUP])
+    app = upload_service.create_app()
+    client = app.test_client()
+    resp = client.post(
+        "/upload/admin/login",
+        json={"username": "admin", "password": "secret"},
+    )
+    assert resp.status_code == 200
+
+    resp = client.post(
+        "/upload/admin/tag-types",
+        json={
+            "types": [
+                {"type": "general", "label": "普通", "color": "#7b8794"},
+                {"type": "series", "label": "系列", "color": "#ff0066"},
+            ]
+        },
+    )
+    assert resp.status_code == 200
+
+    resp = client.get("/upload/admin/tag-types")
+    assert resp.status_code == 200
+    payload = resp.get_json()
+    assert payload["types"][1]["type"] == "series"
+    assert payload["types"][1]["label"] == "系列"
+
+    resp = client.post(
+        "/upload/admin/tags/meta",
+        json={"tag": "#TestSeries", "slug": "test_series", "type": "series"},
+    )
+    assert resp.status_code == 200
+
+    resp = client.get("/upload/admin/tags")
+    data = resp.get_json()
+    tags = {item["tag"]: item for item in data["tags"]}
+    assert tags["testseries"]["type"] == "series"
 
 
 def test_admin_wiki_markdown_crud(tmp_path):

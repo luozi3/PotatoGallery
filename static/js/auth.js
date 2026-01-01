@@ -19,6 +19,13 @@
     if (target) target.textContent = message || "";
   }
 
+  function markLoggedIn() {
+    try {
+      localStorage.setItem("auth-hint", "1");
+      document.documentElement.classList.add("auth-hint-logged-in");
+    } catch (e) {}
+  }
+
   async function fetchJSON(url, options) {
     const resp = await fetch(url, { credentials: "include", ...options });
     const data = await resp.json().catch(() => ({}));
@@ -43,6 +50,7 @@
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
         });
+        markLoggedIn();
         location.assign(next);
       } catch (err) {
         setError(loginError, err.message);
@@ -76,6 +84,7 @@
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
         });
+        markLoggedIn();
         location.assign(next);
       } catch (err) {
         setError(registerError, err.message);

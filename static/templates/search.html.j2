@@ -6,116 +6,77 @@
   <title>搜索 ｜ {{ site_name }}</title>
   <meta name="description" content="{{ site_description }}">
   <meta name="theme-color" content="{{ site.theme_color }}">
+  {% include "partials/theme_init.html.j2" %}
   {% if site_url %}
   <link rel="canonical" href="{{ site_url }}/search/">
   {% endif %}
   <link rel="stylesheet" href="/static/styles/gallery.css?v={{ static_version }}">
 </head>
-<body class="page-search">
+<body class="page-search with-sidebar">
   {% set orientation_labels = {portrait: 竖屏, landscape: 横屏, square: 方形, unknown: 未标} %}
   {% set size_labels = {ultra: 超清, large: 高清, medium: 中等, compact: 轻量, unknown: 未标} %}
   <a class="skip-link" href="#main-content">跳到主要内容</a>
-  <header class="topbar">
-    <div class="topbar-left">
-      <a class="brand" href="/" aria-label="返回首页">
-        <span class="logo-dot" aria-hidden="true"></span>
-        <div class="brand-text">
-          <strong>{{ site.brand_name or site_name }}</strong>
-          <span>{{ site.brand_tagline }}</span>
-        </div>
-      </a>
-      <button class="icon-button theme-toggle" type="button" data-theme-toggle aria-label="切换主题">
-        <span class="icon" aria-hidden="true">◐</span>
-      </button>
-    </div>
-    <nav class="topnav" aria-label="顶栏导航">
-      <a href="/">首页</a>
-      <a href="/tags/">标签</a>
-      <a href="/favorites/" data-auth-user-link hidden>收藏</a>
-    </nav>
-    <div class="topbar-right">
-      <button class="search-trigger" type="button" data-search-open aria-label="打开搜索">搜索标题、描述、标签</button>
-      <span class="user-avatar" data-user-avatar hidden>
-        <img src="{{ site.auth_avatar_url }}" alt="用户头像" loading="lazy" width="32" height="32" data-user-avatar-img>
-      </span>
-      <a class="icon-link" href="/my/" data-auth-user-link hidden>我的作品</a>
-      <a class="icon-link" href="/favorites/" data-auth-user-link hidden>我的收藏</a>
-      <a class="icon-link" href="/auth/login/" data-auth-login-link>登录</a>
-      {% if auth.registration_mode != "closed" %}
-      <a class="icon-link" href="/auth/register/" data-auth-register-link>注册</a>
-      {% endif %}
-      <a class="icon-link admin-entry" href="/admin/" data-admin-entry hidden>管理</a>
-      <a class="icon-link admin-entry" href="/admin/tags/" data-admin-entry hidden>标签管理</a>
-      <a class="icon-link admin-entry" href="/status/" data-admin-entry hidden>状态</a>
-    </div>
-  </header>
+  {% include "partials/topbar.html.j2" %}
 
   <main id="main-content" tabindex="-1">
-    <section class="search-hero">
-      <h1>搜索作品</h1>
-      <p class="lede">输入标题、描述或标签，快速定位。</p>
-      <form class="search-form" action="/search/" method="get">
-        <input type="search" name="q" placeholder="搜索标题、描述、标签" autocomplete="off" data-search-input>
-        <button class="btn primary" type="submit">搜索</button>
-      </form>
-      <div class="search-filters" data-search-filters>
-        <div class="tabs" role="tablist" aria-label="分区筛选">
-          <button class="tab active" role="tab" aria-selected="true" data-search-tab data-collection="all">全部</button>
-          {% for collection in collections_list %}
-          <button class="tab" role="tab" aria-selected="false" data-search-tab data-collection="{{ collection.slug }}">{{ collection.title }}</button>
-          {% endfor %}
-        </div>
-        <div class="filters">
-          <div class="filter-group" aria-label="方向">
-            <span class="label">方向</span>
-            <button class="pill active" data-search-pill data-filter="orientation" data-value="all">全部</button>
-            <button class="pill" data-search-pill data-filter="orientation" data-value="portrait">竖屏</button>
-            <button class="pill" data-search-pill data-filter="orientation" data-value="landscape">横屏</button>
-            <button class="pill" data-search-pill data-filter="orientation" data-value="square">方形</button>
-          </div>
-          <div class="filter-group" aria-label="清晰度">
-            <span class="label">清晰度</span>
-            <button class="pill active" data-search-pill data-filter="size" data-value="all">全部</button>
-            <button class="pill" data-search-pill data-filter="size" data-value="ultra">超清</button>
-            <button class="pill" data-search-pill data-filter="size" data-value="large">高清</button>
-            <button class="pill" data-search-pill data-filter="size" data-value="medium">中等</button>
-            <button class="pill" data-search-pill data-filter="size" data-value="compact">轻量</button>
-          </div>
-          <div class="filter-group" aria-label="时间">
-            <span class="label">时间</span>
-            <button class="pill active" data-search-pill data-filter="time" data-value="all">全部</button>
-            <button class="pill" data-search-pill data-filter="time" data-value="30">30天内</button>
-            <button class="pill" data-search-pill data-filter="time" data-value="90">90天内</button>
-            <button class="pill" data-search-pill data-filter="time" data-value="365">一年内</button>
-          </div>
-          <div class="filter-group" aria-label="标签">
-            <span class="label">标签</span>
-            <select class="select" data-search-tag>
-              <option value="">全部标签</option>
-              {% for tag in tags %}
-              <option value="{{ tag.tag }}">#{{ tag.tag }} ({{ tag.count }})</option>
+    <div class="home-layout">
+      {% include "partials/sidebar_default.html.j2" %}
+      <div class="home-main">
+        <section class="search-hero">
+          <h1>搜索作品</h1>
+          <p class="lede">输入标题、描述或标签，快速定位。</p>
+          <form class="search-form" action="/search/" method="get">
+            <input type="search" name="q" placeholder="搜索标题、描述、标签" autocomplete="off" data-search-input>
+            <button class="btn primary" type="submit">搜索</button>
+          </form>
+          <div class="search-filters" data-search-filters>
+            <div class="tabs" role="tablist" aria-label="分区筛选">
+              <button class="tab active" role="tab" aria-selected="true" data-search-tab data-collection="all">全部</button>
+              {% for collection in collections_list %}
+              <button class="tab" role="tab" aria-selected="false" data-search-tab data-collection="{{ collection.slug }}">{{ collection.title }}</button>
               {% endfor %}
-            </select>
+            </div>
+            <div class="filters">
+              <div class="filter-group" aria-label="方向">
+                <span class="label">方向</span>
+                <button class="pill active" data-search-pill data-filter="orientation" data-value="all">全部</button>
+                <button class="pill" data-search-pill data-filter="orientation" data-value="portrait">竖屏</button>
+                <button class="pill" data-search-pill data-filter="orientation" data-value="landscape">横屏</button>
+                <button class="pill" data-search-pill data-filter="orientation" data-value="square">方形</button>
+              </div>
+              <div class="filter-group" aria-label="清晰度">
+                <span class="label">清晰度</span>
+                <button class="pill active" data-search-pill data-filter="size" data-value="all">全部</button>
+                <button class="pill" data-search-pill data-filter="size" data-value="ultra">超清</button>
+                <button class="pill" data-search-pill data-filter="size" data-value="large">高清</button>
+                <button class="pill" data-search-pill data-filter="size" data-value="medium">中等</button>
+                <button class="pill" data-search-pill data-filter="size" data-value="compact">轻量</button>
+              </div>
+              <div class="filter-group" aria-label="时间">
+                <span class="label">时间</span>
+                <button class="pill active" data-search-pill data-filter="time" data-value="all">全部</button>
+                <button class="pill" data-search-pill data-filter="time" data-value="30">30天内</button>
+                <button class="pill" data-search-pill data-filter="time" data-value="90">90天内</button>
+                <button class="pill" data-search-pill data-filter="time" data-value="365">一年内</button>
+              </div>
+              <div class="filter-group" aria-label="标签">
+                <span class="label">标签</span>
+                <select class="select" data-search-tag>
+                  <option value="">全部标签</option>
+                  {% for tag in tags %}
+                  <option value="{{ tag.tag }}">#{{ tag.tag }} ({{ tag.count }})</option>
+                  {% endfor %}
+                </select>
+              </div>
+            </div>
           </div>
-        </div>
+        </section>
+
+        <section class="gallery" data-search-grid data-masonry aria-live="polite"></section>
+        <div class="empty" data-search-empty>暂无结果，请调整关键词或筛选。</div>
       </div>
-    </section>
-
-    <section class="gallery" data-search-grid data-masonry aria-live="polite"></section>
-    <div class="empty" data-search-empty>暂无结果，请调整关键词或筛选。</div>
-  </main>
-
-  <div class="search-overlay" data-search-overlay aria-hidden="true">
-    <div class="search-panel" role="dialog" aria-modal="true">
-      <button class="icon-button close-button" type="button" data-search-close aria-label="关闭搜索">×</button>
-      <p class="search-title">搜索作品</p>
-      <form action="/search/" method="get" class="search-form">
-        <input type="search" name="q" placeholder="搜索标题、描述、标签" autocomplete="off" data-search-input>
-        <button class="btn primary" type="submit">搜索</button>
-      </form>
-      <p class="search-hint">支持标签、标题与描述匹配（# 可选）。</p>
     </div>
-  </div>
+  </main>
 
   <script src="/static/js/ui.js?v={{ static_version }}" defer></script>
   <script src="/static/js/search.js?v={{ static_version }}" defer></script>

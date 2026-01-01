@@ -4,13 +4,46 @@ import re
 
 
 BASE_DIR = Path(__file__).resolve().parents[1]
+INCLUDE_RE = re.compile(r"{%\s*include\s+\"([^\"]+)\"\s*%}")
+
+
+def _expand_includes(content: str, *, hide_search: bool) -> str:
+    def replace(match: re.Match) -> str:
+        include_path = match.group(1)
+        include_file = BASE_DIR / "static" / "templates" / include_path
+        if not include_file.exists():
+            return ""
+        include_content = include_file.read_text(encoding="utf-8")
+        if hide_search and include_path == "partials/topbar.html.j2":
+            include_content = re.sub(
+                r"{%\s*if\s+show_search\s*%}[\s\S]*?{%\s*endif\s*%}",
+                "",
+                include_content,
+            )
+        return include_content
+
+    for _ in range(3):
+        updated = INCLUDE_RE.sub(replace, content)
+        if updated == content:
+            break
+        content = updated
+    return content
 
 
 def read_text(rel_path: str) -> str:
-    return (BASE_DIR / rel_path).read_text(encoding="utf-8")
+    content = (BASE_DIR / rel_path).read_text(encoding="utf-8")
+    if rel_path.endswith(".html.j2"):
+        hide_search = "show_search = false" in content
+        content = _expand_includes(content, hide_search=hide_search)
+    return content
 
 
 def test_theme_toggle_after_brand():
+    topbar = read_text("static/templates/partials/topbar.html.j2")
+    brand_idx = topbar.find('class="brand')
+    toggle_idx = topbar.find("data-theme-toggle")
+    assert brand_idx != -1 and toggle_idx != -1
+    assert brand_idx < toggle_idx
     templates = [
         "static/templates/index.html.j2",
         "static/templates/detail.html.j2",
@@ -30,6 +63,42 @@ def test_theme_toggle_after_brand():
         assert brand_idx < toggle_idx, template
 
 
+def test_theme_init_inline_script_present():
+    templates = []
+    for path in (BASE_DIR / "static" / "templates").rglob("*.html.j2"):
+        if "partials" in path.parts:
+            continue
+        templates.append(str(path.relative_to(BASE_DIR)))
+    assert templates
+    for template in templates:
+        html = read_text(template)
+        assert "data-theme-init" in html, template
+
+
+def test_auth_hint_css_hides_login_links():
+    css = read_text("static/styles/gallery.css")
+    assert re.search(r"html\.auth-hint-logged-in\s*\[data-auth-login-link\]", css)
+    assert re.search(r"html\.auth-hint-logged-in\s*\[data-auth-register-link\]", css)
+
+
+def test_html_sidebar_collapsed_support():
+    css = read_text("static/styles/gallery.css")
+    assert re.search(r"html\.sidebar-collapsed\s+body\s+\.left-sidebar", css)
+    assert re.search(r"html\.sidebar-collapsed\s+body\s+\.detail-shell", css)
+
+
+def test_live2d_html_hidden_rule():
+    css = read_text("static/styles/gallery.css")
+    assert re.search(r"html\.live2d-hidden\s+#landlord", css)
+
+
+def test_sidebar_restore_back_forward_hook():
+    js = read_text("static/js/ui.js")
+    assert "sidebar-restore-open" in js
+    assert "pagehide" in js
+    assert "pageshow" in js
+
+
 def test_controls_use_theme_panel_background():
     css = read_text("static/styles/gallery.css")
     assert re.search(
@@ -37,6 +106,69 @@ def test_controls_use_theme_panel_background():
         css,
         re.S,
     )
+
+
+def test_system_font_stack_used():
+    css = read_text("static/styles/gallery.css")
+    assert "fonts.googleapis.com" not in css
+    assert "--font-sans:" in css
+    assert re.search(r"body\s*\{[^}]*font-family:\s*var\(--font-sans\)", css, re.S)
+    assert "Shippori" not in css
+    assert "Zen Kaku" not in css
+    assert "Noto Sans" not in css
+    assert "Noto Serif" not in css
+
+
+def test_mobile_topbar_compact_layout():
+    css = read_text("static/styles/gallery.css")
+    assert re.search(
+        r"@media \(max-width: 640px\)[\s\S]*?\.topbar-left[\s\S]*?flex:\s*0 1 auto",
+        css,
+        re.S,
+    )
+    assert re.search(
+        r"@media \(max-width: 640px\)[\s\S]*?\.topbar-center[\s\S]*?flex:\s*1 1 0",
+        css,
+        re.S,
+    )
+    assert re.search(
+        r"@media \(max-width: 640px\)[\s\S]*?\.brand-text strong[\s\S]*?font-size:\s*13px",
+        css,
+        re.S,
+    )
+    assert ".brand.brand-compact .brand-text strong" not in css
+
+
+def test_mobile_home_gallery_cover_and_width():
+    css = read_text("static/styles/gallery.css")
+    assert re.search(
+        r"@media \(max-width: 640px\)[\s\S]*?\.page-home\s+\.gallery[\s\S]*?grid-template-columns:\s*repeat\(auto-fill,\s*minmax\(156px,\s*1fr\)\)",
+        css,
+        re.S,
+    )
+    assert re.search(
+        r"@media \(max-width: 640px\)[\s\S]*?\.page-home\s+\.thumb[\s\S]*?object-fit:\s*cover",
+        css,
+        re.S,
+    )
+    assert re.search(
+        r"@media \(max-width: 640px\)[\s\S]*?\.page-home\s*\{[^}]*--card-thumb-max:\s*260px",
+        css,
+        re.S,
+    )
+
+
+def test_detail_page_dual_sidebar_layout_present():
+    html = read_text("static/templates/detail.html.j2")
+    assert "data-left-sidebar" in html
+    assert "detail-static-sidebar" in html
+    css = read_text("static/styles/gallery.css")
+    assert re.search(
+        r"\.detail-shell\s*\{[^}]*grid-template-columns:\s*var\(--sidebar-width\)\s+var\(--detail-sidebar-width\)\s+minmax\(0,\s*1fr\)",
+        css,
+        re.S,
+    )
+    assert ".detail-static-sidebar" in css
 
 
 def test_status_page_has_uptime_and_requests_cards():
@@ -54,7 +186,7 @@ def test_status_page_has_uptime_and_requests_cards():
 def test_status_page_mobile_padding():
     html = read_text("static/templates/status.html.j2")
     assert re.search(
-        r"@media \(max-width: 600px\)[\s\S]*?padding:\s*calc\(var\(--topbar-height\) \+ 18px\)\s+18px\s+40px;",
+        r"@media \(max-width: 600px\)[\s\S]*?padding:\s*18px\s+18px\s+40px;",
         html,
         re.S,
     )
@@ -62,38 +194,11 @@ def test_status_page_mobile_padding():
 
 def test_status_page_desktop_padding():
     html = read_text("static/templates/status.html.j2")
-    assert "padding: calc(var(--topbar-height) + 32px) 80px 72px;" in html
-    assert "padding: 12px 40px;" in html
-    assert "justify-content: flex-start;" in html
+    assert "padding: 32px 80px 72px;" in html
 
 
 def test_status_page_mobile_layout_overrides():
     html = read_text("static/templates/status.html.j2")
-    assert re.search(
-        r"@media \(max-width: 600px\)[\s\S]*--topbar-height:\s*calc\(44px\s*\+\s*env\(safe-area-inset-top\)\);",
-        html,
-        re.S,
-    )
-    assert re.search(
-        r"@media \(max-width: 600px\)[\s\S]*min-height:\s*var\(--topbar-height\);",
-        html,
-        re.S,
-    )
-    assert re.search(
-        r"@media \(max-width: 600px\)[\s\S]*padding:\s*calc\(6px\s*\+\s*env\(safe-area-inset-top\)\)\s+12px\s+6px;",
-        html,
-        re.S,
-    )
-    assert re.search(
-        r"@media \(max-width: 600px\)[\s\S]*\.page-status\s+\.topbar-left[\s\S]*flex:\s*1 1 auto",
-        html,
-        re.S,
-    )
-    assert re.search(
-        r"@media \(max-width: 600px\)[\s\S]*\.page-status\s+\.brand[\s\S]*margin-right:\s*auto",
-        html,
-        re.S,
-    )
     assert re.search(
         r"@media \(max-width: 600px\)[\s\S]*status-grid[\s\S]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\)",
         html,
@@ -121,6 +226,9 @@ def test_admin_tags_page_has_layout_class():
     html = read_text("static/templates/admin_tags.html.j2")
     assert "page-admin-tags" in html
     assert "tag-admin-guide" in html
+    assert "data-admin-tag-candidate" in html
+    assert "data-admin-tag-suggest-list" in html
+    assert "admin-subnav-link" not in html
 
 
 def test_admin_tags_layout_structure_present():
@@ -128,6 +236,7 @@ def test_admin_tags_layout_structure_present():
     assert "tag-admin-head" in js
     assert "tag-admin-fields" in js
     assert "tag-admin-actions" in js
+    assert "tag-admin-tree" in js
 
 
 def test_admin_tags_layout_responsive_grids():
@@ -138,6 +247,7 @@ def test_admin_tags_layout_responsive_grids():
         re.S,
     )
     assert re.search(r"\.tag-admin-fields\s*\{[^}]*auto-fit", css, re.S)
+    assert ".tag-admin-tree" in css
 
 
 def test_admin_dashboard_layout_present():
@@ -204,22 +314,22 @@ def test_admin_dashboard_stacks_panels():
 def test_admin_and_auth_main_offset_topbar():
     css = read_text("static/styles/gallery.css")
     assert re.search(
-        r"\.admin-main\s*\{[^}]*padding:\s*calc\(24px\s*\+\s*var\(--topbar-height\)\)\s+18px\s+40px;",
+        r"body\.with-sidebar\s+\.admin-main\s*\{[^}]*padding:\s*24px\s+18px\s+40px;",
         css,
         re.S,
     )
     assert re.search(
-        r"\.auth-main\s*\{[^}]*padding:\s*calc\(24px\s*\+\s*var\(--topbar-height\)\)\s+18px\s+40px;",
+        r"body\.with-sidebar\s+\.auth-main\s*\{[^}]*padding:\s*24px\s+18px\s+40px;",
         css,
         re.S,
     )
     assert re.search(
-        r"@media \(max-width: 640px\)[\s\S]*?\.admin-main[\s\S]*?padding:\s*calc\(14px\s*\+\s*var\(--topbar-height\)\)\s+12px\s+32px;",
+        r"@media \(max-width: 640px\)[\s\S]*?body\.with-sidebar\s+\.admin-main[\s\S]*?padding:\s*14px\s+12px\s+32px;",
         css,
         re.S,
     )
     assert re.search(
-        r"@media \(max-width: 640px\)[\s\S]*?\.auth-main[\s\S]*?padding:\s*calc\(14px\s*\+\s*var\(--topbar-height\)\)\s+12px\s+32px;",
+        r"@media \(max-width: 640px\)[\s\S]*?body\.with-sidebar\s+\.auth-main[\s\S]*?padding:\s*14px\s+12px\s+32px;",
         css,
         re.S,
     )
@@ -329,27 +439,52 @@ def test_tag_suggest_replaces_last_token_on_click():
     assert "tags[tags.length - 1] = tag" in js
 
 
-def test_tag_suggest_supports_alias_prefix():
+def test_tag_suggest_supports_alias_match_key():
     js = read_text("static/js/ui.js")
-    assert "aliasMap.forEach" in js
-    assert "alias.startsWith" in js
-    assert "alias.includes" in js
+    assert "normalizeTagMatch" in js
+    assert "aliasEntries" in js
+    assert "matchKey.startsWith" in js
+    assert "matchKey.includes" in js
 
 
-def test_global_search_overlay_present_on_core_pages():
+def test_global_search_bar_present_on_core_pages():
     templates = [
+        "static/templates/index.html.j2",
+        "static/templates/detail.html.j2",
+        "static/templates/search.html.j2",
+        "static/templates/tags.html.j2",
+        "static/templates/tag.html.j2",
         "static/templates/pages/favorites.html.j2",
         "static/templates/pages/my.html.j2",
+        "static/templates/pages/wiki.html.j2",
+        "static/templates/pages/dmca.html.j2",
+        "static/templates/legal.html.j2",
+        "static/templates/status.html.j2",
+        "static/templates/error.html.j2",
+        "static/templates/maintenance.html.j2",
+        "static/templates/404.html.j2",
+    ]
+    for template in templates:
+        content = read_text(template)
+        has_search = "data-search-host" in content or "data-search-open" in content
+        assert has_search, template
+
+
+def test_global_search_bar_hidden_on_auth_and_admin():
+    templates = [
         "static/templates/admin.html.j2",
+        "static/templates/admin_auth.html.j2",
+        "static/templates/admin_collections.html.j2",
+        "static/templates/admin_images.html.j2",
         "static/templates/admin_tags.html.j2",
+        "static/templates/admin_upload.html.j2",
         "static/templates/auth_login.html.j2",
         "static/templates/auth_register.html.j2",
     ]
     for template in templates:
         content = read_text(template)
-        assert "data-search-open" in content, template
-        assert "data-search-overlay" in content, template
-        assert "data-search-input" in content, template
+        has_search = "data-search-host" in content or "data-search-open" in content
+        assert not has_search, template
 
 
 def test_admin_filter_search_supports_suggest():
@@ -359,12 +494,11 @@ def test_admin_filter_search_supports_suggest():
     )
 
 
-def test_status_page_removes_search_and_theme_toggle():
+def test_status_page_uses_global_topbar():
     html = read_text("static/templates/status.html.j2")
-    assert "data-search-open" not in html
-    assert "data-search-overlay" not in html
-    assert "data-search-input" not in html
-    assert "data-theme-toggle" not in html
+    assert "data-theme-toggle" in html
+    has_search = "data-search-host" in html or "data-search-open" in html
+    assert has_search
 
 
 def test_search_syntax_parser_present():
@@ -378,7 +512,8 @@ def test_search_alias_prefix_maps_to_tag():
     js = read_text("static/js/search.js")
     assert "resolveTagPrefix" in js
     assert "aliasPrefixCache" in js
-    assert "alias.startsWith" in js
+    assert "normalizeTagMatch" in js
+    assert "aliasKey.startsWith" in js
 
 
 def test_wiki_page_template_exists():
@@ -443,25 +578,28 @@ def test_footer_present_on_homepage():
 
 
 def test_homepage_layout_has_sidebars():
-    html = read_text("static/templates/index.html.j2")
-    assert "data-left-sidebar" in html
-    assert "data-avatar-toggle" in html
-    assert "avatar-caret" in html
-    assert "data-live2d-toggle" in html
-    assert "search-icon" in html
+    index = read_text("static/templates/index.html.j2")
+    topbar = read_text("static/templates/partials/topbar.html.j2")
+    sidebar = read_text("static/templates/partials/sidebar_default.html.j2")
+    assert "data-left-sidebar" in index
+    assert "data-left-sidebar" in sidebar
+    assert "data-avatar-toggle" in topbar
+    assert "avatar-caret" in topbar
+    assert "data-live2d-toggle" in sidebar
+    assert "search-icon" in topbar
 
 
 def test_homepage_sidebar_dimmer_present():
-    html = read_text("static/templates/index.html.j2")
-    assert "data-sidebar-dim" in html
+    topbar = read_text("static/templates/partials/topbar.html.j2")
+    assert "data-sidebar-dim" in topbar
 
 
 def test_homepage_sidebar_has_copyright_notice():
-    html = read_text("static/templates/index.html.j2")
-    assert "site.copyright_year" in html
-    assert "site.copyright_holder" in html
-    assert "href=\"/dmca/\"" in html
-    assert "侵权请" in html
+    sidebar = read_text("static/templates/partials/sidebar_default.html.j2")
+    assert "site.copyright_year" in sidebar
+    assert "site.copyright_holder" in sidebar
+    assert "href=\"/dmca/\"" in sidebar
+    assert "侵权请" in sidebar
 
 
 def test_homepage_filter_summary_present():
@@ -479,18 +617,18 @@ def test_cards_have_click_targets():
 
 
 def test_homepage_live2d_toggle_before_wiki_heading():
-    html = read_text("static/templates/index.html.j2")
-    toggle_idx = html.find("data-live2d-toggle")
-    wiki_idx = html.find("Wiki / status")
+    sidebar = read_text("static/templates/partials/sidebar_default.html.j2")
+    toggle_idx = sidebar.find("data-live2d-toggle")
+    wiki_idx = sidebar.find("Wiki / status")
     assert toggle_idx != -1
     assert wiki_idx != -1
     assert toggle_idx < wiki_idx
 
 
 def test_homepage_sidebar_tags_removed():
-    html = read_text("static/templates/index.html.j2")
-    assert "side-tags" not in html
-    assert "side-tag" not in html
+    sidebar = read_text("static/templates/partials/sidebar_default.html.j2")
+    assert "side-tags" not in sidebar
+    assert "side-tag" not in sidebar
 
 
 def test_homepage_tag_strip_has_all_tags_link():
@@ -569,7 +707,7 @@ def test_mobile_sidebar_drawer_styles_present():
     assert re.search(r":root\[data-theme=\"dark\"\][\s\S]*--sidebar-close-color:\s*#ffffff", css, re.S)
     assert re.search(r"\.sidebar-dim\s*\{", css)
     assert re.search(
-        r"@media \(max-width: 640px\)[\s\S]*body\.page-home\.sidebar-open\s+\.sidebar-dim",
+        r"@media \(max-width: 640px\)[\s\S]*body\.sidebar-open\s+\.sidebar-dim",
         css,
         re.S,
     )
@@ -579,7 +717,7 @@ def test_mobile_sidebar_drawer_styles_present():
         re.S,
     )
     assert re.search(
-        r"@media \(max-width: 640px\)[\s\S]*html\.sidebar-open\s+body\.page-home",
+        r"@media \(max-width: 640px\)[\s\S]*html\.sidebar-open\s+body\.sidebar-open",
         css,
         re.S,
     )
@@ -624,12 +762,12 @@ def test_mobile_sidebar_drawer_styles_present():
         re.S,
     )
     assert re.search(
-        r"@media \(max-width: 640px\)[\s\S]*body\.page-home\.sidebar-open\s+\.left-sidebar",
+        r"@media \(max-width: 640px\)[\s\S]*body\.sidebar-open\s+\.left-sidebar",
         css,
         re.S,
     )
     assert re.search(
-        r"@media \(max-width: 640px\)[\s\S]*body\.page-home\.sidebar-open\s+\.sidebar-close",
+        r"@media \(max-width: 640px\)[\s\S]*body\.sidebar-open\s+\.sidebar-close",
         css,
         re.S,
     )
@@ -652,9 +790,9 @@ def test_topbar_stays_single_row_and_allows_search_shrink():
 
 
 def test_homepage_sidebar_close_button_present():
-    html = read_text("static/templates/index.html.j2")
-    assert "sidebar-close" in html
-    assert "aria-label=\"关闭侧栏\"" in html
+    topbar = read_text("static/templates/partials/topbar.html.j2")
+    assert "sidebar-close" in topbar
+    assert "aria-label=\"关闭侧栏\"" in topbar
 
 
 def test_topbar_fixed_and_main_offset():
@@ -725,10 +863,17 @@ def test_search_suggest_panel_shows_on_focus():
     assert "panel.classList.toggle('is-empty', !isFocused)" in js
 
 
-def test_search_suggest_requires_hash_prefix():
+def test_search_suggest_renders_alias_hint():
     js = read_text("static/js/ui.js")
-    assert "startsWith('#')" in js
-    assert "startsWith('-#')" in js or "startsWith(\"-#\")" in js
+    assert "alias && alias !== tag" in js
+    assert "->" in js
+
+
+def test_search_suggest_accepts_plain_tokens():
+    js = read_text("static/js/ui.js")
+    assert "parseSearchSuggestToken" in js
+    assert "buildTagSuggestions" in js
+    assert "includeAlias: true" in js
 
 
 def test_wall_page_removed_everywhere():
@@ -823,9 +968,13 @@ def test_error_page_uses_scale_variable():
 
 
 def test_admin_links_present_in_topbars():
+    sidebar = read_text("static/templates/partials/sidebar_default.html.j2")
+    assert 'href="/admin/"' in sidebar
+    assert 'href="/admin/tags/"' in sidebar
+    assert 'href="/status/"' in sidebar
+    assert "data-admin-entry" in sidebar
     templates = [
         "static/templates/index.html.j2",
-        "static/templates/detail.html.j2",
         "static/templates/search.html.j2",
         "static/templates/tags.html.j2",
         "static/templates/tag.html.j2",
@@ -835,13 +984,30 @@ def test_admin_links_present_in_topbars():
     ]
     for template in templates:
         content = read_text(template)
-        assert 'href="/admin/"' in content
-        assert 'href="/admin/tags/"' in content
-        assert 'href="/status/"' in content
         assert "data-admin-entry" in content
 
 
+def test_admin_tags_filters_present():
+    content = read_text("static/templates/admin_tags.html.j2")
+    assert "data-admin-tag-search" in content
+    assert "data-admin-tag-type-filter" in content
+    assert "data-admin-tag-sort" in content
+    assert "data-admin-tag-show-empty" in content
+    assert "data-admin-tag-page-size" in content
+    assert "data-admin-tag-page-info" in content
+    assert "data-admin-tag-shell" in content
+    assert "data-admin-editor" in content
+    assert "data-admin-editor-back" in content
+    assert "data-admin-type-toggle" in content
+
+
 def test_user_avatar_placeholder_in_topbars():
+    topbar = read_text("static/templates/partials/topbar.html.j2")
+    assert "data-user-avatar" in topbar
+    assert "data-user-avatar-img" in topbar
+    assert "data-auth-login-link" in topbar
+    assert "data-auth-register-link" in topbar
+    assert "data-auth-user-link" in topbar
     templates = [
         "static/templates/index.html.j2",
         "static/templates/detail.html.j2",
@@ -854,11 +1020,6 @@ def test_user_avatar_placeholder_in_topbars():
     for template in templates:
         content = read_text(template)
         assert "data-user-avatar" in content, template
-        assert "data-user-avatar-img" in content, template
-    index_html = read_text("static/templates/index.html.j2")
-    assert "data-auth-login-link" in index_html
-    assert "data-auth-register-link" in index_html
-    assert "data-auth-user-link" in index_html
 
 
 def test_hidden_attribute_overrides_display():
@@ -874,15 +1035,20 @@ def test_mobile_topnav_scrolls():
     )
 
 
-def test_homepage_mobile_gallery_is_two_columns():
+def test_homepage_mobile_gallery_is_auto_fill():
     css = read_text("static/styles/gallery.css")
     assert re.search(
-        r"@media \(max-width: 640px\)[\s\S]*\.page-home\s+\.gallery\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)",
+        r"@media \(max-width: 640px\)[\s\S]*\.page-home\s+\.gallery\s*\{[^}]*grid-template-columns:\s*repeat\(auto-fill,\s*minmax\(156px,\s*1fr\)\)",
         css,
         re.S,
     )
     assert re.search(
-        r"@media \(max-width: 640px\)[\s\S]*\.page-home\s+\.gallery\s*\{[^}]*gap:\s*10px",
+        r"@media \(max-width: 640px\)[\s\S]*\.page-home\s+\.gallery\s*\{[^}]*gap:\s*12px",
+        css,
+        re.S,
+    )
+    assert re.search(
+        r"@media \(max-width: 640px\)[\s\S]*\.page-home\s+\.gallery\s*\{[^}]*padding:\s*0\s+6px",
         css,
         re.S,
     )
@@ -891,7 +1057,7 @@ def test_homepage_mobile_gallery_is_two_columns():
 def test_homepage_mobile_card_density_tokens():
     css = read_text("static/styles/gallery.css")
     assert re.search(
-        r"@media \(max-width: 640px\)[\s\S]*\.page-home\s*\{[^}]*--card-thumb-max:\s*220px",
+        r"@media \(max-width: 640px\)[\s\S]*\.page-home\s*\{[^}]*--card-thumb-max:\s*260px",
         css,
         re.S,
     )
@@ -919,6 +1085,11 @@ def test_homepage_mobile_main_padding_has_left_right_gap():
 def test_homepage_filter_pills_wrapper_present():
     html = read_text("static/templates/index.html.j2")
     assert html.count('class="filter-pills"') >= 2
+
+
+def test_homepage_tag_strip_has_data_hook():
+    html = read_text("static/templates/index.html.j2")
+    assert "data-tag-strip-list" in html
 
 
 def test_tag_chip_base_style_is_borderless():
@@ -967,6 +1138,58 @@ def test_homepage_mobile_filters_scrollable_row():
     )
 
 
+def test_homepage_filters_scale_smoothly():
+    css = read_text("static/styles/gallery.css")
+    assert re.search(
+        r"\.page-home\s+\.controls\s*\{[^}]*--home-filter-font:\s*clamp",
+        css,
+        re.S,
+    )
+    assert re.search(
+        r"\.page-home\s+\.controls\s*\{[^}]*--home-filter-pill-font:\s*clamp",
+        css,
+        re.S,
+    )
+    assert re.search(
+        r"\.page-home\s+\.tab\s*\{[^}]*font-size:\s*var\(--home-filter-font\)",
+        css,
+        re.S,
+    )
+    assert re.search(
+        r"\.page-home\s+\.filter-group\s+\.label\s*\{[^}]*font-size:\s*var\(--home-filter-font\)",
+        css,
+        re.S,
+    )
+    assert re.search(
+        r"\.page-home\s+\.filter-pills\s+\.pill\s*\{[^}]*font-size:\s*var\(--home-filter-pill-font\)",
+        css,
+        re.S,
+    )
+    assert re.search(
+        r"\.page-home\s+\.filter-pills\s+\.pill\s*\{[^}]*padding:\s*var\(--home-filter-pill-pad-y\)\s+var\(--home-filter-pill-pad-x\)",
+        css,
+        re.S,
+    )
+
+
+def test_homepage_tag_strip_label_no_wrap():
+    css = read_text("static/styles/gallery.css")
+    assert re.search(r"\.tag-strip-label\s*\{[^}]*white-space:\s*nowrap", css, re.S)
+
+
+def test_ui_handles_tag_strip_overflow():
+    js = read_text("static/js/ui.js")
+    assert "data-tag-strip-list" in js
+    assert "tag-chip-more" in js
+    assert "scrollWidth" in js
+
+
+def test_upload_progress_styles():
+    css = read_text("static/styles/gallery.css")
+    assert ".upload-progress" in css
+    assert ".upload-progress-fill" in css
+
+
 def test_my_page_template_has_upload_and_gallery():
     html = read_text("static/templates/pages/my.html.j2")
     assert "data-user-upload-form" in html
@@ -977,3 +1200,42 @@ def test_detail_page_has_editor_panel():
     html = read_text("static/templates/detail.html.j2")
     assert "data-image-editor" in html
     assert "data-image-uuid" in html
+
+
+def test_detail_page_has_tag_tree_panel():
+    html = read_text("static/templates/detail.html.j2")
+    assert "tag-groups" in html
+    assert "tag-flat-list" in html
+    assert "detail-static-sidebar" in html
+    assert "data-left-sidebar" in html
+    assert 'data-sidebar-default="collapsed"' in html
+    assert "回到首页" not in html
+
+
+def test_detail_page_uses_thumbnail_toggle():
+    html = read_text("static/templates/detail.html.j2")
+    assert "{% set thumb_src" in html
+    assert "data-detail-image" in html
+    assert "data-thumb-src" in html
+    assert "data-full-src" in html
+    assert "data-image-status" in html
+
+
+def test_ui_supports_detail_image_toggle():
+    js = read_text("static/js/ui.js")
+    assert "data-detail-media" in js
+    assert "data-detail-image" in js
+    assert "data-image-status" in js
+    assert "data-sidebar-default" in js
+
+
+def test_tag_page_has_tree_toggle():
+    html = read_text("static/templates/tag.html.j2")
+    assert "data-tag-tree-toggle" in html
+    assert "data-tag-tree-panel" in html
+
+
+def test_ui_supports_tag_tree_toggle():
+    js = read_text("static/js/ui.js")
+    assert "data-tag-tree-toggle" in js
+    assert "data-tag-tree-panel" in js

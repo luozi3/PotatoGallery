@@ -6,114 +6,95 @@
   <title>管理中心 ｜ {{ site_name }}</title>
   <meta name="description" content="{{ site_description }}">
   <meta name="theme-color" content="{{ site.theme_color }}">
+  {% include "partials/theme_init.html.j2" %}
   <link rel="stylesheet" href="/static/styles/gallery.css?v={{ static_version }}">
 </head>
-<body class="page-admin page-admin-home">
+<body class="page-admin page-admin-home with-sidebar">
   <a class="skip-link" href="#main-content">跳到主要内容</a>
-  <header class="topbar">
-    <div class="topbar-left">
-      <a class="brand" href="/" aria-label="返回首页">
-        <span class="logo-dot" aria-hidden="true"></span>
-        <div class="brand-text">
-          <strong>{{ site.brand_name or site_name }}</strong>
-          <span>{{ site.brand_tagline }}</span>
-        </div>
-      </a>
-      <button class="icon-button theme-toggle" type="button" data-theme-toggle aria-label="切换主题">
-        <span class="icon" aria-hidden="true">◐</span>
-      </button>
-    </div>
-    <div class="topbar-right">
-      <button class="search-trigger" type="button" data-search-open aria-label="打开搜索">搜索标题、描述、标签</button>
-      <button class="icon-button" type="button" data-admin-logout>退出</button>
-    </div>
-  </header>
+  {% set show_search = false %}
+  {% set show_admin_logout = true %}
+  {% include "partials/topbar.html.j2" %}
 
-  <main id="main-content" class="admin-main" tabindex="-1">
-    <section class="admin-auth admin-surface" data-admin-login>
-      <h1>管理员登录</h1>
-      <p class="muted">请输入后台账号与密码。</p>
-      <form class="admin-form" data-admin-login-form>
-        <label>账号</label>
-        <input type="text" name="username" autocomplete="username" required>
-        <label>密码</label>
-        <input type="password" name="password" autocomplete="current-password" required>
-        <button class="btn primary" type="submit">登录</button>
-        <p class="hint" data-admin-login-error></p>
-      </form>
-    </section>
+  <main id="main-content" tabindex="-1">
+    <div class="home-layout">
+      {% include "partials/sidebar_default.html.j2" %}
+      <div class="home-main">
+        <div class="admin-main">
+          <section class="admin-auth admin-surface" data-admin-login>
+            <h1>管理员登录</h1>
+            <p class="muted">请输入后台账号与密码。</p>
+            <form class="admin-form" data-admin-login-form>
+              <label>账号</label>
+              <input type="text" name="username" autocomplete="username" required>
+              <label>密码</label>
+              <input type="password" name="password" autocomplete="current-password" required>
+              <button class="btn primary" type="submit">登录</button>
+              <p class="hint" data-admin-login-error></p>
+            </form>
+          </section>
 
-    <section class="admin-panel admin-surface admin-home-panel" data-admin-panel hidden>
-      <div class="admin-toolbar admin-hero">
-        <div>
-          <h1>管理总览</h1>
-          <p class="muted">按功能分区归类入口，减少混杂与信息密度。</p>
+          <section class="admin-panel admin-surface admin-home-panel" data-admin-panel hidden>
+            <div class="admin-toolbar admin-hero">
+              <div>
+                <h1>管理总览</h1>
+                <p class="muted">按功能分区归类入口，减少混杂与信息密度。</p>
+              </div>
+            </div>
+            <div class="admin-home-sections">
+              <section class="admin-home-section">
+                <header class="admin-home-header">
+                  <h2>内容管理</h2>
+                  <p class="muted">处理作品、标签与上传入口。</p>
+                </header>
+                <div class="admin-home-grid">
+                  <a class="admin-nav-card" href="/admin/images/">
+                    <div class="admin-nav-title">作品管理</div>
+                    <p>管理作品列表，编辑标题/描述/标签，处理删除与垃圾桶。</p>
+                  </a>
+                  <a class="admin-nav-card" href="/admin/upload/">
+                    <div class="admin-nav-title">上传作品</div>
+                    <p>上传新作品并填写标题、标签、分区与正文说明。</p>
+                  </a>
+                  <a class="admin-nav-card" href="/admin/tags/">
+                    <div class="admin-nav-title">标签管理</div>
+                    <p>维护标签/别名/父标签与类型，更新标签体系。</p>
+                  </a>
+                </div>
+              </section>
+              <section class="admin-home-section">
+                <header class="admin-home-header">
+                  <h2>站点设置</h2>
+                  <p class="muted">站点结构与注册策略的基础配置。</p>
+                </header>
+                <div class="admin-home-grid">
+                  <a class="admin-nav-card" href="/admin/collections/">
+                    <div class="admin-nav-title">分区管理</div>
+                    <p>维护分区与描述，设置默认分区并同步发布。</p>
+                  </a>
+                  <a class="admin-nav-card" href="/admin/auth/">
+                    <div class="admin-nav-title">注册开关</div>
+                    <p>切换开放/关闭/邀请码注册模式并保存生效。</p>
+                  </a>
+                </div>
+              </section>
+              <section class="admin-home-section">
+                <header class="admin-home-header">
+                  <h2>系统状态</h2>
+                  <p class="muted">查看运行信息与资源占用。</p>
+                </header>
+                <div class="admin-home-grid">
+                  <a class="admin-nav-card admin-status-card" href="/status/">
+                    <div class="admin-nav-title">系统状态</div>
+                    <p>查看站点运行数据、资源占用与发布信息。</p>
+                  </a>
+                </div>
+              </section>
+            </div>
+          </section>
         </div>
       </div>
-      <div class="admin-home-sections">
-        <section class="admin-home-section">
-          <header class="admin-home-header">
-            <h2>内容管理</h2>
-            <p class="muted">处理作品、标签与上传入口。</p>
-          </header>
-          <div class="admin-home-grid">
-            <a class="admin-nav-card" href="/admin/images/">
-              <div class="admin-nav-title">作品管理</div>
-              <p>管理作品列表，编辑标题/描述/标签，处理删除与垃圾桶。</p>
-            </a>
-            <a class="admin-nav-card" href="/admin/upload/">
-              <div class="admin-nav-title">上传作品</div>
-              <p>上传新作品并填写标题、标签、分区与正文说明。</p>
-            </a>
-            <a class="admin-nav-card" href="/admin/tags/">
-              <div class="admin-nav-title">标签管理</div>
-              <p>维护标签/别名/父标签与类型，更新标签体系。</p>
-            </a>
-          </div>
-        </section>
-        <section class="admin-home-section">
-          <header class="admin-home-header">
-            <h2>站点设置</h2>
-            <p class="muted">站点结构与注册策略的基础配置。</p>
-          </header>
-          <div class="admin-home-grid">
-            <a class="admin-nav-card" href="/admin/collections/">
-              <div class="admin-nav-title">分区管理</div>
-              <p>维护分区与描述，设置默认分区并同步发布。</p>
-            </a>
-            <a class="admin-nav-card" href="/admin/auth/">
-              <div class="admin-nav-title">注册开关</div>
-              <p>切换开放/关闭/邀请码注册模式并保存生效。</p>
-            </a>
-          </div>
-        </section>
-        <section class="admin-home-section">
-          <header class="admin-home-header">
-            <h2>系统状态</h2>
-            <p class="muted">查看运行信息与资源占用。</p>
-          </header>
-          <div class="admin-home-grid">
-            <a class="admin-nav-card admin-status-card" href="/status/">
-              <div class="admin-nav-title">系统状态</div>
-              <p>查看站点运行数据、资源占用与发布信息。</p>
-            </a>
-          </div>
-        </section>
-      </div>
-    </section>
+    </div>
   </main>
-
-  <div class="search-overlay" data-search-overlay aria-hidden="true">
-    <div class="search-panel" role="dialog" aria-modal="true">
-      <button class="icon-button close-button" type="button" data-search-close aria-label="关闭搜索">×</button>
-      <p class="search-title">搜索作品</p>
-      <form action="/search/" method="get" class="search-form">
-        <input type="search" name="q" placeholder="搜索标题、描述、标签" autocomplete="off" data-search-input>
-        <button class="btn primary" type="submit">搜索</button>
-      </form>
-      <p class="search-hint">支持标签、标题与描述匹配（# 可选）。</p>
-    </div>
-  </div>
 
   <script src="/static/js/ui.js?v={{ static_version }}" defer></script>
   <script src="/static/js/admin.js?v={{ static_version }}" defer></script>

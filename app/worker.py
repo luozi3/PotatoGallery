@@ -197,7 +197,7 @@ def images_for_site() -> List[dict]:
     with db.connect() as conn:
         return conn.execute(
             """
-            SELECT uuid, original_name, ext, bytes, width, height, thumb_width, thumb_height, sha256, dominant_color, created_at, thumb_path,
+            SELECT id, uuid, original_name, ext, bytes, width, height, thumb_width, thumb_height, sha256, dominant_color, created_at, thumb_path,
                    title_override, description, tags_json, collection_override
             FROM images
             WHERE status IN ('processed','published')

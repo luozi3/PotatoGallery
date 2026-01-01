@@ -6,6 +6,7 @@
   const savedTheme = localStorage.getItem('theme');
   const initialTheme =
     savedTheme || (body && body.classList.contains('page-home') ? 'dark' : 'light');
+  const SIDEBAR_RESTORE_KEY = 'sidebar-restore-open';
 
   function applyTheme(theme, animate) {
     if (animate) {
@@ -31,6 +32,44 @@
     });
   }
 
+  function isDetailPath(path) {
+    return path && path.indexOf('/images/') === 0 && path !== '/images/' && path !== '/images';
+  }
+
+  function isDetailUrl(url) {
+    if (!url) return false;
+    try {
+      const next = new URL(url, window.location.href);
+      if (next.origin !== window.location.origin) return false;
+      return isDetailPath(next.pathname || '');
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function shouldMarkSidebarRestore() {
+    if (!body) return false;
+    if (body.classList.contains('page-detail')) return false;
+    if (body.classList.contains('sidebar-collapsed') || root.classList.contains('sidebar-collapsed')) {
+      return false;
+    }
+    if (window.matchMedia('(max-width: 640px)').matches) return false;
+    return true;
+  }
+
+  function markSidebarRestoreOpen() {
+    if (!shouldMarkSidebarRestore()) return;
+    try {
+      localStorage.setItem(SIDEBAR_RESTORE_KEY, '1');
+    } catch (e) {}
+    root.dataset.sidebarRestore = '1';
+  }
+
+  function maybePrepareSidebarRestore(url) {
+    if (!isDetailUrl(url)) return;
+    markSidebarRestoreOpen();
+  }
+
   function syncTopbarHeight() {
     const topbar = document.querySelector('.topbar');
     if (!topbar) return;
@@ -45,6 +84,44 @@
   window.addEventListener('resize', () => {
     window.requestAnimationFrame(syncTopbarHeight);
   });
+
+  const tagStrip = document.querySelector('[data-tag-strip-list]');
+  let tagStripRaf = 0;
+
+  function clampTagStrip() {
+    if (!tagStrip) return;
+    const chips = Array.from(tagStrip.querySelectorAll('.tag-chip'));
+    if (!chips.length) return;
+    chips.forEach((chip) => {
+      chip.hidden = false;
+    });
+    if (window.matchMedia('(max-width: 640px)').matches) return;
+    if (!tagStrip.clientWidth) return;
+    const moreChip = tagStrip.querySelector('.tag-chip-more');
+    const hideTargets = chips.filter((chip) => chip !== moreChip);
+    let overflow = tagStrip.scrollWidth > tagStrip.clientWidth;
+    for (let i = hideTargets.length - 1; overflow && i >= 0; i -= 1) {
+      hideTargets[i].hidden = true;
+      overflow = tagStrip.scrollWidth > tagStrip.clientWidth;
+    }
+  }
+
+  function scheduleClampTagStrip() {
+    if (!tagStrip) return;
+    if (tagStripRaf) {
+      window.cancelAnimationFrame(tagStripRaf);
+    }
+    tagStripRaf = window.requestAnimationFrame(() => {
+      tagStripRaf = 0;
+      clampTagStrip();
+    });
+  }
+
+  if (tagStrip) {
+    scheduleClampTagStrip();
+    window.addEventListener('load', scheduleClampTagStrip);
+    window.addEventListener('resize', scheduleClampTagStrip);
+  }
 
   const masonryState = new WeakMap();
   const MASONRY_READY_TIMEOUT = 1200;
@@ -138,6 +215,8 @@
   const leftSidebar = document.querySelector('[data-left-sidebar]');
   const leftToggles = Array.from(document.querySelectorAll('[data-left-toggle]'));
   const sidebarDim = document.querySelector('[data-sidebar-dim]');
+  const sidebarDefault = body ? body.getAttribute('data-sidebar-default') : null;
+  let sidebarUserOverride = false;
 
   function syncToggleAria(expanded) {
     leftToggles.forEach((btn) => btn.setAttribute('aria-expanded', expanded ? 'true' : 'false'));
@@ -148,6 +227,7 @@
     body.classList.toggle('sidebar-collapsed', collapsed);
     body.classList.remove('sidebar-open');
     root.classList.remove('sidebar-open');
+    root.classList.toggle('sidebar-collapsed', collapsed);
     syncToggleAria(!collapsed);
     if (persist) {
       localStorage.setItem('sidebar-collapsed', collapsed ? '1' : '0');
@@ -156,6 +236,20 @@
 
   if (leftSidebar && leftToggles.length) {
     const mobileQuery = window.matchMedia('(max-width: 640px)');
+
+    function shouldRestoreOpen() {
+      if (!body) return false;
+      if (body.classList.contains('page-detail')) return false;
+      if (localStorage.getItem('sidebar-collapsed') === '1') return false;
+      return (
+        root.dataset.sidebarRestore === '1' || localStorage.getItem(SIDEBAR_RESTORE_KEY) === '1'
+      );
+    }
+
+    function clearRestoreOpen() {
+      root.dataset.sidebarRestore = '0';
+      localStorage.removeItem(SIDEBAR_RESTORE_KEY);
+    }
 
     function setMobileOpen(open) {
       if (!body) return;
@@ -170,11 +264,23 @@
         setMobileOpen(false);
         return;
       }
+      if (shouldRestoreOpen()) {
+        setDesktopCollapsed(true, false);
+        return;
+      }
+      if (sidebarDefault === 'collapsed' && !sidebarUserOverride) {
+        setDesktopCollapsed(true, false);
+        return;
+      }
       const stored = localStorage.getItem('sidebar-collapsed');
       setDesktopCollapsed(stored === '1', false);
     };
 
     applySidebarState();
+    if (shouldRestoreOpen()) {
+      clearRestoreOpen();
+      window.requestAnimationFrame(() => setDesktopCollapsed(false, false));
+    }
 
     const handleViewportChange = () => applySidebarState();
     if (mobileQuery.addEventListener) {
@@ -190,6 +296,9 @@
           setMobileOpen(next);
           return;
         }
+        if (sidebarDefault === 'collapsed') {
+          sidebarUserOverride = true;
+        }
         const next = !body.classList.contains('sidebar-collapsed');
         setDesktopCollapsed(next, true);
       });
@@ -202,6 +311,28 @@
         }
       });
     }
+
+    window.addEventListener('pagehide', (event) => {
+      if (!event.persisted || mobileQuery.matches) return;
+      if (!shouldRestoreOpen()) return;
+      setDesktopCollapsed(true, false);
+    });
+
+    window.addEventListener('pageshow', (event) => {
+      if (mobileQuery.matches) return;
+      const navEntry = performance.getEntriesByType
+        ? performance.getEntriesByType('navigation')[0]
+        : null;
+      const isBackForward = navEntry
+        ? navEntry.type === 'back_forward'
+        : performance.navigation && performance.navigation.type === 2;
+      if (!event.persisted && !isBackForward) return;
+      applySidebarState();
+      if (shouldRestoreOpen()) {
+        clearRestoreOpen();
+        window.requestAnimationFrame(() => setDesktopCollapsed(false, false));
+      }
+    });
   }
 
 
@@ -212,23 +343,50 @@
     return value.replace(/\s+/g, ' ').toLowerCase();
   }
 
+  function normalizeTagMatch(input) {
+    return normalizeTagName(input).replace(/\s+/g, '');
+  }
+
   function buildTagIndex(raw) {
     const source = raw && Array.isArray(raw.tags) ? raw.tags : [];
     const aliasMap = new Map();
+    const aliasCompactMap = new Map();
+    const aliasEntries = [];
+    const aliasEntryKeys = new Set();
     const parentMap = new Map();
     const canonicalTags = [];
     const allTags = [];
+    const registerCompactAlias = (alias, canonical) => {
+      const compact = normalizeTagMatch(alias);
+      if (!compact) return;
+      const existing = aliasCompactMap.get(compact);
+      if (!existing) {
+        aliasCompactMap.set(compact, canonical);
+      } else if (existing !== canonical) {
+        aliasCompactMap.set(compact, '');
+      }
+    };
+    const registerAliasEntry = (alias, canonical, isAlias) => {
+      if (!alias) return;
+      aliasMap.set(alias, canonical);
+      registerCompactAlias(alias, canonical);
+      if (!isAlias || alias === canonical) return;
+      const key = `${alias}::${canonical}`;
+      if (aliasEntryKeys.has(key)) return;
+      aliasEntryKeys.add(key);
+      aliasEntries.push({ alias, canonical, matchKey: normalizeTagMatch(alias) });
+    };
     source.forEach((item) => {
       const tag = normalizeTagName(item.tag);
       if (!tag) return;
       allTags.push(tag);
       const aliasOf = normalizeTagName(item.alias_of);
       const canonical = aliasOf || tag;
-      aliasMap.set(tag, canonical);
+      registerAliasEntry(tag, canonical, Boolean(aliasOf));
       const aliases = Array.isArray(item.aliases) ? item.aliases : [];
       aliases.forEach((alias) => {
         const normalized = normalizeTagName(alias);
-        if (normalized) aliasMap.set(normalized, canonical);
+        if (normalized) registerAliasEntry(normalized, canonical, true);
       });
       if (!aliasOf) {
         canonicalTags.push(tag);
@@ -240,7 +398,7 @@
       }
     });
     canonicalTags.sort();
-    return { raw, aliasMap, parentMap, canonicalTags, allTags };
+    return { raw, aliasMap, aliasCompactMap, aliasEntries, parentMap, canonicalTags, allTags };
   }
 
   function loadTagIndex() {
@@ -314,53 +472,63 @@
     return missing;
   }
 
-  function suggestTags(query, data, existingTags) {
+  function buildTagSuggestions(query, data, options) {
     if (!data) return [];
+    const settings = options && typeof options === 'object' ? options : {};
+    const limit = Number.isFinite(settings.limit) ? settings.limit : 8;
+    const includeAlias = settings.includeAlias === true;
+    const existing = new Set(settings.existingTags || []);
     const normalized = normalizeTagName(query);
-    if (!normalized) return [];
+    const matchKey = normalizeTagMatch(normalized);
+    if (!matchKey) return [];
     const suggestions = [];
-    const aliasMap = data.aliasMap || new Map();
-    const canonicalTags = data.canonicalTags || [];
-    const existing = new Set(existingTags || []);
     const added = new Set();
-    const pushSuggestion = (tag) => {
+    const pushSuggestion = (tag, alias) => {
       if (!tag || existing.has(tag) || added.has(tag)) return;
       added.add(tag);
-      suggestions.push(tag);
+      if (includeAlias) {
+        suggestions.push({ tag, alias: alias || '' });
+      } else {
+        suggestions.push({ tag });
+      }
     };
-    const canonical = aliasMap.get(normalized);
-    if (canonical && canonical !== normalized) {
-      pushSuggestion(canonical);
-    }
-    aliasMap.forEach((canonicalTag, alias) => {
-      if (suggestions.length >= 8) return;
-      if (alias.startsWith(normalized)) {
-        pushSuggestion(canonicalTag);
+    const aliasEntries = data.aliasEntries || [];
+    const canonicalTags = data.canonicalTags || [];
+    aliasEntries.forEach((entry) => {
+      if (suggestions.length >= limit) return;
+      if (entry.matchKey && entry.matchKey.startsWith(matchKey)) {
+        pushSuggestion(entry.canonical, entry.alias);
       }
     });
-    if (suggestions.length < 8) {
-      aliasMap.forEach((canonicalTag, alias) => {
-        if (suggestions.length >= 8) return;
-        if (alias.includes(normalized)) {
-          pushSuggestion(canonicalTag);
+    if (suggestions.length < limit) {
+      aliasEntries.forEach((entry) => {
+        if (suggestions.length >= limit) return;
+        if (entry.matchKey && entry.matchKey.includes(matchKey)) {
+          pushSuggestion(entry.canonical, entry.alias);
         }
       });
     }
     canonicalTags.forEach((tag) => {
-      if (suggestions.length >= 8) return;
-      if (tag.startsWith(normalized)) {
-        pushSuggestion(tag);
+      if (suggestions.length >= limit) return;
+      const tagKey = normalizeTagMatch(tag);
+      if (tagKey.startsWith(matchKey)) {
+        pushSuggestion(tag, '');
       }
     });
-    if (suggestions.length < 8) {
+    if (suggestions.length < limit) {
       canonicalTags.forEach((tag) => {
-        if (suggestions.length >= 8) return;
-        if (tag.includes(normalized)) {
-          pushSuggestion(tag);
+        if (suggestions.length >= limit) return;
+        const tagKey = normalizeTagMatch(tag);
+        if (tagKey.includes(matchKey)) {
+          pushSuggestion(tag, '');
         }
       });
     }
     return suggestions;
+  }
+
+  function suggestTags(query, data, existingTags) {
+    return buildTagSuggestions(query, data, { existingTags }).map((item) => item.tag);
   }
 
   let suggestPanelSeq = 0;
@@ -415,12 +583,16 @@
 
   function renderSuggestButtons(container, tags, prefix) {
     container.innerHTML = tags
-      .map(
-        (tag) =>
-          `<button class="suggest-chip" type="button" data-suggest-tag="${escapeHtml(
-            tag
-          )}">${escapeHtml(prefix + tag)}</button>`
-      )
+      .map((item) => {
+        const tag = typeof item === 'string' ? item : item.tag;
+        const alias = typeof item === 'string' ? '' : item.alias;
+        const displayAlias = alias && alias !== tag ? `${prefix}${alias}` : '';
+        const displayTag = `${prefix}${tag}`;
+        const label = displayAlias ? `${displayAlias} -> ${displayTag}` : displayTag;
+        return `<button class="suggest-chip" type="button" data-suggest-tag="${escapeHtml(
+          tag
+        )}">${escapeHtml(label)}</button>`;
+      })
       .join('');
   }
 
@@ -553,39 +725,105 @@
   function updateSearchSuggest(input, panel, data) {
     if (!panel || !data) return;
     const value = input.value || '';
-    const parts = value.trim().split(/\s+/);
-    const lastToken = parts.length ? parts[parts.length - 1] : '';
-    const token = lastToken.trim();
-    const hasHash = token.startsWith('#') || token.startsWith('-#');
-    const cleaned = hasHash ? token.replace(/^-?#/, '') : '';
-    const suggestions = cleaned ? suggestTags(cleaned, data, []) : [];
+    const tokenInfo = parseSearchSuggestToken(value);
+    const cleaned = tokenInfo.query;
+    const suggestions = cleaned
+      ? buildTagSuggestions(cleaned, data, { limit: 10, includeAlias: true })
+      : [];
     const section = panel.querySelector('[data-suggest-tags]');
     const list = panel.querySelector('[data-suggest-list]');
     if (!section || !list) return;
     const isFocused = document.activeElement === input || panel.contains(document.activeElement);
-    if (!hasHash || !suggestions.length) {
+    if (!suggestions.length) {
       section.classList.remove('show');
       panel.classList.toggle('is-empty', !isFocused);
       return;
     }
     section.classList.add('show');
-    const prefix = token.startsWith('-#') ? '-#' : '#';
-    renderSuggestButtons(list, suggestions, prefix);
+    renderSuggestButtons(list, suggestions, tokenInfo.prefix);
     panel.classList.remove('is-empty');
+  }
+
+  function findLastSearchToken(value) {
+    const text = String(value || '');
+    let inQuote = false;
+    let tokenStart = null;
+    let lastStart = 0;
+    let lastEnd = 0;
+    for (let i = 0; i < text.length; i += 1) {
+      const char = text[i];
+      if (char === '"') {
+        inQuote = !inQuote;
+        continue;
+      }
+      if (!inQuote && /\s/.test(char)) {
+        if (tokenStart != null) {
+          lastStart = tokenStart;
+          lastEnd = i;
+          tokenStart = null;
+        }
+        continue;
+      }
+      if (tokenStart == null) tokenStart = i;
+    }
+    if (tokenStart != null) {
+      lastStart = tokenStart;
+      lastEnd = text.length;
+    }
+    return { token: text.slice(lastStart, lastEnd), start: lastStart, end: lastEnd };
+  }
+
+  function parseSearchSuggestToken(value) {
+    const last = findLastSearchToken(value);
+    const token = last.token || '';
+    if (!token) return { token: '', query: '', prefix: '', start: 0, end: 0 };
+    let working = token;
+    let negPrefix = '';
+    if (working.startsWith('-')) {
+      negPrefix = '-';
+      working = working.slice(1);
+    }
+    if (working.startsWith('#')) {
+      return {
+        token,
+        query: working.slice(1).replace(/"/g, ''),
+        prefix: `${negPrefix}#`,
+        start: last.start,
+        end: last.end,
+      };
+    }
+    const keyMatch = working.match(/^([a-zA-Z_]+)[:=](.+)$/);
+    if (keyMatch && ['tag', 'tags', 't'].includes(keyMatch[1].toLowerCase())) {
+      return {
+        token,
+        query: keyMatch[2].replace(/"/g, ''),
+        prefix: `${negPrefix}${keyMatch[1].toLowerCase()}:`,
+        start: last.start,
+        end: last.end,
+      };
+    }
+    return {
+      token,
+      query: working.replace(/"/g, ''),
+      prefix: negPrefix,
+      start: last.start,
+      end: last.end,
+    };
+  }
+
+  function formatSearchTagToken(tag, prefix) {
+    const needsQuote = /\s/.test(tag);
+    const wrapped = needsQuote ? `"${tag}"` : tag;
+    return `${prefix}${wrapped}`;
   }
 
   function applySearchTag(input, tag) {
     const value = input.value || '';
-    const parts = value.trim().split(/\s+/);
-    const lastToken = parts.length ? parts[parts.length - 1] : '';
-    const prefix = lastToken.startsWith('-') ? '-' : '';
-    const hash = lastToken.startsWith('#') ? '#' : '';
-    if (parts.length) {
-      parts[parts.length - 1] = `${prefix}${hash}${tag}`;
-    } else {
-      parts.push(`${hash}${tag}`);
-    }
-    input.value = `${parts.join(' ')} `;
+    const tokenInfo = parseSearchSuggestToken(value);
+    const tokenValue = formatSearchTagToken(tag, tokenInfo.prefix);
+    const before = value.slice(0, tokenInfo.start).trimEnd();
+    const nextValue = before ? `${before} ${tokenValue}` : tokenValue;
+    input.value = `${nextValue} `;
     input.dispatchEvent(new Event('input', { bubbles: true }));
   }
 
@@ -731,6 +969,7 @@
         if (event.defaultPrevented) return;
         const target = event.target;
         if (target && target.closest('a, button, input, textarea, select')) return;
+        maybePrepareSidebarRestore(url);
         window.location.href = url;
       });
       card.addEventListener('keydown', (event) => {
@@ -738,6 +977,7 @@
         const target = event.target;
         if (target && target.closest('a, button, input, textarea, select')) return;
         event.preventDefault();
+        maybePrepareSidebarRestore(url);
         window.location.href = url;
       });
     });
@@ -745,6 +985,19 @@
 
   initCardLinks();
   window.GalleryCardLinks = { init: initCardLinks };
+  document.addEventListener('click', (event) => {
+    if (event.defaultPrevented || event.button !== 0) return;
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    const link = event.target.closest('a');
+    if (!link) return;
+    if (link.target && link.target !== '_self') return;
+    const href = link.getAttribute('href');
+    if (!href || href.startsWith('#')) return;
+    if (href.startsWith('mailto:') || href.startsWith('tel:') || href.startsWith('javascript:')) {
+      return;
+    }
+    maybePrepareSidebarRestore(href);
+  });
 
   function getCookie(name) {
     const match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'));
@@ -766,6 +1019,7 @@
     }
     function updateLive2dLabel() {
       const hidden = live2dRoot.classList.contains('live2d-hidden');
+      root.classList.toggle('live2d-hidden', hidden);
       live2dToggle.textContent = hidden ? 'Live2D 关' : 'Live2D 开';
       live2dToggle.dataset.live2dState = hidden ? 'off' : 'on';
     }
@@ -778,12 +1032,396 @@
     });
   }
 
+  function initUploadProgress() {
+    const STORAGE_PREFIX = 'gallery_upload_progress_v1:';
+    const MAX_PROGRESS_AGE = 20 * 60 * 1000;
+    const UPLOAD_STALE_AGE = 45 * 1000;
+    const POLL_INTERVAL = 2000;
+    const state = {
+      current: null,
+      shell: null,
+      titleEl: null,
+      percentEl: null,
+      fillEl: null,
+      metaEl: null,
+      pollTimer: null,
+      removeTimer: null,
+      lastSample: { t: 0, loaded: 0 },
+    };
+
+    function buildKey(scope, user) {
+      return `${STORAGE_PREFIX}${scope}:${user}`;
+    }
+
+    function hasProgressForScope(scope) {
+      return Object.keys(localStorage).some((key) => key.startsWith(`${STORAGE_PREFIX}${scope}:`));
+    }
+
+    function formatBytes(value) {
+      const num = Number(value || 0);
+      if (!num) return '0B';
+      const units = ['B', 'KB', 'MB', 'GB'];
+      let idx = 0;
+      let out = num;
+      while (out >= 1024 && idx < units.length - 1) {
+        out /= 1024;
+        idx += 1;
+      }
+      return `${out.toFixed(out >= 100 || idx === 0 ? 0 : 1)}${units[idx]}`;
+    }
+
+    function formatSpeed(value) {
+      const num = Number(value || 0);
+      if (!num) return '0B/s';
+      return `${formatBytes(num)}/s`;
+    }
+
+    function stageLabel(stage) {
+      switch (stage) {
+        case 'uploading':
+          return '上传中';
+        case 'queued':
+          return '排队中';
+        case 'processing':
+          return '处理中';
+        case 'processed':
+          return '等待发布';
+        case 'published':
+          return '已完成';
+        case 'failed':
+          return '处理失败';
+        default:
+          return '准备中';
+      }
+    }
+
+    function stageMetaText(current) {
+      if (!current) return '';
+      if (current.stage === 'uploading') {
+        const loaded = formatBytes(current.loaded || 0);
+        const total = formatBytes(current.total || 0);
+        const speed = formatSpeed(current.speed_bps || 0);
+        return `${loaded} / ${total} · ${speed}`;
+      }
+      if (current.stage === 'processed') {
+        return '生成静态页中';
+      }
+      if (current.stage === 'queued') {
+        return '等待处理';
+      }
+      if (current.stage === 'processing') {
+        return '生成缩略图中';
+      }
+      if (current.stage === 'failed') {
+        return current.message || '处理失败';
+      }
+      if (current.stage === 'published') {
+        return '发布完成';
+      }
+      return current.message || '';
+    }
+
+    function getPercent(current) {
+      if (!current) return 0;
+      if (current.stage === 'uploading') {
+        const total = Number(current.total || 0);
+        if (!total) return 0;
+        return Math.min(100, Math.round((Number(current.loaded || 0) / total) * 100));
+      }
+      return Math.max(0, Math.min(100, Math.round(Number(current.percent || 0))));
+    }
+
+    function ensureShell() {
+      if (state.shell) return;
+      const shell = document.createElement('div');
+      shell.className = 'upload-progress';
+      shell.innerHTML = `
+        <div class="upload-progress-card" role="status" aria-live="polite">
+          <div class="upload-progress-head">
+            <span class="upload-progress-title" data-upload-progress-title></span>
+            <span class="upload-progress-percent" data-upload-progress-percent></span>
+          </div>
+          <div class="upload-progress-bar">
+            <div class="upload-progress-fill" data-upload-progress-fill></div>
+          </div>
+          <div class="upload-progress-meta" data-upload-progress-meta></div>
+        </div>
+      `;
+      document.body.appendChild(shell);
+      state.shell = shell;
+      state.titleEl = shell.querySelector('[data-upload-progress-title]');
+      state.percentEl = shell.querySelector('[data-upload-progress-percent]');
+      state.fillEl = shell.querySelector('[data-upload-progress-fill]');
+      state.metaEl = shell.querySelector('[data-upload-progress-meta]');
+    }
+
+    function render(current) {
+      if (!current) return;
+      ensureShell();
+      const percent = getPercent(current);
+      if (state.titleEl) state.titleEl.textContent = stageLabel(current.stage);
+      if (state.percentEl) state.percentEl.textContent = `${percent}%`;
+      if (state.fillEl) state.fillEl.style.width = `${percent}%`;
+      if (state.metaEl) state.metaEl.textContent = stageMetaText(current);
+      state.shell.classList.add('is-visible');
+      if (state.removeTimer) {
+        clearTimeout(state.removeTimer);
+        state.removeTimer = null;
+      }
+    }
+
+    function hideShell(immediate) {
+      if (!state.shell) return;
+      state.shell.classList.remove('is-visible');
+      if (state.removeTimer) {
+        clearTimeout(state.removeTimer);
+      }
+      const remove = () => {
+        if (!state.shell) return;
+        state.shell.remove();
+        state.shell = null;
+        state.titleEl = null;
+        state.percentEl = null;
+        state.fillEl = null;
+        state.metaEl = null;
+      };
+      if (immediate) {
+        remove();
+        return;
+      }
+      state.removeTimer = window.setTimeout(remove, 240);
+    }
+
+    function stopPolling() {
+      if (!state.pollTimer) return;
+      clearInterval(state.pollTimer);
+      state.pollTimer = null;
+    }
+
+    function saveProgress(current) {
+      if (!current || !current.scope || !current.user) return;
+      const payload = { ...current, updated_at: Date.now() };
+      localStorage.setItem(buildKey(current.scope, current.user), JSON.stringify(payload));
+    }
+
+    function clearProgress(current) {
+      if (!current || !current.scope || !current.user) return;
+      localStorage.removeItem(buildKey(current.scope, current.user));
+    }
+
+    function setCurrent(current, persist = true) {
+      state.current = current;
+      if (persist) saveProgress(current);
+      if (!current) return;
+      render(current);
+      if (['queued', 'processing', 'processed'].includes(current.stage)) {
+        startPolling(current);
+      } else {
+        stopPolling();
+      }
+      if (['published', 'failed', 'missing'].includes(current.stage)) {
+        clearProgress(current);
+        window.setTimeout(() => hideShell(false), 800);
+      }
+    }
+
+    function start(scope, user, file) {
+      if (!scope || !user) return;
+      state.lastSample = { t: Date.now(), loaded: 0 };
+      setCurrent(
+        {
+          scope,
+          user,
+          uuid: null,
+          stage: 'uploading',
+          percent: 0,
+          loaded: 0,
+          total: file ? file.size : 0,
+          speed_bps: 0,
+          started_at: Date.now(),
+          message: '',
+        },
+        true
+      );
+    }
+
+    function updateUpload(scope, user, loaded, total) {
+      if (!scope || !user) return;
+      const now = Date.now();
+      const delta = now - (state.lastSample.t || now);
+      const deltaBytes = loaded - (state.lastSample.loaded || 0);
+      const speed = delta > 0 ? (deltaBytes / delta) * 1000 : 0;
+      state.lastSample = { t: now, loaded };
+      setCurrent(
+        {
+          scope,
+          user,
+          uuid: state.current ? state.current.uuid : null,
+          stage: 'uploading',
+          loaded,
+          total,
+          speed_bps: speed,
+          percent: 0,
+          started_at: state.current ? state.current.started_at : now,
+          message: '',
+        },
+        true
+      );
+    }
+
+    function finishUpload(scope, user, uuidValue) {
+      if (!scope || !user) return;
+      setCurrent(
+        {
+          scope,
+          user,
+          uuid: uuidValue,
+          stage: 'queued',
+          percent: 25,
+          loaded: state.current ? state.current.loaded : 0,
+          total: state.current ? state.current.total : 0,
+          speed_bps: 0,
+          started_at: state.current ? state.current.started_at : Date.now(),
+          message: '',
+        },
+        true
+      );
+    }
+
+    function fail(scope, user, message) {
+      if (!scope || !user) return;
+      setCurrent(
+        {
+          scope,
+          user,
+          uuid: state.current ? state.current.uuid : null,
+          stage: 'failed',
+          percent: 100,
+          loaded: state.current ? state.current.loaded : 0,
+          total: state.current ? state.current.total : 0,
+          speed_bps: 0,
+          started_at: state.current ? state.current.started_at : Date.now(),
+          message: message || '上传失败',
+        },
+        true
+      );
+    }
+
+    function loadProgress(scope, user) {
+      if (!scope || !user) return null;
+      const raw = localStorage.getItem(buildKey(scope, user));
+      if (!raw) return null;
+      try {
+        const parsed = JSON.parse(raw);
+        const age = Date.now() - Number(parsed.updated_at || 0);
+        if (age > MAX_PROGRESS_AGE) {
+          localStorage.removeItem(buildKey(scope, user));
+          return null;
+        }
+        if (parsed.stage === 'uploading' && age > UPLOAD_STALE_AGE) {
+          localStorage.removeItem(buildKey(scope, user));
+          return null;
+        }
+        return parsed;
+      } catch (err) {
+        localStorage.removeItem(buildKey(scope, user));
+        return null;
+      }
+    }
+
+    function restore(scope, user) {
+      const existing = loadProgress(scope, user);
+      if (!existing) return;
+      setCurrent(existing, false);
+    }
+
+    function fetchStatus(current) {
+      if (!current || !current.uuid) return Promise.resolve(null);
+      const stamp = Date.now();
+      const endpoint =
+        current.scope === 'admin'
+          ? `/upload/admin/upload/status?uuid=${current.uuid}&t=${stamp}`
+          : `/api/upload/status?uuid=${current.uuid}&t=${stamp}`;
+      return fetch(endpoint, { credentials: 'include', cache: 'no-store' })
+        .then((resp) => (resp.ok ? resp.json() : null))
+        .catch(() => null);
+    }
+
+    function startPolling(current) {
+      if (state.pollTimer || !current || !current.uuid) return;
+      state.pollTimer = window.setInterval(async () => {
+        const latest = state.current;
+        if (!latest || !latest.uuid) {
+          stopPolling();
+          return;
+        }
+        const data = await fetchStatus(latest);
+        if (!data || !data.ok) return;
+        if (!state.current || state.current.uuid !== latest.uuid) return;
+        setCurrent(
+          {
+            scope: latest.scope,
+            user: latest.user,
+            uuid: latest.uuid,
+            stage: data.stage || latest.stage,
+            percent: data.percent || latest.percent,
+            loaded: latest.loaded,
+            total: latest.total,
+            speed_bps: 0,
+            started_at: latest.started_at,
+            message: data.message || '',
+          },
+          true
+        );
+      }, POLL_INTERVAL);
+    }
+
+    window.addEventListener('storage', (event) => {
+      if (!event.key || !event.key.startsWith(STORAGE_PREFIX)) return;
+      if (!state.current) return;
+      const expected = buildKey(state.current.scope, state.current.user);
+      if (event.key !== expected) return;
+      const next = loadProgress(state.current.scope, state.current.user);
+      if (next) {
+        setCurrent(next, false);
+      } else {
+        stopPolling();
+        hideShell(false);
+      }
+    });
+
+    return {
+      start,
+      updateUpload,
+      finishUpload,
+      fail,
+      restore,
+      hasProgressForScope,
+    };
+  }
+
+  const uploadProgress = initUploadProgress();
+  window.GalleryUploadProgress = uploadProgress;
+
   const adminEntries = Array.from(document.querySelectorAll('[data-admin-entry]'));
   const userAvatar = document.querySelector('[data-user-avatar]');
   const userAvatarImg = document.querySelector('[data-user-avatar-img]');
   const loginLinks = document.querySelectorAll('[data-auth-login-link]');
   const registerLinks = document.querySelectorAll('[data-auth-register-link]');
   const userLinks = document.querySelectorAll('[data-auth-user-link]');
+  const AUTH_HINT_KEY = 'auth-hint';
+
+  function setAuthHint(isLoggedIn) {
+    try {
+      if (isLoggedIn) {
+        localStorage.setItem(AUTH_HINT_KEY, '1');
+        root.classList.add('auth-hint-logged-in');
+      } else {
+        localStorage.removeItem(AUTH_HINT_KEY);
+        root.classList.remove('auth-hint-logged-in');
+      }
+    } catch (e) {}
+  }
 
   function setAuthVisibility(isLoggedIn, username, groups) {
     if (userAvatar) {
@@ -848,7 +1486,9 @@
     });
   }
 
-  if (userAvatar || loginLinks.length || registerLinks.length) {
+  const shouldCheckUserAuth =
+    userAvatar || loginLinks.length || registerLinks.length || uploadProgress.hasProgressForScope('user');
+  if (shouldCheckUserAuth) {
     fetch('/auth/me', { credentials: 'include' })
       .then((resp) => {
         if (!resp.ok) return null;
@@ -857,9 +1497,69 @@
       .then((data) => {
         if (data && data.ok) {
           setAuthVisibility(true, data.user, data.groups || []);
+          setAuthHint(true);
+          uploadProgress.restore('user', data.user);
+          return;
         }
+        setAuthHint(false);
+      })
+      .catch(() => setAuthHint(false));
+  }
+
+  if (uploadProgress.hasProgressForScope('admin')) {
+    fetch('/upload/admin/me', { credentials: 'include' })
+      .then((resp) => (resp.ok ? resp.json() : null))
+      .then((data) => {
+        if (!data || !data.ok) return;
+        uploadProgress.restore('admin', data.user);
       })
       .catch(() => undefined);
+  }
+
+  const detailMedia = document.querySelector('[data-detail-media]');
+  if (detailMedia) {
+    const image = detailMedia.querySelector('[data-detail-image]');
+    const status = detailMedia.querySelector('[data-image-status]');
+    if (image) {
+      const thumbSrc = image.dataset.thumbSrc || image.getAttribute('src') || '';
+      const fullSrc = image.dataset.fullSrc || '';
+      const canToggle = thumbSrc && fullSrc && thumbSrc !== fullSrc;
+
+      const setMode = (mode) => {
+        const useFull = mode === 'full';
+        detailMedia.dataset.imageMode = useFull ? 'full' : 'thumb';
+        if (useFull && fullSrc) {
+          image.src = fullSrc;
+        } else if (thumbSrc) {
+          image.src = thumbSrc;
+        }
+        if (status) status.textContent = useFull ? '原图' : '略缩图';
+      };
+
+      if (canToggle) {
+        setMode(detailMedia.dataset.imageMode === 'full' ? 'full' : 'thumb');
+        image.addEventListener('click', () => {
+          const next = detailMedia.dataset.imageMode === 'full' ? 'thumb' : 'full';
+          setMode(next);
+        });
+      } else {
+        if (status) status.textContent = '原图';
+        detailMedia.dataset.imageMode = 'full';
+      }
+    }
+  }
+
+  const tagTreeToggle = document.querySelector('[data-tag-tree-toggle]');
+  const tagTreePanel = document.querySelector('[data-tag-tree-panel]');
+  if (tagTreeToggle && tagTreePanel) {
+    const setExpanded = (expanded) => {
+      tagTreePanel.hidden = !expanded;
+      tagTreeToggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+    };
+    setExpanded(false);
+    tagTreeToggle.addEventListener('click', () => {
+      setExpanded(tagTreePanel.hidden);
+    });
   }
 
   const tagEditor = document.querySelector('[data-tag-editor]');

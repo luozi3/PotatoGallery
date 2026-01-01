@@ -132,6 +132,67 @@ def test_user_upload_rejects_unregistered_tag(tmp_path):
     assert resp.status_code == 400
 
 
+def test_user_upload_status_progress(tmp_path):
+    seed_test_root(tmp_path)
+    modules = setup_env(tmp_path)
+    auth = modules["app.auth"]
+    worker = modules["app.worker"]
+    upload_service = modules["app.upload_service"]
+    config = modules["app.config"]
+
+    data_dir = config.STATIC / "data"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    tags_cfg = {"tags": [{"tag": "猫咪", "slug": "cat"}]}
+    (data_dir / "tags.json").write_text(json.dumps(tags_cfg, ensure_ascii=False), encoding="utf-8")
+
+    auth.create_user("alice", "secret123", groups=["user"])
+    app = upload_service.create_app()
+    client = app.test_client()
+    resp = _login(client, "alice", "secret123")
+    assert resp.status_code == 200
+
+    img_path = tmp_path / "input.png"
+    make_image(img_path)
+    with img_path.open("rb") as f:
+        resp = client.post(
+            "/api/upload",
+            data={
+                "file": (f, "input.png"),
+                "title": "标题",
+                "description": "说明",
+                "tags": "#猫咪",
+                "collection": "",
+            },
+            content_type="multipart/form-data",
+            headers={"X-Forwarded-Proto": "https"},
+            base_url="https://example.com",
+        )
+    assert resp.status_code == 201
+    uuid = resp.get_json()["uuid"]
+
+    headers = {"X-Forwarded-Proto": "https"}
+    base_url = "https://example.com"
+    resp = client.get(f"/api/upload/status?uuid={uuid}", headers=headers, base_url=base_url)
+    assert resp.status_code == 200
+    assert "no-store" in resp.headers.get("Cache-Control", "")
+    payload = resp.get_json()
+    assert payload["stage"] in {"queued", "processing"}
+    assert payload["percent"] > 0
+
+    raw_path = config.RAW_DIR / f"{uuid}.png"
+    assert raw_path.exists()
+    assert worker.process_file(raw_path)
+    resp = client.get(f"/api/upload/status?uuid={uuid}", headers=headers, base_url=base_url)
+    assert resp.status_code == 200
+    payload = resp.get_json()
+    assert payload["stage"] == "processed"
+
+    assert worker.publish_ready_images()
+    resp = client.get(f"/api/upload/status?uuid={uuid}", headers=headers, base_url=base_url)
+    payload = resp.get_json()
+    assert payload["stage"] == "published"
+
+
 def test_user_favorites_flow(tmp_path):
     seed_test_root(tmp_path)
     modules = setup_env(tmp_path)

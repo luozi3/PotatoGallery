@@ -6,6 +6,7 @@
   <title>Status ｜ {{ site_name }}</title>
   <meta name="description" content="{{ site_description }}">
   <meta name="theme-color" content="{{ site.theme_color }}">
+  {% include "partials/theme_init.html.j2" %}
   {% if site_url %}
   <link rel="canonical" href="{{ site_url }}/status/">
   {% endif %}
@@ -20,35 +21,10 @@
       background-attachment: fixed;
     }
 
-    .page-status .topbar {
-      background: var(--panel);
-      border-bottom: 2px solid var(--border);
-      backdrop-filter: none;
-      padding: 12px 40px;
-      justify-content: flex-start;
-    }
-
-    .page-status .topbar-left {
-      flex: 0 0 auto;
-    }
-
-    .page-status .brand-text strong {
-      font-family: inherit;
-      letter-spacing: 0.04em;
-      text-transform: none;
-      font-weight: 600;
-    }
-
-    .page-status .brand-text span {
-      font-size: 12px;
-      letter-spacing: 0.08em;
-      text-transform: none;
-    }
-
     .status-shell {
       max-width: 1280px;
       margin: 0 auto;
-      padding: calc(var(--topbar-height) + 32px) 80px 72px;
+      padding: 32px 80px 72px;
       display: flex;
       flex-direction: column;
       gap: 28px;
@@ -246,50 +222,8 @@
     }
 
     @media (max-width: 600px) {
-      .page-status {
-        --topbar-height: calc(44px + env(safe-area-inset-top));
-      }
-
-      .page-status .topbar {
-        min-height: var(--topbar-height);
-        height: auto;
-        padding: calc(6px + env(safe-area-inset-top)) 12px 6px;
-        align-items: center;
-      }
-
-      .page-status .topbar-left {
-        flex: 1 1 auto;
-        min-width: 0;
-        justify-content: flex-start;
-      }
-
-      .page-status .brand {
-        gap: 6px;
-        margin-right: auto;
-      }
-
-      .page-status .logo-dot {
-        width: 9px;
-        height: 9px;
-        box-shadow: 0 0 0 2px var(--accent-ring);
-      }
-
-      .page-status .brand-text {
-        line-height: 1;
-      }
-
-      .page-status .brand-text strong {
-        font-size: 13px;
-        line-height: 1;
-        white-space: nowrap;
-      }
-
-      .page-status .brand-text span {
-        display: none;
-      }
-
       .status-shell {
-        padding: calc(var(--topbar-height) + 18px) 18px 40px;
+        padding: 18px 18px 40px;
         gap: 20px;
       }
 
@@ -380,20 +314,14 @@
     }
   </style>
 </head>
-<body class="page-status">
+<body class="page-status with-sidebar">
   <a class="skip-link" href="#main-content">跳到主要内容</a>
-  <header class="topbar">
-    <div class="topbar-left">
-      <a class="brand" href="/" aria-label="返回首页">
-        <span class="logo-dot" aria-hidden="true"></span>
-        <div class="brand-text">
-          <strong>{{ site.brand_name or site_name }}</strong>
-          <span>{{ site.brand_tagline }}</span>
-        </div>
-      </a>
-    </div>
-  </header>
-  <main class="status-shell" id="main-content" tabindex="-1">
+  {% include "partials/topbar.html.j2" %}
+  <main id="main-content" tabindex="-1">
+    <div class="home-layout">
+      {% include "partials/sidebar_default.html.j2" %}
+      <div class="home-main">
+        <div class="status-shell">
     <section class="status-hero">
       <div>
         <div class="status-kicker">系统状态</div>
@@ -478,6 +406,9 @@
       <summary>原始数据（点击展开）</summary>
       <pre id="raw">加载中...</pre>
     </details>
+        </div>
+      </div>
+    </div>
   </main>
 
   <script>

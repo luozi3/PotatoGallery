@@ -1,0 +1,53 @@
+{% set topbar_class = topbar_class | default('topbar topbar-home') %}
+{% set show_search = show_search | default(true) %}
+{% set show_admin_logout = show_admin_logout | default(false) %}
+<header class="{{ topbar_class }}">
+  <div class="topbar-left">
+    <button class="icon-button sidebar-toggle" type="button" data-left-toggle aria-label="展开侧栏" aria-expanded="true" aria-controls="left-sidebar">
+      <span class="hamburger" aria-hidden="true"></span>
+    </button>
+    <a class="brand brand-compact" href="/" aria-label="返回首页">
+      <span class="logo-dot" aria-hidden="true"></span>
+      <div class="brand-text">
+        <strong>{{ site.brand_name or site_name }}</strong>
+        <span>{{ site.brand_tagline }}</span>
+      </div>
+    </a>
+    <button class="icon-button theme-toggle" type="button" data-theme-toggle aria-label="切换主题">
+      <span class="icon" aria-hidden="true">◐</span>
+    </button>
+  </div>
+  {% if show_search %}
+  <div class="topbar-center">
+    <form class="top-search" action="/search/" method="get" role="search" data-search-host>
+      <button class="search-icon" type="button" aria-label="聚焦搜索"></button>
+      <input type="search" name="q" placeholder="搜索作品" autocomplete="off" data-search-input>
+      <button class="search-submit" type="submit">搜索</button>
+    </form>
+  </div>
+  {% endif %}
+  <div class="topbar-right">
+    <a class="icon-link" href="/auth/login/" data-auth-login-link>登录</a>
+    {% if auth.registration_mode != "closed" %}
+    <a class="icon-link" href="/auth/register/" data-auth-register-link>注册</a>
+    {% endif %}
+    <div class="avatar-menu" data-avatar-menu data-user-avatar hidden>
+      <button class="avatar-button" type="button" data-avatar-toggle aria-label="打开用户菜单" aria-expanded="false">
+        <img src="{{ site.auth_avatar_url }}" alt="用户头像" loading="lazy" width="32" height="32" data-user-avatar-img>
+        <span class="avatar-caret" aria-hidden="true"></span>
+      </button>
+      <div class="avatar-dropdown" data-avatar-dropdown hidden>
+        <a class="dropdown-item" href="/my/" data-auth-user-link hidden>我的作品</a>
+        <a class="dropdown-item" href="/favorites/" data-auth-user-link hidden>我的收藏</a>
+      </div>
+    </div>
+    {% if show_admin_logout %}
+    <button class="icon-button" type="button" data-admin-logout>退出</button>
+    {% endif %}
+  </div>
+</header>
+{% if show_search %}
+<div class="search-dim" data-search-dim aria-hidden="true"></div>
+{% endif %}
+<div class="sidebar-dim" data-sidebar-dim aria-hidden="true"></div>
+<button class="sidebar-close" type="button" data-left-toggle aria-label="关闭侧栏"></button>

@@ -31,6 +31,16 @@
       .replace(/'/g, "&#39;");
   }
 
+  function resolveDetailPath(img) {
+    if (!img) return "/images/";
+    if (img.detail_path) return img.detail_path;
+    const shortId = img.short_id || img.image_id || img.id;
+    if (shortId) {
+      return `/images/${shortId}/index.html`;
+    }
+    return `/images/${img.uuid || ""}/index.html`;
+  }
+
   function parseDate(input) {
     if (!input) return null;
     const dt = new Date(input);
@@ -40,6 +50,10 @@
   function normalizeTagName(input) {
     const value = String(input || "").trim().replace(/^#/, "");
     return value.replace(/\s+/g, " ").toLowerCase();
+  }
+
+  function normalizeTagMatch(input) {
+    return normalizeTagName(input).replace(/\s+/g, "");
   }
 
   function tokenizeQuery(input) {
@@ -104,22 +118,34 @@
 
   function resolveTag(tag, tagIndex) {
     if (!tagIndex || !tagIndex.aliasMap) return tag;
-    return tagIndex.aliasMap.get(tag) || tag;
+    const normalized = normalizeTagName(tag);
+    if (!normalized) return "";
+    const direct = tagIndex.aliasMap.get(normalized);
+    if (direct) return direct;
+    const compactMap = tagIndex.aliasCompactMap;
+    if (compactMap) {
+      const compact = normalizeTagMatch(normalized);
+      const compactMatch = compactMap.get(compact);
+      if (compactMatch) return compactMatch;
+    }
+    return normalized;
   }
 
   function resolveTagPrefix(tag, tagIndex) {
     if (!tagIndex || !tagIndex.aliasMap) return "";
-    if (!tag || tag.length < 2) return "";
+    const matchKey = normalizeTagMatch(tag);
+    if (!matchKey || matchKey.length < 2) return "";
     if (!tagIndex.aliasPrefixCache) {
       tagIndex.aliasPrefixCache = new Map();
     }
     const cache = tagIndex.aliasPrefixCache;
-    if (cache.has(tag)) return cache.get(tag);
+    if (cache.has(matchKey)) return cache.get(matchKey);
     let match = "";
     let ambiguous = false;
     tagIndex.aliasMap.forEach((canonical, alias) => {
       if (ambiguous) return;
-      if (alias.startsWith(tag)) {
+      const aliasKey = normalizeTagMatch(alias);
+      if (aliasKey.startsWith(matchKey)) {
         if (!match) {
           match = canonical;
         } else if (match !== canonical) {
@@ -128,7 +154,7 @@
       }
     });
     const resolved = !ambiguous ? match : "";
-    cache.set(tag, resolved);
+    cache.set(matchKey, resolved);
     return resolved;
   }
 
@@ -154,25 +180,54 @@
   function buildFallbackTagIndex(tags) {
     const canonicalTags = (tags || []).map((tag) => normalizeTagName(tag)).filter(Boolean);
     const aliasMap = new Map();
-    canonicalTags.forEach((tag) => aliasMap.set(tag, tag));
-    return { aliasMap, parentMap: new Map(), canonicalTags };
+    const aliasCompactMap = new Map();
+    const registerCompact = (alias, canonical) => {
+      const compact = normalizeTagMatch(alias);
+      if (!compact) return;
+      const existing = aliasCompactMap.get(compact);
+      if (!existing) {
+        aliasCompactMap.set(compact, canonical);
+      } else if (existing !== canonical) {
+        aliasCompactMap.set(compact, "");
+      }
+    };
+    canonicalTags.forEach((tag) => {
+      aliasMap.set(tag, tag);
+      registerCompact(tag, tag);
+    });
+    return { aliasMap, aliasCompactMap, parentMap: new Map(), canonicalTags };
   }
 
   function buildTagIndexFromRaw(raw) {
     if (!raw || !Array.isArray(raw.tags)) return null;
     const aliasMap = new Map();
+    const aliasCompactMap = new Map();
     const parentMap = new Map();
     const canonicalTags = [];
+    const registerCompact = (alias, canonical) => {
+      const compact = normalizeTagMatch(alias);
+      if (!compact) return;
+      const existing = aliasCompactMap.get(compact);
+      if (!existing) {
+        aliasCompactMap.set(compact, canonical);
+      } else if (existing !== canonical) {
+        aliasCompactMap.set(compact, "");
+      }
+    };
     raw.tags.forEach((item) => {
       const tag = normalizeTagName(item.tag);
       if (!tag) return;
       const aliasOf = normalizeTagName(item.alias_of);
       const canonical = aliasOf || tag;
       aliasMap.set(tag, canonical);
+      registerCompact(tag, canonical);
       const aliases = Array.isArray(item.aliases) ? item.aliases : [];
       aliases.forEach((alias) => {
         const normalized = normalizeTagName(alias);
-        if (normalized) aliasMap.set(normalized, canonical);
+        if (normalized) {
+          aliasMap.set(normalized, canonical);
+          registerCompact(normalized, canonical);
+        }
       });
       if (!aliasOf) {
         canonicalTags.push(tag);
@@ -184,7 +239,7 @@
       }
     });
     canonicalTags.sort();
-    return { aliasMap, parentMap, canonicalTags };
+    return { aliasMap, aliasCompactMap, parentMap, canonicalTags };
   }
 
   function parseQuery(input, tagIndex) {
@@ -361,8 +416,16 @@
 
       const normalized = normalizeTagName(raw);
       if (!normalized) return;
-      let canonical = aliasMap.get(normalized) || normalized;
-      let isTag = raw.startsWith("#") || aliasMap.has(normalized) || knownTags.has(canonical);
+      let canonical = resolveTag(normalized, tagIndex);
+      const compactKey = normalizeTagMatch(normalized);
+      const compactMatch =
+        tagIndex && tagIndex.aliasCompactMap ? tagIndex.aliasCompactMap.get(compactKey) : "";
+      if (compactMatch) canonical = compactMatch;
+      let isTag =
+        raw.startsWith("#") ||
+        aliasMap.has(normalized) ||
+        Boolean(compactMatch) ||
+        knownTags.has(canonical);
       if (!isTag) {
         const prefixMatch = resolveTagPrefix(normalized, tagIndex);
         if (prefixMatch) {
@@ -406,15 +469,14 @@
         const title = escapeHtml(img.title || "未命名");
         const desc = escapeHtml(img.description || "");
         const tags = (img.tags || []).slice(0, 3);
+        const detailPath = escapeHtml(resolveDetailPath(img));
         return `
-          <article class="illust-card" data-masonry-item data-card-link="/images/${escapeHtml(
-            img.uuid
-          )}/index.html" data-collection="${escapeHtml(img.collection || "")}" data-orientation="${escapeHtml(
+          <article class="illust-card" data-masonry-item data-card-link="${detailPath}" data-collection="${escapeHtml(
+          img.collection || ""
+        )}" data-orientation="${escapeHtml(
           img.orientation || ""
         )}" data-size="${escapeHtml(img.size_bucket || "")}" tabindex="0" role="link" aria-label="${title}">
-            <a class="thumb-link" href="/images/${escapeHtml(
-              img.uuid
-            )}/index.html" aria-label="${title}">
+            <a class="thumb-link" href="${detailPath}" aria-label="${title}">
               <div class="thumb-shell" style="--thumb-ratio:${img.thumb_width}/${img.thumb_height};">
                 <img class="thumb" src="/thumb/${escapeHtml(
                   img.thumb_filename || ""

@@ -1,4 +1,21 @@
 {
+  "types": [
+    {
+      "type": "general",
+      "label": "普通",
+      "color": "#7b8794"
+    },
+    {
+      "type": "artist",
+      "label": "画师",
+      "color": "#f97316"
+    },
+    {
+      "type": "character",
+      "label": "角色",
+      "color": "#8b5cf6"
+    }
+  ],
   "tags": [
     {
       "tag": "兽耳",
@@ -35,6 +52,19 @@
         "东方project"
       ],
       "slug": "flandre_scarlet",
+      "alias_to": "",
+      "type": "character"
+    },
+    {
+      "tag": "莉莉白",
+      "intro": "莉莉霍瓦特，或译莉莉白、莉莉怀特，是日本的《东方Project》系列弹幕游戏及其衍生作品的登场角色之一。\n\n莉莉霍瓦特是一只宣告春天来临的妖精，她通过的地方，会出现春天的暖气。",
+      "aliases": [
+        "莉莉霍瓦特，莉莉怀特，リリーホワイト，lily white"
+      ],
+      "parents": [
+        "东方project"
+      ],
+      "slug": "lily_white",
       "alias_to": "",
       "type": "character"
     }

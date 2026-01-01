@@ -6,126 +6,108 @@
   <title>#{{ tag.tag }} ｜ {{ site_name }}</title>
   <meta name="description" content="标签 #{{ tag.tag }} 的作品列表">
   <meta name="theme-color" content="{{ site.theme_color }}">
+  {% include "partials/theme_init.html.j2" %}
   {% if site_url %}
   <link rel="canonical" href="{{ site_url }}/tags/{{ tag.slug|urlencode }}/">
   {% endif %}
   <link rel="stylesheet" href="/static/styles/gallery.css?v={{ static_version }}">
 </head>
-<body class="page-tag">
+<body class="page-tag with-sidebar">
   {% set orientation_labels = {portrait: 竖屏, landscape: 横屏, square: 方形, unknown: 未标} %}
   {% set size_labels = {ultra: 超清, large: 高清, medium: 中等, compact: 轻量, unknown: 未标} %}
+  {% macro render_tag_tree(nodes, depth=0) -%}
+    <ul class="{{ 'tag-tree' if depth == 0 else 'tag-branch' }}">
+      {% for node in nodes %}
+      <li class="tag-node{% if node.current %} is-current{% endif %}{% if not node.explicit %} is-implicit{% endif %}">
+        <a class="tag-chip" href="/tags/{{ node.slug|urlencode }}/" style="{{ node.style }}">#{{ node.tag }}</a>
+        {% if node.children %}
+        {{ render_tag_tree(node.children, depth + 1) }}
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+  {%- endmacro %}
   <a class="skip-link" href="#main-content">跳到主要内容</a>
-  <header class="topbar">
-    <div class="topbar-left">
-      <a class="brand" href="/" aria-label="返回首页">
-        <span class="logo-dot" aria-hidden="true"></span>
-        <div class="brand-text">
-          <strong>{{ site.brand_name or site_name }}</strong>
-          <span>{{ site.brand_tagline }}</span>
-        </div>
-      </a>
-      <button class="icon-button theme-toggle" type="button" data-theme-toggle aria-label="切换主题">
-        <span class="icon" aria-hidden="true">◐</span>
-      </button>
-    </div>
-    <nav class="topnav" aria-label="顶栏导航">
-      <a href="/">首页</a>
-      <a href="/tags/">标签</a>
-      <a href="/search/">搜索</a>
-      <a href="/favorites/" data-auth-user-link hidden>收藏</a>
-    </nav>
-    <div class="topbar-right">
-      <button class="search-trigger" type="button" data-search-open aria-label="打开搜索">搜索标题、描述、标签</button>
-      <span class="user-avatar" data-user-avatar hidden>
-        <img src="{{ site.auth_avatar_url }}" alt="用户头像" loading="lazy" width="32" height="32" data-user-avatar-img>
-      </span>
-      <a class="icon-link" href="/my/" data-auth-user-link hidden>我的作品</a>
-      <a class="icon-link" href="/favorites/" data-auth-user-link hidden>我的收藏</a>
-      <a class="icon-link" href="/auth/login/" data-auth-login-link>登录</a>
-      {% if auth.registration_mode != "closed" %}
-      <a class="icon-link" href="/auth/register/" data-auth-register-link>注册</a>
-      {% endif %}
-      <a class="icon-link admin-entry" href="/admin/" data-admin-entry hidden>管理</a>
-      <a class="icon-link admin-entry" href="/admin/tags/" data-admin-entry hidden>标签管理</a>
-      <a class="icon-link admin-entry" href="/status/" data-admin-entry hidden>状态</a>
-    </div>
-  </header>
+  {% include "partials/topbar.html.j2" %}
 
   <main id="main-content" tabindex="-1">
-    <section class="tag-hero">
-      <h1>#{{ tag.tag }}</h1>
-      {% if tag.intro %}
-      <p class="tag-intro">{{ tag.intro }}</p>
-      {% endif %}
-      {% if tag.alias_of %}
-      <p class="tag-alias">该标签已合并至 <a href="/tags/{{ tag.alias_of_slug|urlencode }}/">#{{ tag.alias_of }}</a></p>
-      {% endif %}
-      <p class="lede">共 {{ tag.count }} 件作品</p>
-    </section>
-    <section class="tag-editor card" data-tag-editor data-tag-name="{{ tag.tag }}" data-tag-alias-of="{{ tag.alias_of or '' }}" hidden>
-      <h2>编辑标签</h2>
-      <p class="muted">仅管理员可见，保存后刷新页面生效。</p>
-      <p class="muted">标签输入无需 #，别名与父标签可用逗号、竖线、换行或 Tab 分隔。</p>
-      <label>URL 名称</label>
-      <input class="admin-input" type="text" data-tag-editor-slug placeholder="english-tag">
-      <label>简介</label>
-      <textarea class="admin-textarea" data-tag-editor-intro placeholder="标签简介"></textarea>
-      <label>别名</label>
-      <input class="admin-tag-input" type="text" data-tag-editor-aliases placeholder="别名：long hair | long_hair | 长发">
-      <label>父标签</label>
-      <input class="admin-input" type="text" data-tag-editor-parents placeholder="父标签：animal_ears | kemonomimi">
-      <label>合并到</label>
-      <input class="admin-input" type="text" data-tag-editor-alias-to placeholder="主标签">
-      <div class="admin-actions-row">
-        <button class="btn primary" type="button" data-tag-editor-save>保存</button>
-        <p class="hint" data-tag-editor-hint></p>
-      </div>
-    </section>
-    <section class="gallery" data-masonry aria-live="polite">
-      {% for image in images %}
-      <article class="illust-card" data-masonry-item data-card-link="/images/{{ image.uuid }}/index.html" data-collection="{{ image.collection }}" data-orientation="{{ image.orientation }}" data-size="{{ image.size_bucket }}" tabindex="0" role="link" aria-label="{{ image.title }}">
-        <a class="thumb-link" href="/images/{{ image.uuid }}/index.html" aria-label="{{ image.title }}">
-          <div class="thumb-shell" style="--thumb-ratio: {{ image.thumb_width }}/{{ image.thumb_height }};">
-            <img class="thumb" src="/thumb/{{ image.thumb_filename }}" alt="{{ image.title }}" loading="lazy" width="{{ image.thumb_width }}" height="{{ image.thumb_height }}" onerror="this.onerror=null;this.src='/raw/{{ image.raw_filename }}';">
+    <div class="home-layout">
+      {% include "partials/sidebar_default.html.j2" %}
+      <div class="home-main">
+        <section class="tag-hero">
+          <div class="tag-hero-head">
+            <h1>#{{ tag.tag }}</h1>
+            {% if tag_tree %}
+            <button class="tag-tree-toggle" type="button" data-tag-tree-toggle aria-expanded="false">树</button>
+            {% endif %}
           </div>
-        </a>
-        <div class="card-body">
-          <div class="title">{{ image.title }}</div>
-          {% if image.description %}
-          <p class="desc">{{ image.description }}</p>
+          {% if tag.intro %}
+          <p class="tag-intro">{{ tag.intro }}</p>
           {% endif %}
-          <div class="meta">
-            <span>{{ image.width }}×{{ image.height }}</span>
-            <span>{{ image.bytes_human }}</span>
-            <span>{{ collections.get(image.collection, {}).get('title', image.collection) }}</span>
+          {% if tag.alias_of %}
+          <p class="tag-alias">该标签已合并至 <a href="/tags/{{ tag.alias_of_slug|urlencode }}/">#{{ tag.alias_of }}</a></p>
+          {% endif %}
+          <p class="lede">共 {{ tag.count }} 件作品</p>
+          {% if tag_tree %}
+          <div class="tag-tree-panel" data-tag-tree-panel hidden>
+            {{ render_tag_tree(tag_tree) }}
           </div>
-          <div class="tags">
-            <span class="tag accent">{{ orientation_labels.get(image.orientation, "未标") }}</span>
-            <span class="tag">{{ size_labels.get(image.size_bucket, "未标") }}</span>
-            {% for tag_item in image.tags[:3] %}
-            <a class="tag ghost" href="/tags/{{ tag_slug_map.get(tag_item, tag_item)|urlencode }}/">#{{ tag_item }}</a>
-            {% endfor %}
+          {% endif %}
+        </section>
+        <section class="tag-editor card" data-tag-editor data-tag-name="{{ tag.tag }}" data-tag-alias-of="{{ tag.alias_of or '' }}" hidden>
+          <h2>编辑标签</h2>
+          <p class="muted">仅管理员可见，保存后刷新页面生效。</p>
+          <p class="muted">标签输入无需 #，别名与父标签可用逗号、竖线、换行或 Tab 分隔。</p>
+          <label>URL 名称</label>
+          <input class="admin-input" type="text" data-tag-editor-slug placeholder="english-tag">
+          <label>简介</label>
+          <textarea class="admin-textarea" data-tag-editor-intro placeholder="标签简介"></textarea>
+          <label>别名</label>
+          <input class="admin-tag-input" type="text" data-tag-editor-aliases placeholder="别名：long hair | long_hair | 长发">
+          <label>父标签</label>
+          <input class="admin-input" type="text" data-tag-editor-parents placeholder="父标签：animal_ears | kemonomimi">
+          <label>合并到</label>
+          <input class="admin-input" type="text" data-tag-editor-alias-to placeholder="主标签">
+          <div class="admin-actions-row">
+            <button class="btn primary" type="button" data-tag-editor-save>保存</button>
+            <p class="hint" data-tag-editor-hint></p>
           </div>
-        </div>
-      </article>
-      {% endfor %}
-      {% if not images %}
-      <div class="empty">该标签暂无作品。</div>
-      {% endif %}
-    </section>
-  </main>
-
-  <div class="search-overlay" data-search-overlay aria-hidden="true">
-    <div class="search-panel" role="dialog" aria-modal="true">
-      <button class="icon-button close-button" type="button" data-search-close aria-label="关闭搜索">×</button>
-      <p class="search-title">搜索作品</p>
-      <form action="/search/" method="get" class="search-form">
-        <input type="search" name="q" placeholder="搜索标题、描述、标签" autocomplete="off" data-search-input>
-        <button class="btn primary" type="submit">搜索</button>
-      </form>
-      <p class="search-hint">支持标签、标题与描述匹配（# 可选）。</p>
+        </section>
+        <section class="gallery" data-masonry aria-live="polite">
+          {% for image in images %}
+          <article class="illust-card" data-masonry-item data-card-link="{{ image.detail_path }}" data-collection="{{ image.collection }}" data-orientation="{{ image.orientation }}" data-size="{{ image.size_bucket }}" tabindex="0" role="link" aria-label="{{ image.title }}">
+            <a class="thumb-link" href="{{ image.detail_path }}" aria-label="{{ image.title }}">
+              <div class="thumb-shell" style="--thumb-ratio: {{ image.thumb_width }}/{{ image.thumb_height }};">
+                <img class="thumb" src="/thumb/{{ image.thumb_filename }}" alt="{{ image.title }}" loading="lazy" width="{{ image.thumb_width }}" height="{{ image.thumb_height }}" onerror="this.onerror=null;this.src='/raw/{{ image.raw_filename }}';">
+              </div>
+            </a>
+            <div class="card-body">
+              <div class="title">{{ image.title }}</div>
+              {% if image.description %}
+              <p class="desc">{{ image.description }}</p>
+              {% endif %}
+              <div class="meta">
+                <span>{{ image.width }}×{{ image.height }}</span>
+                <span>{{ image.bytes_human }}</span>
+                <span>{{ collections.get(image.collection, {}).get('title', image.collection) }}</span>
+              </div>
+              <div class="tags">
+                <span class="tag accent">{{ orientation_labels.get(image.orientation, "未标") }}</span>
+                <span class="tag">{{ size_labels.get(image.size_bucket, "未标") }}</span>
+                {% for tag_item in image.tags[:3] %}
+                <a class="tag ghost" href="/tags/{{ tag_slug_map.get(tag_item, tag_item)|urlencode }}/" style="{{ tag_style_map.get(tag_item, '') }}">#{{ tag_item }}</a>
+                {% endfor %}
+              </div>
+            </div>
+          </article>
+          {% endfor %}
+          {% if not images %}
+          <div class="empty">该标签暂无作品。</div>
+          {% endif %}
+        </section>
+      </div>
     </div>
-  </div>
+  </main>
 
   <script src="/static/js/ui.js?v={{ static_version }}" defer></script>
   <script src="/static/js/gallery.js?v={{ static_version }}" defer></script>

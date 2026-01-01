@@ -6,68 +6,64 @@
   <title>页面未找到 ｜ {{ site_name }}</title>
   <meta name="description" content="页面未找到">
   <meta name="theme-color" content="{{ site.theme_color }}">
+  {% include "partials/theme_init.html.j2" %}
   <meta name="robots" content="noindex">
   {% if site_url %}
   <link rel="canonical" href="{{ site_url }}/404.html">
   {% endif %}
   <link rel="stylesheet" href="/static/styles/gallery.css?v={{ static_version }}">
 </head>
-<body class="page-error page-404">
+<body class="page-error page-404 with-sidebar">
   <a class="skip-link" href="#main-content">跳到主要内容</a>
-  <header class="topbar">
-    <a class="brand" href="/" aria-label="返回首页">
-      <span class="logo-dot" aria-hidden="true"></span>
-      <div class="brand-text">
-        <strong>{{ site.brand_name or site_name }}</strong>
-        <span>{{ site.brand_tagline }}</span>
-      </div>
-    </a>
-    <nav class="topnav" aria-label="顶栏导航">
-      <a href="/">首页</a>
-      <a href="/status/">运行状态</a>
-    </nav>
-  </header>
-  <main id="main-content" class="error-main" tabindex="-1">
-    <section class="error-hero">
-      <div class="error-card">
-        <div class="error-eyebrow">很抱歉</div>
-        <h1 class="error-title">您浏览的页面走丢了</h1>
-        <p class="error-lead">页面可能已被移动、删除，或地址输入有误。为此带来的不便，我们向您致歉。</p>
-        <div class="error-actions">
-          <a class="btn primary" href="/">回到首页</a>
-          <a class="btn ghost" href="/search/">重新搜索</a>
-          <a class="btn ghost" href="/status/">查看状态</a>
+  {% include "partials/topbar.html.j2" %}
+  <main id="main-content" tabindex="-1">
+    <div class="home-layout">
+      {% include "partials/sidebar_default.html.j2" %}
+      <div class="home-main">
+        <div class="error-main">
+          <section class="error-hero">
+            <div class="error-card">
+              <div class="error-eyebrow">很抱歉</div>
+              <h1 class="error-title">您浏览的页面走丢了</h1>
+              <p class="error-lead">页面可能已被移动、删除，或地址输入有误。为此带来的不便，我们向您致歉。</p>
+              <div class="error-actions">
+                <a class="btn primary" href="/">回到首页</a>
+                <a class="btn ghost" href="/search/">重新搜索</a>
+                <a class="btn ghost" href="/status/">查看状态</a>
+              </div>
+              <div class="error-meta">
+                <span class="error-code">404</span>
+                <span class="error-tag">Not Found</span>
+              </div>
+            </div>
+            <figure class="error-figure">
+              <div class="error-figure-frame">
+                <img src="/static/images/error-figure.webp" alt="迷路的小人插画" width="950" height="1200" loading="lazy" decoding="async">
+              </div>
+              <figcaption>如果你是从收藏或分享链接进入，地址可能已经更新。</figcaption>
+            </figure>
+          </section>
+          <section class="error-tips" aria-label="提示">
+            <div class="error-tip">
+              <h2>提示</h2>
+              <ul>
+                <li>检查地址是否有多余字符或大小写错误。</li>
+                <li>尝试使用搜索找回作品、标签或画廊。</li>
+                <li>如果页面持续不可用，可稍后刷新或查看状态页。</li>
+              </ul>
+            </div>
+            <div class="error-tip">
+              <h2>推荐操作</h2>
+              <p>返回首页重新浏览，或使用搜索与标签导航快速定位内容。</p>
+            </div>
+            <div class="error-tip">
+              <h2>需要帮助？</h2>
+              <p>请保留本页截图和错误码 404，便于我们定位问题。</p>
+            </div>
+          </section>
         </div>
-        <div class="error-meta">
-          <span class="error-code">404</span>
-          <span class="error-tag">Not Found</span>
-        </div>
       </div>
-      <figure class="error-figure">
-        <div class="error-figure-frame">
-          <img src="/static/images/error-figure.webp" alt="迷路的小人插画" width="950" height="1200" loading="lazy" decoding="async">
-        </div>
-        <figcaption>如果你是从收藏或分享链接进入，地址可能已经更新。</figcaption>
-      </figure>
-    </section>
-    <section class="error-tips" aria-label="提示">
-      <div class="error-tip">
-        <h2>提示</h2>
-        <ul>
-          <li>检查地址是否有多余字符或大小写错误。</li>
-          <li>尝试使用搜索找回作品、标签或画廊。</li>
-          <li>如果页面持续不可用，可稍后刷新或查看状态页。</li>
-        </ul>
-      </div>
-      <div class="error-tip">
-        <h2>推荐操作</h2>
-        <p>返回首页重新浏览，或使用搜索与标签导航快速定位内容。</p>
-      </div>
-      <div class="error-tip">
-        <h2>需要帮助？</h2>
-        <p>请保留本页截图和错误码 404，便于我们定位问题。</p>
-      </div>
-    </section>
+    </div>
   </main>
   <script src="/static/js/ui.js?v={{ static_version }}" defer></script>
 </body>

@@ -6,71 +6,41 @@
   <title>用户登录 ｜ {{ site_name }}</title>
   <meta name="description" content="{{ site_description }}">
   <meta name="theme-color" content="{{ site.theme_color }}">
+  {% include "partials/theme_init.html.j2" %}
   <link rel="stylesheet" href="/static/styles/gallery.css?v={{ static_version }}">
   {% if site.live2d.enabled %}
   <link rel="stylesheet" href="{{ site.live2d.base_url }}/live2d/css/live2d.css">
   {% endif %}
 </head>
-<body class="page-auth" data-auth-mode="{{ auth.registration_mode }}" data-auth-require-https="{{ 1 if auth.require_https else 0 }}">
+<body class="page-auth with-sidebar" data-auth-mode="{{ auth.registration_mode }}" data-auth-require-https="{{ 1 if auth.require_https else 0 }}">
   <a class="skip-link" href="#main-content">跳到主要内容</a>
-  <header class="topbar">
-    <div class="topbar-left">
-      <a class="brand" href="/" aria-label="返回首页">
-        <span class="logo-dot" aria-hidden="true"></span>
-        <div class="brand-text">
-          <strong>{{ site.brand_name or site_name }}</strong>
-          <span>{{ site.brand_tagline }}</span>
+  {% set show_search = false %}
+  {% include "partials/topbar.html.j2" %}
+
+  <main id="main-content" tabindex="-1">
+    <div class="home-layout">
+      {% include "partials/sidebar_default.html.j2" %}
+      <div class="home-main">
+        <div class="auth-main">
+          <section class="card auth-card">
+            <h1>用户登录</h1>
+            <p class="muted">账号与密码仅用于访问用户功能。</p>
+            <form class="admin-form" data-auth-login-form>
+              <label>账号</label>
+              <input type="text" name="username" autocomplete="username" required>
+              <label>密码</label>
+              <input type="password" name="password" autocomplete="current-password" required>
+              <button class="btn primary" type="submit">登录</button>
+              <p class="hint" data-auth-login-error></p>
+            </form>
+            {% if auth.registration_mode != "closed" %}
+            <p class="muted auth-switch">没有账号？<a href="/auth/register/">去注册</a></p>
+            {% endif %}
+          </section>
         </div>
-      </a>
+      </div>
     </div>
-    <nav class="topnav" aria-label="顶栏导航">
-      <a href="/">首页</a>
-      <a href="/tags/">标签</a>
-      <a href="/search/">搜索</a>
-    </nav>
-    <div class="topbar-right">
-      <button class="search-trigger" type="button" data-search-open aria-label="打开搜索">搜索标题、描述、标签</button>
-      <span class="user-avatar" data-user-avatar hidden>
-        <img src="{{ site.auth_avatar_url }}" alt="用户头像" loading="lazy" width="32" height="32" data-user-avatar-img>
-      </span>
-      {% if auth.registration_mode != "closed" %}
-      <a class="icon-link" href="/auth/register/" data-auth-register-link>注册</a>
-      {% endif %}
-      <a class="icon-link admin-entry" href="/admin/" data-admin-entry hidden>管理</a>
-      <a class="icon-link admin-entry" href="/admin/tags/" data-admin-entry hidden>标签管理</a>
-      <a class="icon-link admin-entry" href="/status/" data-admin-entry hidden>状态</a>
-    </div>
-  </header>
-
-  <main id="main-content" class="auth-main" tabindex="-1">
-    <section class="card auth-card">
-      <h1>用户登录</h1>
-      <p class="muted">账号与密码仅用于访问用户功能。</p>
-      <form class="admin-form" data-auth-login-form>
-        <label>账号</label>
-        <input type="text" name="username" autocomplete="username" required>
-        <label>密码</label>
-        <input type="password" name="password" autocomplete="current-password" required>
-        <button class="btn primary" type="submit">登录</button>
-        <p class="hint" data-auth-login-error></p>
-      </form>
-      {% if auth.registration_mode != "closed" %}
-      <p class="muted auth-switch">没有账号？<a href="/auth/register/">去注册</a></p>
-      {% endif %}
-    </section>
   </main>
-
-  <div class="search-overlay" data-search-overlay aria-hidden="true">
-    <div class="search-panel" role="dialog" aria-modal="true">
-      <button class="icon-button close-button" type="button" data-search-close aria-label="关闭搜索">×</button>
-      <p class="search-title">搜索作品</p>
-      <form action="/search/" method="get" class="search-form">
-        <input type="search" name="q" placeholder="搜索标题、描述、标签" autocomplete="off" data-search-input>
-        <button class="btn primary" type="submit">搜索</button>
-      </form>
-      <p class="search-hint">支持标签、标题与描述匹配（# 可选）。</p>
-    </div>
-  </div>
 
   <script src="/static/js/ui.js?v={{ static_version }}" defer></script>
   <script src="/static/js/auth.js?v={{ static_version }}" defer></script>

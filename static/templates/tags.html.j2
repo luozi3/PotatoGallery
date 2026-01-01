@@ -6,74 +6,35 @@
   <title>标签 ｜ {{ site_name }}</title>
   <meta name="description" content="{{ site_description }}">
   <meta name="theme-color" content="{{ site.theme_color }}">
+  {% include "partials/theme_init.html.j2" %}
   {% if site_url %}
   <link rel="canonical" href="{{ site_url }}/tags/">
   {% endif %}
   <link rel="stylesheet" href="/static/styles/gallery.css?v={{ static_version }}">
 </head>
-<body class="page-tags">
+<body class="page-tags with-sidebar">
   <a class="skip-link" href="#main-content">跳到主要内容</a>
-  <header class="topbar">
-    <div class="topbar-left">
-      <a class="brand" href="/" aria-label="返回首页">
-        <span class="logo-dot" aria-hidden="true"></span>
-        <div class="brand-text">
-          <strong>{{ site.brand_name or site_name }}</strong>
-          <span>{{ site.brand_tagline }}</span>
-        </div>
-      </a>
-      <button class="icon-button theme-toggle" type="button" data-theme-toggle aria-label="切换主题">
-        <span class="icon" aria-hidden="true">◐</span>
-      </button>
-    </div>
-    <nav class="topnav" aria-label="顶栏导航">
-      <a href="/">首页</a>
-      <a href="/search/">搜索</a>
-      <a href="/favorites/" data-auth-user-link hidden>收藏</a>
-    </nav>
-    <div class="topbar-right">
-      <button class="search-trigger" type="button" data-search-open aria-label="打开搜索">搜索标题、描述、标签</button>
-      <span class="user-avatar" data-user-avatar hidden>
-        <img src="{{ site.auth_avatar_url }}" alt="用户头像" loading="lazy" width="32" height="32" data-user-avatar-img>
-      </span>
-      <a class="icon-link" href="/my/" data-auth-user-link hidden>我的作品</a>
-      <a class="icon-link" href="/favorites/" data-auth-user-link hidden>我的收藏</a>
-      <a class="icon-link" href="/auth/login/" data-auth-login-link>登录</a>
-      {% if auth.registration_mode != "closed" %}
-      <a class="icon-link" href="/auth/register/" data-auth-register-link>注册</a>
-      {% endif %}
-      <a class="icon-link admin-entry" href="/admin/" data-admin-entry hidden>管理</a>
-      <a class="icon-link admin-entry" href="/admin/tags/" data-admin-entry hidden>标签管理</a>
-      <a class="icon-link admin-entry" href="/status/" data-admin-entry hidden>状态</a>
-    </div>
-  </header>
+  {% include "partials/topbar.html.j2" %}
 
   <main id="main-content" tabindex="-1">
-    <section class="tags-hero">
-      <h1>标签</h1>
-      <p class="lede">点击标签查看对应作品合集。</p>
-    </section>
-    <section class="tag-grid" aria-label="标签列表">
-      {% for tag in tags %}
-      <a class="tag-card" href="/tags/{{ tag.slug|urlencode }}/">
-        <span class="tag-title">#{{ tag.tag }}</span>
-        <span class="tag-count">{{ tag.count }} 件</span>
-      </a>
-      {% endfor %}
-    </section>
-  </main>
-
-  <div class="search-overlay" data-search-overlay aria-hidden="true">
-    <div class="search-panel" role="dialog" aria-modal="true">
-      <button class="icon-button close-button" type="button" data-search-close aria-label="关闭搜索">×</button>
-      <p class="search-title">搜索作品</p>
-      <form action="/search/" method="get" class="search-form">
-        <input type="search" name="q" placeholder="搜索标题、描述、标签" autocomplete="off" data-search-input>
-        <button class="btn primary" type="submit">搜索</button>
-      </form>
-      <p class="search-hint">支持标签、标题与描述匹配（# 可选）。</p>
+    <div class="home-layout">
+      {% include "partials/sidebar_default.html.j2" %}
+      <div class="home-main">
+        <section class="tags-hero">
+          <h1>标签</h1>
+          <p class="lede">点击标签查看对应作品合集。</p>
+        </section>
+        <section class="tag-grid" aria-label="标签列表">
+          {% for tag in tags %}
+          <a class="tag-card" href="/tags/{{ tag.slug|urlencode }}/" style="{{ tag.style }}">
+            <span class="tag-title">#{{ tag.tag }}</span>
+            <span class="tag-count">{{ tag.count }} 件</span>
+          </a>
+          {% endfor %}
+        </section>
+      </div>
     </div>
-  </div>
+  </main>
 
   <script src="/static/js/ui.js?v={{ static_version }}" defer></script>
 </body>

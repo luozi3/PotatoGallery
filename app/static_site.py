@@ -212,6 +212,11 @@ def simple_title(name: str) -> str:
     return Path(name).stem or name
 
 
+def image_detail_path(image_id: Optional[object], uuid: str) -> str:
+    value = str(image_id).strip() if image_id is not None else ""
+    return f"/images/{value}/index.html" if value else f"/images/{uuid}/index.html"
+
+
 def human_bytes(num: int) -> str:
     for unit in ["B", "KB", "MB", "GB"]:
         if num < 1024:
@@ -228,12 +233,206 @@ def tag_slug(tag: str) -> str:
     return tagging.safe_tag_slug(tag)
 
 
+def _collect_tag_ancestors(
+    tags: Iterable[str],
+    parent_map: Dict[str, List[str]],
+) -> List[str]:
+    collected = set(tags)
+    stack = list(tags)
+    while stack:
+        current = stack.pop()
+        for parent in parent_map.get(current, []):
+            if parent not in collected:
+                collected.add(parent)
+                stack.append(parent)
+    return list(collected)
+
+
+def _sort_tags(tags: Iterable[str], order: List[str]) -> List[str]:
+    index = {tag: idx for idx, tag in enumerate(order)}
+    return sorted(tags, key=lambda tag: (index.get(tag, 10**9), tag))
+
+
+def _collect_tag_descendants(tag: str, child_map: Dict[str, List[str]]) -> List[str]:
+    collected: List[str] = []
+    stack = [tag]
+    seen = {tag}
+    while stack:
+        current = stack.pop()
+        for child in child_map.get(current, []):
+            if child in seen:
+                continue
+            seen.add(child)
+            collected.append(child)
+            stack.append(child)
+    return collected
+
+
+def build_tag_flat_groups(
+    tags: List[str],
+    tags_meta: Dict[str, dict],
+    parent_map: Dict[str, List[str]],
+    tag_order: List[str],
+    tag_slug_map: Dict[str, str],
+    tag_style_map: Dict[str, str],
+    tag_type_styles: Dict[str, dict],
+    tag_type_order: List[str],
+    default_tag_type: str,
+) -> List[dict]:
+    if not tags:
+        return []
+    tag_set = set(tags)
+    all_tags = _collect_tag_ancestors(tags, parent_map)
+
+    def build_item(tag: str) -> dict:
+        info = tags_meta.get(tag) or {}
+        tag_type = info.get("type") or default_tag_type
+        type_info = tag_type_styles.get(tag_type) or {}
+        return {
+            "tag": info.get("tag") or tag,
+            "slug": tag_slug_map.get(tag) or tag_slug(tag),
+            "style": tag_style_map.get(tag, ""),
+            "type": tag_type,
+            "type_label": type_info.get("label") or tag_type,
+            "explicit": tag in tag_set,
+        }
+
+    items = [build_item(tag) for tag in _sort_tags(all_tags, tag_order)]
+    grouped: Dict[str, List[dict]] = {}
+    for item in items:
+        grouped.setdefault(item.get("type") or default_tag_type, []).append(item)
+
+    group_order = list(tag_type_order or [])
+    for type_id in grouped.keys():
+        if type_id not in group_order:
+            group_order.append(type_id)
+
+    groups: List[dict] = []
+    for type_id in group_order:
+        nodes = grouped.get(type_id)
+        if not nodes:
+            continue
+        type_info = tag_type_styles.get(type_id) or {}
+        groups.append(
+            {
+                "type": type_id,
+                "label": type_info.get("label") or type_id,
+                "color": type_info.get("color") or "#7b8794",
+                "tags": nodes,
+            }
+        )
+    return groups
+
+
+def build_tag_relation_tree(
+    tag: str,
+    tags_meta: Dict[str, dict],
+    parent_map: Dict[str, List[str]],
+    child_map: Dict[str, List[str]],
+    tag_order: List[str],
+    tag_slug_map: Dict[str, str],
+    tag_style_map: Dict[str, str],
+    tag_type_styles: Dict[str, dict],
+    default_tag_type: str,
+) -> List[dict]:
+    if not tag:
+        return []
+    ancestors = _collect_tag_ancestors([tag], parent_map)
+    descendants = _collect_tag_descendants(tag, child_map)
+    all_tags = set(ancestors + descendants + [tag])
+    if not all_tags:
+        return []
+
+    children_map: Dict[str, List[str]] = {item: [] for item in all_tags}
+    for parent in all_tags:
+        for child in child_map.get(parent, []):
+            if child in children_map:
+                children_map[parent].append(child)
+
+    def build_node(node_tag: str) -> dict:
+        info = tags_meta.get(node_tag) or {}
+        tag_type = info.get("type") or default_tag_type
+        type_info = tag_type_styles.get(tag_type) or {}
+        return {
+            "tag": info.get("tag") or node_tag,
+            "slug": tag_slug_map.get(node_tag) or tag_slug(node_tag),
+            "style": tag_style_map.get(node_tag, ""),
+            "type": tag_type,
+            "type_label": type_info.get("label") or tag_type,
+            "explicit": node_tag == tag,
+            "current": node_tag == tag,
+            "children": [build_node(child) for child in _sort_tags(children_map.get(node_tag, []), tag_order)],
+        }
+
+    roots = []
+    for node in all_tags:
+        parents = parent_map.get(node, [])
+        if not any(parent in all_tags for parent in parents):
+            roots.append(node)
+    if not roots:
+        roots = [tag]
+    return [build_node(node) for node in _sort_tags(roots, tag_order)]
+
+
+def _parse_hex_color(raw: str) -> Optional[Tuple[int, int, int]]:
+    value = str(raw or "").strip().lstrip("#")
+    if len(value) == 3:
+        value = "".join([ch * 2 for ch in value])
+    if len(value) != 6:
+        return None
+    try:
+        r = int(value[0:2], 16)
+        g = int(value[2:4], 16)
+        b = int(value[4:6], 16)
+    except ValueError:
+        return None
+    return r, g, b
+
+
+def _rgba(color: str, alpha: float) -> str:
+    rgb = _parse_hex_color(color)
+    if not rgb:
+        return ""
+    r, g, b = rgb
+    return f"rgba({r}, {g}, {b}, {alpha:.2f})"
+
+
+def _tag_style(color: str) -> dict:
+    bg = _rgba(color, 0.12)
+    border = _rgba(color, 0.28)
+    style = f"--tag-color: {color};"
+    if bg:
+        style += f" --tag-bg: {bg};"
+    if border:
+        style += f" --tag-border: {border};"
+    return {"color": color, "bg": bg, "border": border, "style": style}
+
+
 def _strip_template_suffix(name: str) -> str:
     if name.endswith(".html.j2"):
         return name[:-8]
     if name.endswith(".j2"):
         return name[:-3]
     return Path(name).stem
+
+
+def _redirect_html(target: str) -> str:
+    safe_target = target.replace('"', "%22")
+    return (
+        "<!doctype html>\n"
+        "<html lang=\"zh-CN\">\n"
+        "<head>\n"
+        "  <meta charset=\"utf-8\">\n"
+        f"  <meta http-equiv=\"refresh\" content=\"0; url={safe_target}\">\n"
+        f"  <link rel=\"canonical\" href=\"{safe_target}\">\n"
+        "  <meta name=\"robots\" content=\"noindex\">\n"
+        "  <title>跳转中</title>\n"
+        "</head>\n"
+        "<body>\n"
+        f"  <p>页面已迁移，正在前往 <a href=\"{safe_target}\">{safe_target}</a></p>\n"
+        "</body>\n"
+        "</html>\n"
+    )
 
 
 def _ensure_extra_page_allowed(url_path: str, source: Path, seen: set) -> None:
@@ -322,6 +521,7 @@ def build_site(images: Iterable[Mapping[str, object]]) -> Path:
 
     collections_meta, default_collection, collection_order = load_collections_config()
     tags_meta, tag_order = tagging.load_tags_config()
+    tag_types_meta, tag_types_order = tagging.load_tag_types_config()
     alias_map = tagging.build_alias_map(tags_meta)
     parent_map = tagging.build_parent_map(tags_meta, alias_map)
     child_map: Dict[str, List[str]] = {}
@@ -333,6 +533,41 @@ def build_site(images: Iterable[Mapping[str, object]]) -> Path:
         for tag, info in tags_meta.items()
         if not info.get("alias_to")
     }
+    default_tag_type = tagging.default_tag_type(tag_types_meta, tag_types_order)
+    tag_type_styles: Dict[str, dict] = {}
+    tag_types_list: List[dict] = []
+    ordered_types = (tag_types_order or []) + sorted(tag_types_meta.keys())
+    seen_types = set()
+    for type_id in ordered_types:
+        if type_id in seen_types:
+            continue
+        seen_types.add(type_id)
+        info = tag_types_meta.get(type_id) or {}
+        color = str(info.get("color") or "#7b8794")
+        style = _tag_style(color)
+        tag_type_styles[type_id] = {
+            "type": type_id,
+            "label": info.get("label") or type_id,
+            "color": color,
+            "style": style["style"],
+            "bg": style["bg"],
+            "border": style["border"],
+        }
+        tag_types_list.append(
+            {
+                "type": type_id,
+                "label": info.get("label") or type_id,
+                "color": color,
+            }
+        )
+    default_type_style = tag_type_styles.get(default_tag_type) or _tag_style("#7b8794")
+    tag_style_map: Dict[str, str] = {}
+    for tag, info in tags_meta.items():
+        canonical = tagging.normalize_tag(info.get("alias_to") or "") or tag
+        canonical_info = tags_meta.get(canonical) or info
+        type_id = canonical_info.get("type") or default_tag_type
+        style_info = tag_type_styles.get(type_id) or default_type_style
+        tag_style_map[tag] = style_info.get("style", "")
     collections_ctx = {
         key: {
             "title": value["title"],
@@ -347,6 +582,9 @@ def build_site(images: Iterable[Mapping[str, object]]) -> Path:
     stats = {"total": 0, "collections": {}}
     for img in images:
         img_ctx = dict(img)
+        image_id = img_ctx.get("id")
+        img_ctx["short_id"] = str(image_id).strip() if image_id is not None else ""
+        img_ctx["detail_path"] = image_detail_path(image_id, img_ctx.get("uuid") or "")
         thumb_path_value = img_ctx.get("thumb_path")
         img_ctx["thumb_filename"] = (
             Path(thumb_path_value).name if thumb_path_value else f"{img['uuid']}{config.THUMB_EXT}"
@@ -356,6 +594,17 @@ def build_site(images: Iterable[Mapping[str, object]]) -> Path:
         img_ctx["title"] = img_ctx.get("title_override") or simple_title(str(img["original_name"]))
         img_ctx["description"] = img_ctx.get("description") or ""
         img_ctx["tags"] = parse_tags(img_ctx.get("tags_json"), alias_map)
+        img_ctx["tag_groups"] = build_tag_flat_groups(
+            img_ctx["tags"],
+            tags_meta,
+            parent_map,
+            tag_order,
+            tag_slug_map,
+            tag_style_map,
+            tag_type_styles,
+            tag_types_order,
+            default_tag_type,
+        )
         img_ctx["orientation"] = classify_orientation(
             int(img["width"]) if img["width"] else None,
             int(img["height"]) if img["height"] else None,
@@ -434,6 +683,8 @@ def build_site(images: Iterable[Mapping[str, object]]) -> Path:
         if not meta or meta.get("alias_to"):
             continue
         slug = meta.get("slug") or tag_slug(tag)
+        type_id = meta.get("type") or default_tag_type
+        type_info = tag_type_styles.get(type_id) or default_type_style
         tags_list.append(
             {
                 "tag": tag,
@@ -443,7 +694,10 @@ def build_site(images: Iterable[Mapping[str, object]]) -> Path:
                 "aliases": meta.get("aliases") or [],
                 "parents": parent_map.get(tag, []),
                 "children": child_map.get(tag, []),
-                "type": meta.get("type") or "general",
+                "type": type_id,
+                "type_label": type_info.get("label") or type_id,
+                "type_color": type_info.get("color") or "",
+                "style": type_info.get("style") or "",
             }
         )
     top_tags = sorted(
@@ -469,6 +723,8 @@ def build_site(images: Iterable[Mapping[str, object]]) -> Path:
         alias_slug = meta.get("slug") or tag_slug(tag)
         if alias_slug == canonical_slug:
             continue
+        alias_type_id = canonical_meta.get("type") or default_tag_type
+        alias_type_info = tag_type_styles.get(alias_type_id) or default_type_style
         alias_pages.append(
             {
                 "tag": tag,
@@ -478,7 +734,10 @@ def build_site(images: Iterable[Mapping[str, object]]) -> Path:
                 "aliases": meta.get("aliases") or [],
                 "alias_of": alias_to,
                 "alias_of_slug": canonical_slug,
-                "type": canonical_meta.get("type") or "general",
+                "type": alias_type_id,
+                "type_label": alias_type_info.get("label") or alias_type_id,
+                "type_color": alias_type_info.get("color") or "",
+                "style": alias_type_info.get("style") or "",
             }
         )
 
@@ -512,6 +771,8 @@ def build_site(images: Iterable[Mapping[str, object]]) -> Path:
         "images": [
             {
                 "uuid": img["uuid"],
+                "image_id": img.get("id"),
+                "detail_path": img.get("detail_path"),
                 "title": img["title"],
                 "description": img.get("description", ""),
                 "tags": img.get("tags", []),
@@ -549,7 +810,8 @@ def build_site(images: Iterable[Mapping[str, object]]) -> Path:
         canonical = alias_to or tag
         canonical_meta = tags_meta.get(canonical) or {}
         canonical_slug = canonical_meta.get("slug") or tag_slug(canonical)
-        tag_type = canonical_meta.get("type") or meta.get("type") or "general"
+        tag_type = canonical_meta.get("type") or meta.get("type") or default_tag_type
+        type_info = tag_type_styles.get(tag_type) or default_type_style
         tag_index_tags.append(
             {
                 "tag": tag,
@@ -559,11 +821,14 @@ def build_site(images: Iterable[Mapping[str, object]]) -> Path:
                 "alias_of": alias_to,
                 "alias_of_slug": canonical_slug if alias_to else "",
                 "type": tag_type,
+                "type_label": type_info.get("label") or tag_type,
+                "type_color": type_info.get("color") or "",
             }
         )
     tag_index = {
         "generated_at": int(time.time()),
         "tags": tag_index_tags,
+        "types": tag_types_list,
     }
     (data_dir / "tag_index.json").write_text(
         json.dumps(tag_index, ensure_ascii=False, indent=2), encoding="utf-8"
@@ -599,6 +864,7 @@ def build_site(images: Iterable[Mapping[str, object]]) -> Path:
         og_image=og_image,
         json_ld=index_json_ld,
         tag_slug_map=tag_slug_map,
+        tag_style_map=tag_style_map,
         static_version=static_version,
     )
     (staging_dir / "index.html").write_text(index_html, encoding="utf-8")
@@ -614,6 +880,7 @@ def build_site(images: Iterable[Mapping[str, object]]) -> Path:
         collections_list=collections_list,
         tags=tags_list,
         tag_slug_map=tag_slug_map,
+        tag_style_map=tag_style_map,
         static_version=static_version,
     )
     (search_dir / "index.html").write_text(search_html, encoding="utf-8")
@@ -628,6 +895,7 @@ def build_site(images: Iterable[Mapping[str, object]]) -> Path:
         site_url=site_url,
         tags=tags_list,
         tag_slug_map=tag_slug_map,
+        tag_style_map=tag_style_map,
         static_version=static_version,
     )
     (tags_dir / "index.html").write_text(tags_index_html, encoding="utf-8")
@@ -635,6 +903,17 @@ def build_site(images: Iterable[Mapping[str, object]]) -> Path:
     for tag in tags_list:
         tag_dir = tags_dir / tag["slug"]
         tag_dir.mkdir(parents=True, exist_ok=True)
+        tag_tree = build_tag_relation_tree(
+            tag.get("tag") or "",
+            tags_meta,
+            parent_map,
+            child_map,
+            tag_order,
+            tag_slug_map,
+            tag_style_map,
+            tag_type_styles,
+            default_tag_type,
+        )
         tag_html = tag_tpl.render(
             site=site,
             auth=auth_config,
@@ -642,16 +921,30 @@ def build_site(images: Iterable[Mapping[str, object]]) -> Path:
             site_description=site_description,
             site_url=site_url,
             tag=tag,
+            tag_tree=tag_tree,
             images=tag_images.get(tag["tag"], []),
             collections=collections_ctx,
             collections_list=collections_list,
             tag_slug_map=tag_slug_map,
+            tag_style_map=tag_style_map,
             static_version=static_version,
         )
         (tag_dir / "index.html").write_text(tag_html, encoding="utf-8")
     for alias in alias_pages:
         tag_dir = tags_dir / alias["slug"]
         tag_dir.mkdir(parents=True, exist_ok=True)
+        tree_root = alias.get("alias_of") or alias.get("tag") or ""
+        tag_tree = build_tag_relation_tree(
+            tree_root,
+            tags_meta,
+            parent_map,
+            child_map,
+            tag_order,
+            tag_slug_map,
+            tag_style_map,
+            tag_type_styles,
+            default_tag_type,
+        )
         tag_html = tag_tpl.render(
             site=site,
             auth=auth_config,
@@ -659,10 +952,12 @@ def build_site(images: Iterable[Mapping[str, object]]) -> Path:
             site_description=site_description,
             site_url=site_url,
             tag=alias,
+            tag_tree=tag_tree,
             images=tag_images.get(alias["alias_of"], []),
             collections=collections_ctx,
             collections_list=collections_list,
             tag_slug_map=tag_slug_map,
+            tag_style_map=tag_style_map,
             static_version=static_version,
         )
         (tag_dir / "index.html").write_text(tag_html, encoding="utf-8")
@@ -774,7 +1069,8 @@ def build_site(images: Iterable[Mapping[str, object]]) -> Path:
     images_dir = staging_dir / "images"
     images_dir.mkdir(exist_ok=True)
     for img in images_ctx:
-        detail_url = f"{site_url}/images/{img['uuid']}/index.html" if site_url else ""
+        detail_path = img.get("detail_path") or image_detail_path(img.get("id"), img.get("uuid") or "")
+        detail_url = f"{site_url}{detail_path}" if site_url else ""
         image_url = f"{site_url}/raw/{img['raw_filename']}" if site_url else f"/raw/{img['raw_filename']}"
         detail_json_ld = json.dumps(
             {
@@ -789,8 +1085,6 @@ def build_site(images: Iterable[Mapping[str, object]]) -> Path:
             },
             ensure_ascii=False,
         )
-        page_dir = images_dir / img["uuid"]
-        page_dir.mkdir(parents=True, exist_ok=True)
         html = detail_tpl.render(
             image=img,
             site=site,
@@ -803,9 +1097,18 @@ def build_site(images: Iterable[Mapping[str, object]]) -> Path:
             json_ld=detail_json_ld,
             collections=collections_ctx,
             tag_slug_map=tag_slug_map,
+            tag_style_map=tag_style_map,
             static_version=static_version,
         )
+        page_key = img.get("short_id") or img.get("uuid") or ""
+        page_dir = images_dir / page_key
+        page_dir.mkdir(parents=True, exist_ok=True)
         (page_dir / "index.html").write_text(html, encoding="utf-8")
+        legacy_uuid = img.get("uuid") or ""
+        if legacy_uuid and legacy_uuid != page_key:
+            legacy_dir = images_dir / legacy_uuid
+            legacy_dir.mkdir(parents=True, exist_ok=True)
+            (legacy_dir / "index.html").write_text(_redirect_html(detail_path), encoding="utf-8")
 
     status_html = env.get_template("status.html.j2").render(
         site=site,
@@ -884,7 +1187,8 @@ def build_site(images: Iterable[Mapping[str, object]]) -> Path:
         alias_loc = f"{site_url}/tags/{alias_slug_value}/" if site_url else f"/tags/{alias_slug_value}/"
         urls.append({"loc": alias_loc})
     for img in images_ctx:
-        loc = f"{site_url}/images/{img['uuid']}/index.html" if site_url else f"/images/{img['uuid']}/index.html"
+        detail_path = img.get("detail_path") or image_detail_path(img.get("id"), img.get("uuid") or "")
+        loc = f"{site_url}{detail_path}" if site_url else detail_path
         lastmod = str(img.get("created_at") or "")
         urls.append({"loc": loc, "lastmod": lastmod})
 

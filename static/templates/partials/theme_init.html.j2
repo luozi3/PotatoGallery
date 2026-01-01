@@ -1,0 +1,42 @@
+<script data-theme-init>
+  (function () {
+    try {
+      var root = document.documentElement;
+      var theme = localStorage.getItem('theme');
+      if (theme === 'dark' || theme === 'light') {
+        root.dataset.theme = theme;
+        var meta = document.querySelector('meta[name=theme-color]');
+        if (meta) {
+          meta.setAttribute('content', theme === 'dark' ? '#1f2023' : '#2f7dd9');
+        }
+      }
+
+      var authHint = localStorage.getItem('auth-hint');
+      if (authHint === '1') {
+        root.classList.add('auth-hint-logged-in');
+      }
+
+      var path = location.pathname || '';
+      var isDetail = path.indexOf('/images/') === 0 && path !== '/images/' && path !== '/images';
+      var collapsed = localStorage.getItem('sidebar-collapsed') === '1';
+      var restoreOpen = localStorage.getItem('sidebar-restore-open') === '1';
+      if (restoreOpen && collapsed) {
+        localStorage.removeItem('sidebar-restore-open');
+        restoreOpen = false;
+      }
+      if (restoreOpen && !isDetail && !collapsed) {
+        root.classList.add('sidebar-collapsed');
+        root.dataset.sidebarRestore = '1';
+      } else if (collapsed) {
+        root.classList.add('sidebar-collapsed');
+      }
+      if (isDetail && !collapsed) {
+        localStorage.setItem('sidebar-restore-open', '1');
+      }
+
+      if (/(^|;\\s*)live2d=0(;|$)/.test(document.cookie)) {
+        root.classList.add('live2d-hidden');
+      }
+    } catch (e) {}
+  })();
+</script>

@@ -6,6 +6,7 @@
   <title>{{ image.title }} ｜ {{ site_name }}</title>
   <meta name="description" content="{{ image.description or image.original_name }}">
   <meta name="theme-color" content="{{ site.theme_color }}">
+  {% include "partials/theme_init.html.j2" %}
   {% if canonical_url %}
   <link rel="canonical" href="{{ canonical_url }}">
   {% endif %}
@@ -28,110 +29,131 @@
   <script type="application/ld+json">{{ json_ld | safe }}</script>
   {% endif %}
 </head>
-<body class="page-detail">
-  {% set orientation_labels = {portrait: 竖屏, landscape: 横屏, square: 方形, unknown: 未标} %}
-  {% set size_labels = {ultra: 超清, large: 高清, medium: 中等, compact: 轻量, unknown: 未标} %}
+<body class="page-detail with-sidebar" data-sidebar-default="collapsed">
+  {% macro render_tag_tree(nodes, depth=0) -%}
+    <ul class="{{ 'tag-tree' if depth == 0 else 'tag-branch' }}">
+      {% for node in nodes %}
+      <li class="tag-node{% if not node.explicit %} is-implicit{% endif %}">
+        <a class="tag-chip" href="/tags/{{ node.slug|urlencode }}/" style="{{ node.style }}">#{{ node.tag }}</a>
+        {% if node.children %}
+        {{ render_tag_tree(node.children, depth + 1) }}
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+  {%- endmacro %}
+  {% set orientation_labels = {"portrait": "竖屏", "landscape": "横屏", "square": "方形", "unknown": "未标"} %}
+  {% set size_labels = {"ultra": "超清", "large": "高清", "medium": "中等", "compact": "轻量", "unknown": "未标"} %}
+  {% set thumb_src = "/thumb/" ~ image.thumb_filename if image.thumb_filename else "/raw/" ~ image.raw_filename %}
+  {% set full_src = "/raw/" ~ image.raw_filename %}
+  {% set thumb_width = image.thumb_width or image.width %}
+  {% set thumb_height = image.thumb_height or image.height %}
   <a class="skip-link" href="#main-content">跳到主要内容</a>
-  <header class="topbar">
-    <div class="topbar-left">
-      <a class="brand" href="/" aria-label="返回首页">
-        <span class="logo-dot" aria-hidden="true"></span>
-        <div class="brand-text">
-          <strong>{{ site.brand_name or site_name }}</strong>
-          <span>{{ site.brand_tagline }}</span>
-        </div>
-      </a>
-      <button class="icon-button theme-toggle" type="button" data-theme-toggle aria-label="切换主题">
-        <span class="icon" aria-hidden="true">◐</span>
-      </button>
-    </div>
-    <nav class="topnav" aria-label="顶栏导航">
-      <a href="/">首页</a>
-      <a href="/tags/">标签</a>
-      <a href="/favorites/" data-auth-user-link hidden>收藏</a>
-    </nav>
-    <div class="topbar-right">
-      <button class="search-trigger" type="button" data-search-open aria-label="打开搜索">搜索标题、描述、标签</button>
-      {% if site.live2d.enabled %}
-      <button class="icon-button live2d-toggle" type="button" data-live2d-toggle aria-label="切换 Live2D">Live2D</button>
-      {% endif %}
-      <span class="user-avatar" data-user-avatar hidden>
-        <img src="{{ site.auth_avatar_url }}" alt="用户头像" loading="lazy" width="32" height="32" data-user-avatar-img>
-      </span>
-      <a class="icon-link" href="/my/" data-auth-user-link hidden>我的作品</a>
-      <a class="icon-link" href="/favorites/" data-auth-user-link hidden>我的收藏</a>
-      <a class="icon-link" href="/auth/login/" data-auth-login-link>登录</a>
-      {% if auth.registration_mode != "closed" %}
-      <a class="icon-link" href="/auth/register/" data-auth-register-link>注册</a>
-      {% endif %}
-      <a class="icon-link admin-entry" href="/admin/" data-admin-entry hidden>管理</a>
-      <a class="icon-link admin-entry" href="/admin/tags/" data-admin-entry hidden>标签管理</a>
-      <a class="icon-link admin-entry" href="/status/" data-admin-entry hidden>状态</a>
-    </div>
-  </header>
+  {% include "partials/topbar.html.j2" %}
 
-  <main class="detail-layout" id="main-content" tabindex="-1">
-    <div class="visual">
-      <div class="frame" style="aspect-ratio: {{ image.width }}/{{ image.height }};">
-        <img src="/raw/{{ image.raw_filename }}"
-             alt="{{ image.original_name }}"
-             loading="eager"
-             fetchpriority="high"
-             width="{{ image.width }}"
-             height="{{ image.height }}">
+  <main class="detail-shell" id="main-content" tabindex="-1">
+    {% include "partials/sidebar_default.html.j2" %}
+    <aside class="detail-static-sidebar" aria-label="标签与索引">
+      <div class="left-sidebar-inner">
+        <div class="side-group">
+          <div class="side-heading">标签</div>
+          {% if image.tag_groups %}
+          <div class="tag-groups">
+            {% for group in image.tag_groups %}
+            <div class="tag-group">
+              <div class="tag-group-head">
+                <span class="tag-group-dot" style="background: {{ group.color }};"></span>
+                <span class="tag-group-title">{{ group.label }}</span>
+              </div>
+              <div class="tag-flat-list">
+                {% for item in group.tags %}
+                <a class="tag-flat-chip{% if not item.explicit %} is-implicit{% endif %}" href="/tags/{{ item.slug|urlencode }}/" style="{{ item.style }}">#{{ item.tag }}</a>
+                {% endfor %}
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+          {% else %}
+          <p class="muted">暂无标签</p>
+          {% endif %}
+        </div>
+        <div class="side-group">
+          <div class="side-heading">信息</div>
+          <dl class="detail-meta-list">
+            <div>
+              <dt>编号</dt>
+              <dd>#{{ image.short_id or image.uuid }}</dd>
+            </div>
+            <div>
+              <dt>分辨率</dt>
+              <dd>{{ image.width }} × {{ image.height }}</dd>
+            </div>
+            <div>
+              <dt>体积</dt>
+              <dd>{{ image.bytes_human }}</dd>
+            </div>
+            <div>
+              <dt>上传时间</dt>
+              <dd>{{ image.created_at }}</dd>
+            </div>
+            <div>
+              <dt>SHA256</dt>
+              <dd class="mono">{{ image.sha256 }}</dd>
+            </div>
+            <div>
+              <dt>主色</dt>
+              <dd><span class="color-chip" style="background: {{ image.dominant_color or '#dfe4ea' }};"></span>{{ image.dominant_color or '未知' }}</dd>
+            </div>
+            <div>
+              <dt>原文件</dt>
+              <dd>{{ image.original_name }}</dd>
+            </div>
+            <div>
+              <dt>标记</dt>
+              <dd>{{ orientation_labels.get(image.orientation, "未标") }} / {{ size_labels.get(image.size_bucket, "未标") }}</dd>
+            </div>
+          </dl>
+        </div>
       </div>
-    </div>
-    <div class="panel">
-      <p class="eyebrow">{{ collections.get(image.collection, {}).get('title', image.collection) }}</p>
-      <h1 class="detail-title">{{ image.title }}</h1>
-      {% if image.description %}
-      <p class="desc">{{ image.description }}</p>
-      {% endif %}
-      <p class="muted">{{ image.original_name }}</p>
-      <div class="tag-row">
-        <span class="tag accent">{{ image.width }}×{{ image.height }}</span>
-        <span class="tag">{{ image.bytes_human }}</span>
-        <span class="tag ghost">{{ image.created_at }}</span>
-        <span class="tag ghost">{{ orientation_labels.get(image.orientation, "未标") }}</span>
-        <span class="tag ghost">{{ size_labels.get(image.size_bucket, "未标") }}</span>
-      </div>
-      {% if image.tags %}
-      <div class="tags">
-        {% for tag in image.tags %}
-        <a class="tag ghost" href="/tags/{{ tag_slug_map.get(tag, tag)|urlencode }}/">#{{ tag }}</a>
-        {% endfor %}
-      </div>
-      {% endif %}
-      <dl class="meta-grid">
-        <div>
-          <dt>文件名</dt>
-          <dd>{{ image.original_name }}</dd>
+    </aside>
+    <section class="detail-main">
+      <header class="detail-head">
+        <p class="eyebrow">{{ collections.get(image.collection, {}).get('title', image.collection) }}</p>
+        <h1 class="detail-title">{{ image.title }}</h1>
+        {% if image.description %}
+        <p class="desc">{{ image.description }}</p>
+        {% endif %}
+        <p class="detail-original">{{ image.original_name }}</p>
+        <div class="tag-row">
+          <span class="tag accent">{{ image.width }}×{{ image.height }}</span>
+          <span class="tag">{{ image.bytes_human }}</span>
+          <span class="tag ghost">{{ image.created_at }}</span>
+          <span class="tag ghost">{{ orientation_labels.get(image.orientation, "未标") }}</span>
+          <span class="tag ghost">{{ size_labels.get(image.size_bucket, "未标") }}</span>
         </div>
-        <div>
-          <dt>分辨率</dt>
-          <dd>{{ image.width }} × {{ image.height }}</dd>
+      </header>
+      <section class="detail-media" data-detail-media data-image-mode="thumb">
+        <div class="detail-media-actions">
+          <a class="detail-action" href="/raw/{{ image.raw_filename }}" download>下载原图</a>
         </div>
-        <div>
-          <dt>SHA256</dt>
-          <dd class="mono">{{ image.sha256 }}</dd>
+        <div class="frame detail-frame" style="aspect-ratio: {{ image.width }}/{{ image.height }};">
+          <div class="detail-overlay">
+            <span class="detail-hint">点击图片在缩略/原图之间切换</span>
+            <span class="detail-mode">模式：<span data-image-status>略缩图</span></span>
+          </div>
+          <img class="detail-image"
+               src="{{ thumb_src }}"
+               alt="{{ image.original_name }}"
+               loading="eager"
+               decoding="async"
+               width="{{ thumb_width }}"
+               height="{{ thumb_height }}"
+               data-detail-image
+               data-thumb-src="{{ thumb_src }}"
+               data-full-src="{{ full_src }}"
+               onerror="this.onerror=null;this.src='{{ full_src }}';">
         </div>
-        <div>
-          <dt>主色</dt>
-          <dd><span class="color-chip" style="background: {{ image.dominant_color or '#dfe4ea' }};"></span>{{ image.dominant_color or '未知' }}</dd>
-        </div>
-        <div>
-          <dt>原图</dt>
-          <dd><a href="/raw/{{ image.raw_filename }}" download>下载 / 查看</a></dd>
-        </div>
-        <div>
-          <dt>上传时间</dt>
-          <dd>{{ image.created_at }}</dd>
-        </div>
-      </dl>
-      <div class="actions">
-        <a class="btn primary" href="/raw/{{ image.raw_filename }}" download>下载原图</a>
-        <a class="btn ghost" href="/">回到首页</a>
-      </div>
+      </section>
       <section class="panel edit-panel" data-image-editor data-image-uuid="{{ image.uuid }}" hidden>
         <h2>作品管理</h2>
         <div class="admin-fields">
@@ -150,20 +172,8 @@
           </div>
         </div>
       </section>
-    </div>
+    </section>
   </main>
-
-  <div class="search-overlay" data-search-overlay aria-hidden="true">
-    <div class="search-panel" role="dialog" aria-modal="true">
-      <button class="icon-button close-button" type="button" data-search-close aria-label="关闭搜索">×</button>
-      <p class="search-title">搜索作品</p>
-      <form action="/search/" method="get" class="search-form">
-        <input type="search" name="q" placeholder="搜索标题、描述、标签" autocomplete="off" data-search-input>
-        <button class="btn primary" type="submit">搜索</button>
-      </form>
-      <p class="search-hint">支持标签、标题与描述匹配（# 可选）。</p>
-    </div>
-  </div>
 
   {% if site.counter.enabled and site.counter.img_url %}
   <div class="counter">

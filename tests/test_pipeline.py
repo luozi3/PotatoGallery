@@ -18,6 +18,9 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 def seed_test_root(tmp_root: Path):
     static_src = PROJECT_ROOT / "static"
     shutil.copytree(static_src, tmp_root / "static", dirs_exist_ok=True)
+    local_site = tmp_root / "static" / "data" / "site.local.json"
+    if local_site.exists():
+        local_site.unlink()
     config_src = PROJECT_ROOT / "config" / "auth.json"
     if config_src.exists():
         config_dst = tmp_root / "config"
@@ -205,6 +208,9 @@ def test_worker_process_and_publish(tmp_path):
     storage = modules["app.storage"]
     worker = modules["app.worker"]
     db = modules["app.db"]
+    db = modules["app.db"]
+    db = modules["app.db"]
+    db = modules["app.db"]
 
     storage.ensure_dirs()
     uid = uuid4().hex
@@ -327,7 +333,7 @@ def test_collections_config_respected(tmp_path):
 
     with db.connect() as conn:
         row = conn.execute(
-            "SELECT status, thumb_path FROM images WHERE uuid=?",
+            "SELECT id, status, thumb_path FROM images WHERE uuid=?",
             (uid,),
         ).fetchone()
     assert row["status"] == "published"
@@ -337,10 +343,202 @@ def test_collections_config_respected(tmp_path):
     assert 'data-collection="mine"' in index_html
     assert "我的作品" in index_html
 
-    detail_html = (config.WWW_DIR / f"images/{uid}/index.html").read_text()
+    detail_html = (config.WWW_DIR / f"images/{row['id']}/index.html").read_text()
     assert "我的作品" in detail_html
     assert "/raw/" in detail_html
     assert "gallery.css?v=" in detail_html
+    assert "竖屏" in detail_html
+    assert "轻量" in detail_html
+
+
+def test_detail_tag_tree_includes_parents(tmp_path):
+    seed_test_root(tmp_path)
+    modules = setup_env(tmp_path)
+    config = modules["app.config"]
+    storage = modules["app.storage"]
+    worker = modules["app.worker"]
+    db = modules["app.db"]
+
+    storage.ensure_dirs()
+    uid = uuid4().hex
+    raw_path = config.RAW_DIR / f"{uid}.png"
+    make_image(raw_path)
+
+    tags_cfg = {
+        "types": [{"type": "general", "label": "普通", "color": "#7b8794"}],
+        "tags": [
+            {
+                "tag": "parent",
+                "intro": "",
+                "aliases": [],
+                "parents": [],
+                "slug": "parent",
+                "alias_to": "",
+                "type": "general",
+            },
+            {
+                "tag": "child",
+                "intro": "",
+                "aliases": [],
+                "parents": ["parent"],
+                "slug": "child",
+                "alias_to": "",
+                "type": "general",
+            },
+        ],
+    }
+    data_dir = config.STATIC / "data"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    (data_dir / "tags.json").write_text(json.dumps(tags_cfg, ensure_ascii=False), encoding="utf-8")
+
+    assert worker.process_file(raw_path)
+    with db.connect() as conn:
+        conn.execute("UPDATE images SET tags_json=? WHERE uuid=?", (json.dumps(["child"]), uid))
+        image_id = conn.execute("SELECT id FROM images WHERE uuid=?", (uid,)).fetchone()["id"]
+    assert worker.publish_ready_images()
+
+    detail_html = (config.WWW_DIR / f"images/{image_id}/index.html").read_text()
+    assert "tag-flat-list" in detail_html
+    assert "#child" in detail_html
+    assert "#parent" in detail_html
+
+
+def test_tag_page_tree_toggle_includes_relations(tmp_path):
+    seed_test_root(tmp_path)
+    modules = setup_env(tmp_path)
+    config = modules["app.config"]
+    storage = modules["app.storage"]
+    worker = modules["app.worker"]
+    db = modules["app.db"]
+
+    storage.ensure_dirs()
+    uid = uuid4().hex
+    raw_path = config.RAW_DIR / f"{uid}.png"
+    make_image(raw_path)
+
+    tags_cfg = {
+        "types": [{"type": "general", "label": "普通", "color": "#7b8794"}],
+        "tags": [
+            {
+                "tag": "parent",
+                "intro": "",
+                "aliases": [],
+                "parents": [],
+                "slug": "parent",
+                "alias_to": "",
+                "type": "general",
+            },
+            {
+                "tag": "child",
+                "intro": "",
+                "aliases": [],
+                "parents": ["parent"],
+                "slug": "child",
+                "alias_to": "",
+                "type": "general",
+            },
+        ],
+    }
+    data_dir = config.STATIC / "data"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    (data_dir / "tags.json").write_text(json.dumps(tags_cfg, ensure_ascii=False), encoding="utf-8")
+
+    assert worker.process_file(raw_path)
+    with db.connect() as conn:
+        conn.execute("UPDATE images SET tags_json=? WHERE uuid=?", (json.dumps(["child"]), uid))
+        image_id = conn.execute("SELECT id FROM images WHERE uuid=?", (uid,)).fetchone()["id"]
+    assert worker.publish_ready_images()
+
+    tag_html = (config.WWW_DIR / "tags" / "child" / "index.html").read_text()
+    assert "data-tag-tree-toggle" in tag_html
+    assert "tag-tree" in tag_html
+    assert "#child" in tag_html
+    assert "#parent" in tag_html
+    assert str(image_id) in tag_html
+
+
+def test_detail_tag_tree_groups_by_type_order(tmp_path):
+    seed_test_root(tmp_path)
+    modules = setup_env(tmp_path)
+    config = modules["app.config"]
+    storage = modules["app.storage"]
+    worker = modules["app.worker"]
+    db = modules["app.db"]
+
+    storage.ensure_dirs()
+    uid = uuid4().hex
+    raw_path = config.RAW_DIR / f"{uid}.png"
+    make_image(raw_path)
+
+    tags_cfg = {
+        "types": [
+            {"type": "artist", "label": "画师", "color": "#f97316"},
+            {"type": "general", "label": "普通", "color": "#7b8794"},
+        ],
+        "tags": [
+            {
+                "tag": "alice",
+                "intro": "",
+                "aliases": [],
+                "parents": [],
+                "slug": "alice",
+                "alias_to": "",
+                "type": "artist",
+            },
+            {
+                "tag": "clouds",
+                "intro": "",
+                "aliases": [],
+                "parents": [],
+                "slug": "clouds",
+                "alias_to": "",
+                "type": "general",
+            },
+        ],
+    }
+    data_dir = config.STATIC / "data"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    (data_dir / "tags.json").write_text(json.dumps(tags_cfg, ensure_ascii=False), encoding="utf-8")
+
+    assert worker.process_file(raw_path)
+    with db.connect() as conn:
+        conn.execute("UPDATE images SET tags_json=? WHERE uuid=?", (json.dumps(["alice", "clouds"]), uid))
+        image_id = conn.execute("SELECT id FROM images WHERE uuid=?", (uid,)).fetchone()["id"]
+    assert worker.publish_ready_images()
+
+    detail_html = (config.WWW_DIR / f"images/{image_id}/index.html").read_text()
+    artist_idx = detail_html.find("画师")
+    general_idx = detail_html.find("普通")
+    assert artist_idx != -1
+    assert general_idx != -1
+    assert artist_idx < general_idx
+    assert "#alice" in detail_html
+    assert "#clouds" in detail_html
+
+
+def test_detail_uses_numeric_path_and_legacy_redirect(tmp_path):
+    seed_test_root(tmp_path)
+    modules = setup_env(tmp_path)
+    config = modules["app.config"]
+    storage = modules["app.storage"]
+    worker = modules["app.worker"]
+    db = modules["app.db"]
+
+    storage.ensure_dirs()
+    uid = uuid4().hex
+    raw_path = config.RAW_DIR / f"{uid}.png"
+    make_image(raw_path, size=(320, 240))
+
+    assert worker.process_file(raw_path)
+    assert worker.publish_ready_images()
+
+    with db.connect() as conn:
+        image_id = conn.execute("SELECT id FROM images WHERE uuid=?", (uid,)).fetchone()["id"]
+
+    detail_path = config.WWW_DIR / f"images/{image_id}/index.html"
+    assert detail_path.exists()
+    legacy_path = config.WWW_DIR / f"images/{uid}/index.html"
+    assert 'http-equiv="refresh"' in legacy_path.read_text()
 
 
 def test_static_change_triggers_rebuild(tmp_path):
@@ -663,6 +861,7 @@ def test_seo_pages_and_personalization(tmp_path):
     config = modules["app.config"]
     storage = modules["app.storage"]
     worker = modules["app.worker"]
+    db = modules["app.db"]
 
     site_cfg = config.STATIC / "data" / "site.json"
     site_cfg.write_text(
@@ -695,7 +894,9 @@ def test_seo_pages_and_personalization(tmp_path):
     assert "counter.png" in index_html
 
     sitemap = (config.WWW_DIR / "sitemap.xml").read_text()
-    assert f"https://example.com/images/{uid}/index.html" in sitemap
+    with db.connect() as conn:
+        image_id = conn.execute("SELECT id FROM images WHERE uuid=?", (uid,)).fetchone()["id"]
+    assert f"https://example.com/images/{image_id}/index.html" in sitemap
     robots = (config.WWW_DIR / "robots.txt").read_text()
     assert "Sitemap: https://example.com/sitemap.xml" in robots
 

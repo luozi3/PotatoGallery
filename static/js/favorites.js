@@ -36,6 +36,16 @@
       .replace(/'/g, "&#39;");
   }
 
+  function resolveDetailPath(img) {
+    if (!img) return "/images/";
+    if (img.detail_path) return img.detail_path;
+    const shortId = img.short_id || img.image_id || img.id;
+    if (shortId) {
+      return `/images/${shortId}/index.html`;
+    }
+    return `/images/${img.uuid || ""}/index.html`;
+  }
+
   function normalizeTagName(input) {
     const value = String(input || "").trim().replace(/^#/, "");
     return value.replace(/\s+/g, " ").toLowerCase();
@@ -221,11 +231,10 @@
         const desc = escapeHtml(img.description || "");
         const tags = (img.tags || []).slice(0, 3);
         const favored = img.favorited_at ? escapeHtml(String(img.favorited_at)) : "";
+        const detailPath = escapeHtml(resolveDetailPath(img));
         return `
-          <article class="illust-card" data-masonry-item data-card-link="/images/${escapeHtml(
-            img.uuid
-          )}/index.html" tabindex="0" role="link" aria-label="${title}">
-            <a class="thumb-link" href="/images/${escapeHtml(img.uuid)}/index.html" aria-label="${title}">
+          <article class="illust-card" data-masonry-item data-card-link="${detailPath}" tabindex="0" role="link" aria-label="${title}">
+            <a class="thumb-link" href="${detailPath}" aria-label="${title}">
               <div class="thumb-shell" style="--thumb-ratio:${img.thumb_width}/${img.thumb_height};">
                 <img class="thumb" src="/thumb/${escapeHtml(img.thumb_filename || "")}" alt="${title}" loading="lazy" width="${img.thumb_width || ""}" height="${img.thumb_height || ""}" onerror="this.onerror=null;this.src='/raw/${escapeHtml(img.raw_filename || "")}';">
               </div>
