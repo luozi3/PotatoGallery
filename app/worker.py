@@ -173,10 +173,20 @@ def process_file(path: Path) -> bool:
     return True
 
 
-def rebuild_and_publish(log_build: bool = True) -> Path:
+def rebuild_and_publish(
+    log_build: bool = True,
+    changed_uuids: Optional[List[str]] = None,
+    full_rebuild: bool = True,
+) -> Path:
     build_id = f"build_{int(time.time())}"
     rows = images_for_site()
-    staging_dir = static_site.build_site(rows)
+    base_dir = config.WWW_DIR if not full_rebuild and config.WWW_DIR.exists() else None
+    staging_dir = static_site.build_site(
+        rows,
+        base_dir=base_dir,
+        changed_uuids=changed_uuids,
+        full_rebuild=full_rebuild,
+    )
     static_site.publish(staging_dir)
     write_last_static_mtime(latest_static_mtime())
     clear_force_flag()
@@ -213,7 +223,14 @@ def publish_ready_images() -> bool:
     if not pending:
         return False
 
-    staging_dir = rebuild_and_publish(log_build=False)
+    static_changed = latest_static_mtime() > read_last_static_mtime()
+    force_rebuild = config.FORCE_REBUILD_FLAG.exists()
+    full_rebuild = force_rebuild or static_changed or not config.WWW_DIR.exists()
+    staging_dir = rebuild_and_publish(
+        log_build=False,
+        changed_uuids=pending,
+        full_rebuild=full_rebuild,
+    )
 
     with db.transaction() as conn:
         conn.execute(

@@ -453,6 +453,7 @@ def _render_extra_pages(
     env: Environment,
     staging_dir: Path,
     context: Dict[str, object],
+    allow_existing: bool = False,
 ) -> List[str]:
     extra_urls: List[str] = []
     seen_urls: set = set()
@@ -474,12 +475,12 @@ def _render_extra_pages(
             url_path = "/" + "/".join(url_parts) + "/"
             _ensure_extra_page_allowed(url_path, tpl_path, seen_urls)
             target = target_dir / "index.html"
-            if target.exists():
+            if target.exists() and not allow_existing:
                 raise ValueError(f"extra page output already exists: {target}")
             target_dir.mkdir(parents=True, exist_ok=True)
             template_name = str(tpl_path.relative_to(TEMPLATE_DIR))
             html = env.get_template(template_name).render(**context)
-            target.write_text(html, encoding="utf-8")
+            _atomic_write_text(target, html)
             extra_urls.append(url_path)
 
     if PAGES_STATIC_DIR.exists():
@@ -490,19 +491,54 @@ def _render_extra_pages(
             url_path = "/" + "/".join(rel.parts)
             _ensure_extra_page_allowed(url_path, src, seen_urls)
             target = staging_dir / rel
-            if target.exists():
+            if target.exists() and not allow_existing:
                 raise ValueError(f"extra page output already exists: {target}")
             target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(src, target)
+            _atomic_copy_file(src, target)
             extra_urls.append(url_path)
 
     return extra_urls
 
 
-def build_site(images: Iterable[Mapping[str, object]]) -> Path:
+def _atomic_write_text(path: Path, content: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_suffix(f"{path.suffix}.tmp")
+    tmp_path.write_text(content, encoding="utf-8")
+    os.replace(tmp_path, path)
+
+
+def _atomic_copy_file(src: Path, dst: Path) -> None:
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = dst.with_suffix(f"{dst.suffix}.tmp")
+    shutil.copy2(src, tmp_path)
+    os.replace(tmp_path, dst)
+
+
+def _clone_existing_site(base_dir: Path, staging_dir: Path) -> bool:
+    if not base_dir.exists():
+        return False
+    staging_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        shutil.copytree(base_dir, staging_dir, copy_function=os.link, dirs_exist_ok=True)
+        return True
+    except OSError:
+        shutil.copytree(base_dir, staging_dir, dirs_exist_ok=True)
+        return True
+
+
+def build_site(
+    images: Iterable[Mapping[str, object]],
+    base_dir: Optional[Path] = None,
+    changed_uuids: Optional[Iterable[str]] = None,
+    full_rebuild: bool = True,
+) -> Path:
     build_id = f"build_{int(time.time())}"
     staging_dir = config.WWW_STAGING / build_id
-    staging_dir.mkdir(parents=True, exist_ok=True)
+    reuse_existing = False
+    if base_dir and base_dir.exists() and not full_rebuild:
+        reuse_existing = _clone_existing_site(base_dir, staging_dir)
+    if not reuse_existing:
+        staging_dir.mkdir(parents=True, exist_ok=True)
     static_version = int(time.time())
 
     env = Environment(
@@ -578,6 +614,9 @@ def build_site(images: Iterable[Mapping[str, object]]) -> Path:
         for key, value in collections_meta.items()
     }
 
+    changed_set = {str(uuid).lower() for uuid in (changed_uuids or [])}
+    incremental = reuse_existing and bool(changed_set)
+
     images_ctx: List[dict] = []
     stats = {"total": 0, "collections": {}}
     for img in images:
@@ -645,6 +684,7 @@ def build_site(images: Iterable[Mapping[str, object]]) -> Path:
 
     tag_images: Dict[str, List[dict]] = {}
     tag_seen: Dict[str, set] = {}
+    changed_tags: set = set()
 
     def get_ancestors(tag: str, cache: Dict[str, List[str]]) -> List[str]:
         if tag in cache:
@@ -663,8 +703,13 @@ def build_site(images: Iterable[Mapping[str, object]]) -> Path:
     ancestors_cache: Dict[str, List[str]] = {}
     for img in images_ctx:
         uu = img.get("uuid")
+        uu_norm = str(uu or "").lower()
+        is_changed = incremental and uu_norm in changed_set
         for tag in img.get("tags", []):
-            for resolved in [tag] + get_ancestors(tag, ancestors_cache):
+            resolved_tags = [tag] + get_ancestors(tag, ancestors_cache)
+            if is_changed:
+                changed_tags.update(resolved_tags)
+            for resolved in resolved_tags:
                 tag_seen.setdefault(resolved, set())
                 if uu in tag_seen[resolved]:
                     continue
@@ -758,11 +803,12 @@ def build_site(images: Iterable[Mapping[str, object]]) -> Path:
         ensure_ascii=False,
     )
 
-    # 拷贝静态资源
+    # 拷贝静态资源（增量构建时尽量复用已有内容）
     static_target = staging_dir / "static"
-    if static_target.exists():
-        shutil.rmtree(static_target)
-    shutil.copytree(ASSET_DIR, static_target, dirs_exist_ok=True)
+    if not reuse_existing or not static_target.exists():
+        if static_target.exists():
+            shutil.rmtree(static_target)
+        shutil.copytree(ASSET_DIR, static_target, dirs_exist_ok=True)
 
     data_dir = static_target / "data"
     data_dir.mkdir(parents=True, exist_ok=True)
@@ -795,8 +841,9 @@ def build_site(images: Iterable[Mapping[str, object]]) -> Path:
         "tags": tags_list,
         "collections": collections_list,
     }
-    (data_dir / "search_index.json").write_text(
-        json.dumps(search_index, ensure_ascii=False), encoding="utf-8"
+    _atomic_write_text(
+        data_dir / "search_index.json",
+        json.dumps(search_index, ensure_ascii=False),
     )
     tag_index_tags = []
     ordered_tags_all = (tag_order or []) + sorted(tags_meta.keys())
@@ -830,8 +877,9 @@ def build_site(images: Iterable[Mapping[str, object]]) -> Path:
         "tags": tag_index_tags,
         "types": tag_types_list,
     }
-    (data_dir / "tag_index.json").write_text(
-        json.dumps(tag_index, ensure_ascii=False, indent=2), encoding="utf-8"
+    _atomic_write_text(
+        data_dir / "tag_index.json",
+        json.dumps(tag_index, ensure_ascii=False, indent=2),
     )
     manifest = {
         "version": 1,
@@ -845,8 +893,9 @@ def build_site(images: Iterable[Mapping[str, object]]) -> Path:
             }
         ],
     }
-    (data_dir / "search_manifest.json").write_text(
-        json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8"
+    _atomic_write_text(
+        data_dir / "search_manifest.json",
+        json.dumps(manifest, ensure_ascii=False, indent=2),
     )
 
     index_html = env.get_template("index.html.j2").render(
@@ -867,7 +916,7 @@ def build_site(images: Iterable[Mapping[str, object]]) -> Path:
         tag_style_map=tag_style_map,
         static_version=static_version,
     )
-    (staging_dir / "index.html").write_text(index_html, encoding="utf-8")
+    _atomic_write_text(staging_dir / "index.html", index_html)
 
     search_dir = staging_dir / "search"
     search_dir.mkdir(parents=True, exist_ok=True)
@@ -883,7 +932,7 @@ def build_site(images: Iterable[Mapping[str, object]]) -> Path:
         tag_style_map=tag_style_map,
         static_version=static_version,
     )
-    (search_dir / "index.html").write_text(search_html, encoding="utf-8")
+    _atomic_write_text(search_dir / "index.html", search_html)
 
     tags_dir = staging_dir / "tags"
     tags_dir.mkdir(parents=True, exist_ok=True)
@@ -898,69 +947,75 @@ def build_site(images: Iterable[Mapping[str, object]]) -> Path:
         tag_style_map=tag_style_map,
         static_version=static_version,
     )
-    (tags_dir / "index.html").write_text(tags_index_html, encoding="utf-8")
+    _atomic_write_text(tags_dir / "index.html", tags_index_html)
     tag_tpl = env.get_template("tag.html.j2")
-    for tag in tags_list:
-        tag_dir = tags_dir / tag["slug"]
-        tag_dir.mkdir(parents=True, exist_ok=True)
-        tag_tree = build_tag_relation_tree(
-            tag.get("tag") or "",
-            tags_meta,
-            parent_map,
-            child_map,
-            tag_order,
-            tag_slug_map,
-            tag_style_map,
-            tag_type_styles,
-            default_tag_type,
-        )
-        tag_html = tag_tpl.render(
-            site=site,
-            auth=auth_config,
-            site_name=site_name,
-            site_description=site_description,
-            site_url=site_url,
-            tag=tag,
-            tag_tree=tag_tree,
-            images=tag_images.get(tag["tag"], []),
-            collections=collections_ctx,
-            collections_list=collections_list,
-            tag_slug_map=tag_slug_map,
-            tag_style_map=tag_style_map,
-            static_version=static_version,
-        )
-        (tag_dir / "index.html").write_text(tag_html, encoding="utf-8")
-    for alias in alias_pages:
-        tag_dir = tags_dir / alias["slug"]
-        tag_dir.mkdir(parents=True, exist_ok=True)
-        tree_root = alias.get("alias_of") or alias.get("tag") or ""
-        tag_tree = build_tag_relation_tree(
-            tree_root,
-            tags_meta,
-            parent_map,
-            child_map,
-            tag_order,
-            tag_slug_map,
-            tag_style_map,
-            tag_type_styles,
-            default_tag_type,
-        )
-        tag_html = tag_tpl.render(
-            site=site,
-            auth=auth_config,
-            site_name=site_name,
-            site_description=site_description,
-            site_url=site_url,
-            tag=alias,
-            tag_tree=tag_tree,
-            images=tag_images.get(alias["alias_of"], []),
-            collections=collections_ctx,
-            collections_list=collections_list,
-            tag_slug_map=tag_slug_map,
-            tag_style_map=tag_style_map,
-            static_version=static_version,
-        )
-        (tag_dir / "index.html").write_text(tag_html, encoding="utf-8")
+    update_tag_pages = not incremental or bool(changed_tags)
+    if update_tag_pages:
+        for tag in tags_list:
+            if incremental and changed_tags and tag["tag"] not in changed_tags:
+                continue
+            tag_dir = tags_dir / tag["slug"]
+            tag_dir.mkdir(parents=True, exist_ok=True)
+            tag_tree = build_tag_relation_tree(
+                tag.get("tag") or "",
+                tags_meta,
+                parent_map,
+                child_map,
+                tag_order,
+                tag_slug_map,
+                tag_style_map,
+                tag_type_styles,
+                default_tag_type,
+            )
+            tag_html = tag_tpl.render(
+                site=site,
+                auth=auth_config,
+                site_name=site_name,
+                site_description=site_description,
+                site_url=site_url,
+                tag=tag,
+                tag_tree=tag_tree,
+                images=tag_images.get(tag["tag"], []),
+                collections=collections_ctx,
+                collections_list=collections_list,
+                tag_slug_map=tag_slug_map,
+                tag_style_map=tag_style_map,
+                static_version=static_version,
+            )
+            _atomic_write_text(tag_dir / "index.html", tag_html)
+        for alias in alias_pages:
+            if incremental and changed_tags and alias["alias_of"] not in changed_tags:
+                continue
+            tag_dir = tags_dir / alias["slug"]
+            tag_dir.mkdir(parents=True, exist_ok=True)
+            tree_root = alias.get("alias_of") or alias.get("tag") or ""
+            tag_tree = build_tag_relation_tree(
+                tree_root,
+                tags_meta,
+                parent_map,
+                child_map,
+                tag_order,
+                tag_slug_map,
+                tag_style_map,
+                tag_type_styles,
+                default_tag_type,
+            )
+            tag_html = tag_tpl.render(
+                site=site,
+                auth=auth_config,
+                site_name=site_name,
+                site_description=site_description,
+                site_url=site_url,
+                tag=alias,
+                tag_tree=tag_tree,
+                images=tag_images.get(alias["alias_of"], []),
+                collections=collections_ctx,
+                collections_list=collections_list,
+                tag_slug_map=tag_slug_map,
+                tag_style_map=tag_style_map,
+                static_version=static_version,
+            )
+            _atomic_write_text(tag_dir / "index.html", tag_html)
 
     admin_dir = staging_dir / "admin"
     admin_dir.mkdir(parents=True, exist_ok=True)
@@ -973,7 +1028,7 @@ def build_site(images: Iterable[Mapping[str, object]]) -> Path:
         collections_list=collections_list,
         static_version=static_version,
     )
-    (admin_dir / "index.html").write_text(admin_html, encoding="utf-8")
+    _atomic_write_text(admin_dir / "index.html", admin_html)
 
     admin_images_dir = admin_dir / "images"
     admin_images_dir.mkdir(parents=True, exist_ok=True)
@@ -986,7 +1041,7 @@ def build_site(images: Iterable[Mapping[str, object]]) -> Path:
         collections_list=collections_list,
         static_version=static_version,
     )
-    (admin_images_dir / "index.html").write_text(admin_images_html, encoding="utf-8")
+    _atomic_write_text(admin_images_dir / "index.html", admin_images_html)
 
     admin_upload_dir = admin_dir / "upload"
     admin_upload_dir.mkdir(parents=True, exist_ok=True)
@@ -999,7 +1054,7 @@ def build_site(images: Iterable[Mapping[str, object]]) -> Path:
         collections_list=collections_list,
         static_version=static_version,
     )
-    (admin_upload_dir / "index.html").write_text(admin_upload_html, encoding="utf-8")
+    _atomic_write_text(admin_upload_dir / "index.html", admin_upload_html)
 
     admin_collections_dir = admin_dir / "collections"
     admin_collections_dir.mkdir(parents=True, exist_ok=True)
@@ -1012,7 +1067,7 @@ def build_site(images: Iterable[Mapping[str, object]]) -> Path:
         collections_list=collections_list,
         static_version=static_version,
     )
-    (admin_collections_dir / "index.html").write_text(admin_collections_html, encoding="utf-8")
+    _atomic_write_text(admin_collections_dir / "index.html", admin_collections_html)
 
     admin_auth_dir = admin_dir / "auth"
     admin_auth_dir.mkdir(parents=True, exist_ok=True)
@@ -1025,7 +1080,7 @@ def build_site(images: Iterable[Mapping[str, object]]) -> Path:
         collections_list=collections_list,
         static_version=static_version,
     )
-    (admin_auth_dir / "index.html").write_text(admin_auth_html, encoding="utf-8")
+    _atomic_write_text(admin_auth_dir / "index.html", admin_auth_html)
 
     admin_tags_dir = admin_dir / "tags"
     admin_tags_dir.mkdir(parents=True, exist_ok=True)
@@ -1050,7 +1105,7 @@ def build_site(images: Iterable[Mapping[str, object]]) -> Path:
         site_url=site_url,
         static_version=static_version,
     )
-    (login_dir / "index.html").write_text(login_html, encoding="utf-8")
+    _atomic_write_text(login_dir / "index.html", login_html)
 
     register_dir = auth_dir / "register"
     register_dir.mkdir(parents=True, exist_ok=True)
@@ -1062,13 +1117,15 @@ def build_site(images: Iterable[Mapping[str, object]]) -> Path:
         site_url=site_url,
         static_version=static_version,
     )
-    (register_dir / "index.html").write_text(register_html, encoding="utf-8")
-    (admin_tags_dir / "index.html").write_text(admin_tags_html, encoding="utf-8")
+    _atomic_write_text(register_dir / "index.html", register_html)
+    _atomic_write_text(admin_tags_dir / "index.html", admin_tags_html)
 
     detail_tpl = env.get_template("detail.html.j2")
     images_dir = staging_dir / "images"
     images_dir.mkdir(exist_ok=True)
     for img in images_ctx:
+        if incremental and str(img.get("uuid") or "").lower() not in changed_set:
+            continue
         detail_path = img.get("detail_path") or image_detail_path(img.get("id"), img.get("uuid") or "")
         detail_url = f"{site_url}{detail_path}" if site_url else ""
         image_url = f"{site_url}/raw/{img['raw_filename']}" if site_url else f"/raw/{img['raw_filename']}"
@@ -1103,12 +1160,12 @@ def build_site(images: Iterable[Mapping[str, object]]) -> Path:
         page_key = img.get("short_id") or img.get("uuid") or ""
         page_dir = images_dir / page_key
         page_dir.mkdir(parents=True, exist_ok=True)
-        (page_dir / "index.html").write_text(html, encoding="utf-8")
+        _atomic_write_text(page_dir / "index.html", html)
         legacy_uuid = img.get("uuid") or ""
         if legacy_uuid and legacy_uuid != page_key:
             legacy_dir = images_dir / legacy_uuid
             legacy_dir.mkdir(parents=True, exist_ok=True)
-            (legacy_dir / "index.html").write_text(_redirect_html(detail_path), encoding="utf-8")
+            _atomic_write_text(legacy_dir / "index.html", _redirect_html(detail_path))
 
     status_html = env.get_template("status.html.j2").render(
         site=site,
@@ -1119,10 +1176,10 @@ def build_site(images: Iterable[Mapping[str, object]]) -> Path:
         static_version=static_version,
     )
     status_path = staging_dir / "status.html"
-    status_path.write_text(status_html, encoding="utf-8")
+    _atomic_write_text(status_path, status_html)
     status_dir = staging_dir / "status"
     status_dir.mkdir(parents=True, exist_ok=True)
-    (status_dir / "index.html").write_text(status_html, encoding="utf-8")
+    _atomic_write_text(status_dir / "index.html", status_html)
 
     for name, target in [
         ("404.html.j2", staging_dir / "404.html"),
@@ -1136,7 +1193,7 @@ def build_site(images: Iterable[Mapping[str, object]]) -> Path:
             site_url=site_url,
             static_version=static_version,
         )
-        target.write_text(html, encoding="utf-8")
+        _atomic_write_text(target, html)
 
     for name, subdir in [
         ("error.html.j2", staging_dir / "error"),
@@ -1151,7 +1208,7 @@ def build_site(images: Iterable[Mapping[str, object]]) -> Path:
             site_url=site_url,
             static_version=static_version,
         )
-        (subdir / "index.html").write_text(html, encoding="utf-8")
+        _atomic_write_text(subdir / "index.html", html)
 
     extra_urls = _render_extra_pages(
         env,
@@ -1168,6 +1225,7 @@ def build_site(images: Iterable[Mapping[str, object]]) -> Path:
             "collections": collections_ctx,
             "stats": stats,
         },
+        allow_existing=reuse_existing,
     )
 
     urls = [
@@ -1193,10 +1251,10 @@ def build_site(images: Iterable[Mapping[str, object]]) -> Path:
         urls.append({"loc": loc, "lastmod": lastmod})
 
     sitemap = env.get_template("sitemap.xml.j2").render(urls=urls)
-    (staging_dir / "sitemap.xml").write_text(sitemap, encoding="utf-8")
+    _atomic_write_text(staging_dir / "sitemap.xml", sitemap)
 
     robots = env.get_template("robots.txt.j2").render(site_url=site_url)
-    (staging_dir / "robots.txt").write_text(robots, encoding="utf-8")
+    _atomic_write_text(staging_dir / "robots.txt", robots)
 
     fsync_path(staging_dir)
     fsync_path(staging_dir.parent)
