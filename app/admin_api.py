@@ -13,6 +13,7 @@ from . import db
 from . import static_site
 from . import tagging
 from . import storage
+from . import stress_test
 
 bp = Blueprint("admin", __name__)
 
@@ -432,6 +433,77 @@ def admin_upload():
             "mime": mime,
         }
     ), 201
+
+
+@bp.get("/upload/admin/stress-test/status")
+def admin_stress_status():
+    user = _require_admin()
+    if not user:
+        return _json_error("未授权", 401)
+    status = stress_test.get_status_for_admin()
+    return jsonify({"ok": True, **status})
+
+
+@bp.post("/upload/admin/stress-test/start")
+def admin_stress_start():
+    user = _require_admin()
+    if not user:
+        return _json_error("未授权", 401)
+    payload = request.get_json(silent=True) or {}
+    username = str(payload.get("username") or "luozi_sama").strip()
+    if not username:
+        return _json_error("目标用户不能为空")
+    owner_id = _get_user_id(username)
+    if not owner_id:
+        return _json_error("目标用户不存在", 404)
+    count = payload.get("count", stress_test.DEFAULT_TOTAL)
+    min_size = payload.get("min_size", stress_test.DEFAULT_MIN_SIZE)
+    max_size = payload.get("max_size", stress_test.DEFAULT_MAX_SIZE)
+    ok, message, job = stress_test.start_job(
+        owner_id,
+        total=int(count),
+        min_size=int(min_size),
+        max_size=int(max_size),
+    )
+    if not ok:
+        return _json_error(message, 409)
+    try:
+        db.insert_audit("stress_test_start", str(job.get("id") if job else ""), user)
+    except Exception:
+        pass
+    return jsonify({"ok": True, "message": message, "job": job})
+
+
+@bp.post("/upload/admin/stress-test/stop")
+def admin_stress_stop():
+    user = _require_admin()
+    if not user:
+        return _json_error("未授权", 401)
+    ok, message, job = stress_test.stop_job()
+    if not ok:
+        return _json_error(message, 409)
+    try:
+        db.insert_audit("stress_test_stop", str(job.get("id") if job else ""), user)
+    except Exception:
+        pass
+    return jsonify({"ok": True, "message": message, "job": job})
+
+
+@bp.post("/upload/admin/stress-test/cleanup")
+def admin_stress_cleanup():
+    user = _require_admin()
+    if not user:
+        return _json_error("未授权", 401)
+    payload = request.get_json(silent=True) or {}
+    job_id = payload.get("job_id")
+    ok, message, job = stress_test.cleanup_job(int(job_id) if job_id else None)
+    if not ok:
+        return _json_error(message, 409)
+    try:
+        db.insert_audit("stress_test_cleanup", str(job.get("id") if job else ""), user)
+    except Exception:
+        pass
+    return jsonify({"ok": True, "message": message, "job": job})
 
 
 @bp.get("/upload/admin/upload/status")

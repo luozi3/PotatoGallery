@@ -107,7 +107,7 @@ def process_file(path: Path) -> bool:
     with db.transaction() as conn:
         pending = conn.execute(
             """
-            SELECT owner_user_id, title, description, tags_json, collection_override
+            SELECT owner_user_id, title, description, tags_json, collection_override, stress_job_id
             FROM upload_requests
             WHERE uuid=?
             """,
@@ -115,8 +115,8 @@ def process_file(path: Path) -> bool:
         ).fetchone()
         conn.execute(
             """
-            INSERT INTO images (uuid, original_name, ext, mime, width, height, bytes, sha256, status, stored_path, thumb_path, thumb_width, thumb_height, dominant_color, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'processed', ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            INSERT INTO images (uuid, original_name, ext, mime, width, height, bytes, sha256, status, stored_path, thumb_path, thumb_width, thumb_height, dominant_color, stress_job_id, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'processed', ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             ON CONFLICT(uuid) DO UPDATE SET
                 ext=excluded.ext,
                 mime=excluded.mime,
@@ -130,6 +130,7 @@ def process_file(path: Path) -> bool:
                 thumb_width=excluded.thumb_width,
                 thumb_height=excluded.thumb_height,
                 dominant_color=excluded.dominant_color,
+                stress_job_id=excluded.stress_job_id,
                 updated_at=CURRENT_TIMESTAMP
             """,
             (
@@ -146,6 +147,7 @@ def process_file(path: Path) -> bool:
                 thumb_width,
                 thumb_height,
                 color,
+                pending["stress_job_id"] if pending else None,
             ),
         )
         if pending:

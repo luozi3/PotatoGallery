@@ -22,6 +22,7 @@
   {% endif %}
   <meta name="twitter:card" content="summary_large_image">
   <link rel="stylesheet" href="/static/styles/gallery.css?v={{ static_version }}">
+  <link rel="preload" href="/static/data/home_manifest.json" as="fetch" type="application/json" crossorigin>
   {% if site.live2d.enabled %}
   <link rel="stylesheet" href="{{ site.live2d.base_url }}/live2d/css/live2d.css">
   {% endif %}
@@ -30,8 +31,6 @@
   {% endif %}
 </head>
 <body class="page-home">
-  {% set orientation_labels = {"portrait": "竖屏", "landscape": "横屏", "square": "方形", "unknown": "未标"} %}
-  {% set size_labels = {"ultra": "超清", "large": "高清", "medium": "中等", "compact": "轻量", "unknown": "未标"} %}
   <a class="skip-link" href="#main-content">跳到主要内容</a>
   {% include "partials/topbar.html.j2" %}
 
@@ -39,89 +38,241 @@
     <div class="home-layout">
       {% include "partials/sidebar_default.html.j2" %}
       <div class="home-main">
-        <section class="home-tag-strip" aria-label="热门标签">
-          <div class="tag-strip-label">标签</div>
-          <div class="tag-strip-list" data-tag-strip-list>
-            {% if top_tags %}
-            {% for tag in top_tags[:6] %}
-            <a class="tag-chip" href="/tags/{{ tag.slug }}/" style="{{ tag.style }}">#{{ tag.tag }}</a>
-            {% endfor %}
-            {% else %}
-            <span class="tag-chip muted">暂无标签</span>
-            {% endif %}
-            <a class="tag-chip tag-chip-more" href="/tags/">→全部标签</a>
-          </div>
-        </section>
+        <div id="home-app" class="home-app" v-cloak data-home-root>
+          <section class="home-tag-strip" aria-label="热门标签">
+            <div class="tag-strip-label">标签</div>
+            <div class="tag-strip-list" data-tag-strip-list>
+              <template v-if="topTags.length">
+                <a
+                  class="tag-chip"
+                  v-for="tag in topTags.slice(0, 6)"
+                  :key="tag.tag"
+                  :href="tagLink(tag.tag)"
+                  :style="tag.style"
+                >
+                  #[[ tag.tag ]]
+                </a>
+              </template>
+              <span v-else class="tag-chip muted">暂无标签</span>
+              <a class="tag-chip tag-chip-more" href="/tags/">→全部标签</a>
+            </div>
+          </section>
 
-        <section class="controls" aria-label="筛选与子集">
-          <div class="tabs" role="tablist" aria-label="分区切换">
-            <button class="tab active" role="tab" aria-selected="true" data-collection-tab data-collection="all">
-              全部 <span class="count">{{ stats.total }}</span>
-            </button>
-            {% for collection in collections_list %}
-            <button class="tab" role="tab" aria-selected="false" data-collection-tab data-collection="{{ collection.slug }}">
-              {{ collection.title }} <span class="count">{{ collection.count }}</span>
-            </button>
-            {% endfor %}
-          </div>
-          <div class="filters">
-            <div class="filter-group" aria-label="方向">
-              <span class="label">方向</span>
-              <div class="filter-pills">
-                <button class="pill active" aria-pressed="true" data-filter-pill data-filter="orientation" data-value="all">全部</button>
-                <button class="pill" aria-pressed="false" data-filter-pill data-filter="orientation" data-value="portrait">竖屏</button>
-                <button class="pill" aria-pressed="false" data-filter-pill data-filter="orientation" data-value="landscape">横屏</button>
-                <button class="pill" aria-pressed="false" data-filter-pill data-filter="orientation" data-value="square">方形</button>
+          <section class="controls" aria-label="筛选与子集">
+            <div class="tabs" role="tablist" aria-label="分区切换">
+              <button
+                class="tab"
+                :class="{ active: filters.collection === 'all' }"
+                role="tab"
+                :aria-selected="filters.collection === 'all'"
+                data-collection-tab
+                data-collection="all"
+                @click="setCollection('all')"
+              >
+                全部 <span class="count" v-text="stats.total"></span>
+              </button>
+              <button
+                class="tab"
+                v-for="collection in collections"
+                :key="collection.slug"
+                :class="{ active: filters.collection === collection.slug }"
+                role="tab"
+                :aria-selected="filters.collection === collection.slug"
+                data-collection-tab
+                :data-collection="collection.slug"
+                @click="setCollection(collection.slug)"
+              >
+                <span v-text="collection.title"></span>
+                <span class="count" v-text="collection.count"></span>
+              </button>
+            </div>
+            <div class="filters">
+              <div class="filter-group" aria-label="方向">
+                <span class="label">方向</span>
+                <div class="filter-pills">
+                  <button
+                    class="pill"
+                    :class="{ active: filters.orientation === 'all' }"
+                    :aria-pressed="filters.orientation === 'all'"
+                    data-filter-pill
+                    data-filter="orientation"
+                    data-value="all"
+                    @click="setFilter('orientation', 'all')"
+                  >
+                    全部
+                  </button>
+                  <button
+                    class="pill"
+                    :class="{ active: filters.orientation === 'portrait' }"
+                    :aria-pressed="filters.orientation === 'portrait'"
+                    data-filter-pill
+                    data-filter="orientation"
+                    data-value="portrait"
+                    @click="setFilter('orientation', 'portrait')"
+                  >
+                    竖屏
+                  </button>
+                  <button
+                    class="pill"
+                    :class="{ active: filters.orientation === 'landscape' }"
+                    :aria-pressed="filters.orientation === 'landscape'"
+                    data-filter-pill
+                    data-filter="orientation"
+                    data-value="landscape"
+                    @click="setFilter('orientation', 'landscape')"
+                  >
+                    横屏
+                  </button>
+                  <button
+                    class="pill"
+                    :class="{ active: filters.orientation === 'square' }"
+                    :aria-pressed="filters.orientation === 'square'"
+                    data-filter-pill
+                    data-filter="orientation"
+                    data-value="square"
+                    @click="setFilter('orientation', 'square')"
+                  >
+                    方形
+                  </button>
+                </div>
+              </div>
+              <div class="filter-group" aria-label="清晰度">
+                <span class="label">清晰度</span>
+                <div class="filter-pills">
+                  <button
+                    class="pill"
+                    :class="{ active: filters.size === 'all' }"
+                    :aria-pressed="filters.size === 'all'"
+                    data-filter-pill
+                    data-filter="size"
+                    data-value="all"
+                    @click="setFilter('size', 'all')"
+                  >
+                    全部
+                  </button>
+                  <button
+                    class="pill"
+                    :class="{ active: filters.size === 'ultra' }"
+                    :aria-pressed="filters.size === 'ultra'"
+                    data-filter-pill
+                    data-filter="size"
+                    data-value="ultra"
+                    @click="setFilter('size', 'ultra')"
+                  >
+                    超清
+                  </button>
+                  <button
+                    class="pill"
+                    :class="{ active: filters.size === 'large' }"
+                    :aria-pressed="filters.size === 'large'"
+                    data-filter-pill
+                    data-filter="size"
+                    data-value="large"
+                    @click="setFilter('size', 'large')"
+                  >
+                    高清
+                  </button>
+                  <button
+                    class="pill"
+                    :class="{ active: filters.size === 'medium' }"
+                    :aria-pressed="filters.size === 'medium'"
+                    data-filter-pill
+                    data-filter="size"
+                    data-value="medium"
+                    @click="setFilter('size', 'medium')"
+                  >
+                    中等
+                  </button>
+                  <button
+                    class="pill"
+                    :class="{ active: filters.size === 'compact' }"
+                    :aria-pressed="filters.size === 'compact'"
+                    data-filter-pill
+                    data-filter="size"
+                    data-value="compact"
+                    @click="setFilter('size', 'compact')"
+                  >
+                    轻量
+                  </button>
+                </div>
               </div>
             </div>
-            <div class="filter-group" aria-label="清晰度">
-              <span class="label">清晰度</span>
-              <div class="filter-pills">
-                <button class="pill active" aria-pressed="true" data-filter-pill data-filter="size" data-value="all">全部</button>
-                <button class="pill" aria-pressed="false" data-filter-pill data-filter="size" data-value="ultra">超清</button>
-                <button class="pill" aria-pressed="false" data-filter-pill data-filter="size" data-value="large">高清</button>
-                <button class="pill" aria-pressed="false" data-filter-pill data-filter="size" data-value="medium">中等</button>
-                <button class="pill" aria-pressed="false" data-filter-pill data-filter="size" data-value="compact">轻量</button>
+            <div class="filter-summary" data-filter-summary v-show="filterSummary.length">
+              <span class="filter-summary-label">当前筛选</span>
+              <div class="filter-summary-list" data-filter-summary-list>
+                <button
+                  class="filter-chip"
+                  type="button"
+                  v-for="item in filterSummary"
+                  :key="item.filter"
+                  :data-filter-chip="item.filter"
+                  @click="resetFilter(item.filter)"
+                >
+                  [[ item.label ]] ×
+                </button>
               </div>
+              <button class="filter-summary-clear" type="button" data-filter-summary-clear @click="clearFilters">
+                清空
+              </button>
             </div>
-          </div>
-          <div class="filter-summary" data-filter-summary hidden>
-            <span class="filter-summary-label">当前筛选</span>
-            <div class="filter-summary-list" data-filter-summary-list></div>
-            <button class="filter-summary-clear" type="button" data-filter-summary-clear>清空</button>
-          </div>
-        </section>
+          </section>
 
-        <section class="gallery" data-gallery-grid data-masonry aria-live="polite">
-      {% for image in images %}
-      <article class="illust-card" data-image-card data-masonry-item data-card-link="{{ image.detail_path }}" data-collection="{{ image.collection }}" data-orientation="{{ image.orientation }}" data-size="{{ image.size_bucket }}" tabindex="0" role="link" aria-label="{{ image.title }}">
-        <a class="thumb-link" href="{{ image.detail_path }}" aria-label="{{ image.title }}">
-          <div class="thumb-shell" style="--thumb-ratio: {{ image.thumb_width }}/{{ image.thumb_height }};">
-            <img class="thumb" src="/thumb/{{ image.thumb_filename }}" alt="{{ image.title }}" loading="lazy" width="{{ image.thumb_width }}" height="{{ image.thumb_height }}" onerror="this.onerror=null;this.src='/raw/{{ image.raw_filename }}';">
-          </div>
-        </a>
-        <div class="card-body">
-          <div class="title">{{ image.title }}</div>
-          {% if image.description %}
-          <p class="desc">{{ image.description }}</p>
-          {% endif %}
-          <div class="meta">
-            <span>{{ image.width }}×{{ image.height }}</span>
-            <span>{{ image.bytes_human }}</span>
-            <span>{{ collections.get(image.collection, {}).get('title', image.collection) }}</span>
-          </div>
-          <div class="tags">
-            <span class="tag accent">{{ orientation_labels.get(image.orientation, "未标") }}</span>
-            <span class="tag">{{ size_labels.get(image.size_bucket, "未标") }}</span>
-            {% for tag in image.tags[:3] %}
-            <a class="tag ghost" href="/tags/{{ tag_slug_map.get(tag, tag)|urlencode }}/" style="{{ tag_style_map.get(tag, '') }}">#{{ tag }}</a>
-            {% endfor %}
-          </div>
+          <section class="gallery" data-gallery-grid data-masonry aria-live="polite">
+            <article
+              class="illust-card"
+              v-for="image in filteredImages"
+              :key="image.uuid || image.detail_path"
+              data-image-card
+              data-masonry-item
+              :data-card-link="image.detail_path"
+              :data-collection="image.collection"
+              :data-orientation="image.orientation"
+              :data-size="image.size_bucket"
+              tabindex="0"
+              role="link"
+              :aria-label="image.title"
+            >
+              <a class="thumb-link" :href="image.detail_path" :aria-label="image.title">
+                <div class="thumb-shell" :style="thumbStyle(image)">
+                  <img
+                    class="thumb"
+                    :src="thumbSrc(image)"
+                    :alt="image.title"
+                    loading="lazy"
+                    :width="image.thumb_width"
+                    :height="image.thumb_height"
+                    @error="handleThumbError($event, image)"
+                  >
+                </div>
+              </a>
+              <div class="card-body">
+                <div class="title" v-text="image.title"></div>
+                <p v-if="image.description" class="desc" v-text="image.description"></p>
+                <div class="meta">
+                  <span v-text="imageDimensions(image)"></span>
+                  <span v-text="image.bytes_human"></span>
+                  <span v-text="collectionTitle(image.collection)"></span>
+                </div>
+                <div class="tags">
+                  <span class="tag accent" v-text="orientationLabel(image.orientation)"></span>
+                  <span class="tag" v-text="sizeLabel(image.size_bucket)"></span>
+                  <a
+                    class="tag ghost"
+                    v-for="tag in image.tags.slice(0, 3)"
+                    :key="tag"
+                    :href="tagLink(tag)"
+                    :style="tagStyle(tag)"
+                  >
+                    #[[ tag ]]
+                  </a>
+                </div>
+              </div>
+            </article>
+            <div class="empty" data-empty-state :class="{ show: filteredImages.length === 0 }" v-show="filteredImages.length === 0">
+              当前筛选暂无作品，换个筛选试试。
+            </div>
+          </section>
         </div>
-      </article>
-      {% endfor %}
-      <div class="empty" data-empty-state>当前筛选暂无作品，换个筛选试试。</div>
-        </section>
       </div>
     </div>
   </main>
@@ -161,7 +312,9 @@
   </script>
   {% endif %}
 
+  <script type="application/json" id="home-bootstrap">{{ home_bootstrap_json | safe }}</script>
   <script src="/static/js/ui.js?v={{ static_version }}" defer></script>
-  <script src="/static/js/gallery.js?v={{ static_version }}" defer></script>
+  <script src="/static/vendor/vue.runtime.global.prod.js?v={{ static_version }}" defer></script>
+  <script src="/static/js/home.js?v={{ static_version }}" defer></script>
 </body>
 </html>

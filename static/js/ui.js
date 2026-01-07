@@ -159,7 +159,14 @@
     grid.querySelectorAll('[data-masonry-item]').forEach((item) => {
       if (item.classList.contains('hidden')) return;
       item.style.setProperty('--row-span', '1');
-      const height = item.scrollHeight || item.getBoundingClientRect().height;
+      const thumb = item.querySelector('.thumb-shell');
+      const body = item.querySelector('.card-body');
+      let height = 0;
+      if (thumb) height += thumb.getBoundingClientRect().height;
+      if (body) height += body.getBoundingClientRect().height;
+      if (!height) {
+        height = item.scrollHeight || item.getBoundingClientRect().height;
+      }
       const span = Math.max(1, Math.ceil((height + rowGap) / (rowHeight + rowGap)));
       item.style.setProperty('--row-span', span);
     });
@@ -197,7 +204,6 @@
     function refresh() {
       bindImages();
       observeItems();
-      grid.classList.remove('masonry-ready');
       window.requestAnimationFrame(() => relayoutGrid(grid));
       waitForGridImages(grid).then(() => {
         window.requestAnimationFrame(() => {
@@ -1400,8 +1406,251 @@
     };
   }
 
+  function initStressProgress() {
+    const POLL_INTERVAL = 3000;
+    const DISMISS_KEY = 'gallery_stress_progress_dismissed_v1';
+    const state = {
+      shell: null,
+      titleEl: null,
+      percentEl: null,
+      fillEl: null,
+      metaEl: null,
+      pollTimer: null,
+      removeTimer: null,
+      user: null,
+      currentJobId: null,
+      seenActive: false,
+      hiddenJobId: null,
+    };
+
+    function getDismissedJobId() {
+      try {
+        return Number(localStorage.getItem(DISMISS_KEY) || 0);
+      } catch (e) {
+        return 0;
+      }
+    }
+
+    function setDismissedJobId(jobId) {
+      if (!jobId) return;
+      try {
+        localStorage.setItem(DISMISS_KEY, String(jobId));
+      } catch (e) {}
+    }
+
+    function ensureShell() {
+      if (state.shell) return;
+      const shell = document.createElement('div');
+      shell.className = 'upload-progress upload-progress-stress';
+      shell.innerHTML = `
+        <div class="upload-progress-card" role="status" aria-live="polite">
+          <div class="upload-progress-head">
+            <span class="upload-progress-title" data-stress-progress-title></span>
+            <span class="upload-progress-percent" data-stress-progress-percent></span>
+          </div>
+          <div class="upload-progress-bar">
+            <div class="upload-progress-fill" data-stress-progress-fill></div>
+          </div>
+          <div class="upload-progress-meta" data-stress-progress-meta></div>
+        </div>
+      `;
+      document.body.appendChild(shell);
+      state.shell = shell;
+      state.titleEl = shell.querySelector('[data-stress-progress-title]');
+      state.percentEl = shell.querySelector('[data-stress-progress-percent]');
+      state.fillEl = shell.querySelector('[data-stress-progress-fill]');
+      state.metaEl = shell.querySelector('[data-stress-progress-meta]');
+    }
+
+    function adjustOffset() {
+      if (!state.shell) return;
+      const other = document.querySelector('.upload-progress.is-visible:not(.upload-progress-stress)');
+      state.shell.style.bottom = other ? '96px' : '';
+    }
+
+    function hideShell(immediate) {
+      if (!state.shell) return;
+      state.shell.classList.remove('is-visible');
+      if (state.removeTimer) {
+        clearTimeout(state.removeTimer);
+      }
+      const remove = () => {
+        if (!state.shell) return;
+        state.shell.remove();
+        state.shell = null;
+        state.titleEl = null;
+        state.percentEl = null;
+        state.fillEl = null;
+        state.metaEl = null;
+      };
+      if (immediate) {
+        remove();
+        return;
+      }
+      state.removeTimer = window.setTimeout(remove, 260);
+    }
+
+    function titleFor(job, active) {
+      if (!job) return '压测进度';
+      switch (job.status) {
+        case 'running':
+          return '压测生成中';
+        case 'stopping':
+          return '压测停止中';
+        case 'failed':
+          return '压测失败';
+        case 'cleaned':
+          return '压测已清理';
+        case 'done':
+          return active ? '压测完成 · 等待发布' : '压测完成';
+        case 'stopped':
+          return '压测已停止';
+        default:
+          return '压测状态';
+      }
+    }
+
+    function metaFor(job, counts) {
+      if (!job) return '';
+      const total = Number(job.total || 0);
+      const generated = Number(job.generated || 0);
+      const published = Number(counts.published || 0);
+      const queued = Number(counts.queued || 0);
+      const processed = Number(counts.processed || 0);
+      const quarantined = Number(counts.quarantined || 0);
+      const parts = [];
+      if (total) parts.push(`已生成 ${generated}/${total}`);
+      if (total) parts.push(`已发布 ${published}/${total}`);
+      if (queued) parts.push(`排队 ${queued}`);
+      if (processed) parts.push(`处理中 ${processed}`);
+      if (quarantined) parts.push(`隔离 ${quarantined}`);
+      if (job.message) parts.push(job.message);
+      return parts.join(' · ');
+    }
+
+    function percentFor(job, counts) {
+      if (!job) return 0;
+      const total = Number(job.total || 0);
+      if (!total) return 0;
+      const generated = Number(job.generated || 0);
+      const published = Number(counts.published || 0);
+      const basis = Math.max(generated, published);
+      return Math.min(100, Math.round((basis / total) * 100));
+    }
+
+    function render(job, counts, active) {
+      ensureShell();
+      const percent = percentFor(job, counts);
+      if (state.titleEl) state.titleEl.textContent = titleFor(job, active);
+      if (state.percentEl) state.percentEl.textContent = `${percent}%`;
+      if (state.fillEl) state.fillEl.style.width = `${percent}%`;
+      if (state.metaEl) state.metaEl.textContent = metaFor(job, counts);
+      state.shell.classList.add('is-visible');
+      adjustOffset();
+      if (state.removeTimer) {
+        clearTimeout(state.removeTimer);
+        state.removeTimer = null;
+      }
+    }
+
+    function scheduleHide(jobId) {
+      if (state.removeTimer) return;
+      state.hiddenJobId = jobId;
+      setDismissedJobId(jobId);
+      state.removeTimer = window.setTimeout(() => hideShell(false), 1400);
+    }
+
+    function applyStatus(data) {
+      if (!data || !data.ok) return;
+      const job = data.job || null;
+      if (!job) {
+        hideShell(false);
+        return;
+      }
+      const jobId = Number(job.id || 0);
+      if (!state.currentJobId || jobId !== state.currentJobId) {
+        state.currentJobId = jobId;
+        state.seenActive = false;
+        state.hiddenJobId = null;
+      }
+      if (data.active) {
+        state.seenActive = true;
+      }
+      const isCompleted =
+        !data.active && ['done', 'failed', 'stopped', 'cleaned'].includes(String(job.status || ''));
+      const dismissedId = getDismissedJobId();
+      if (isCompleted && dismissedId && jobId === dismissedId) {
+        hideShell(false);
+        return;
+      }
+      if (isCompleted && !state.seenActive) {
+        setDismissedJobId(jobId);
+        hideShell(false);
+        return;
+      }
+      if (state.hiddenJobId && !data.active && jobId === state.hiddenJobId) {
+        return;
+      }
+      render(job, data.counts || {}, Boolean(data.active));
+      if (isCompleted) {
+        scheduleHide(jobId);
+      } else {
+        state.hiddenJobId = null;
+      }
+    }
+
+    function fetchStatus() {
+      const stamp = Date.now();
+      return fetch(`/api/stress-test/status?t=${stamp}`, { credentials: 'include', cache: 'no-store' })
+        .then((resp) => (resp.ok ? resp.json() : null))
+        .catch(() => null);
+    }
+
+    async function pollOnce() {
+      if (!state.user) return;
+      const data = await fetchStatus();
+      applyStatus(data);
+    }
+
+    function startPolling() {
+      if (state.pollTimer) return;
+      state.pollTimer = window.setInterval(pollOnce, POLL_INTERVAL);
+    }
+
+    function stopPolling() {
+      if (!state.pollTimer) return;
+      clearInterval(state.pollTimer);
+      state.pollTimer = null;
+    }
+
+    function start(user) {
+      if (!user) {
+        stop();
+        return;
+      }
+      state.user = user;
+      pollOnce();
+      startPolling();
+    }
+
+    function stop() {
+      state.user = null;
+      state.hiddenJobId = null;
+      stopPolling();
+      hideShell(true);
+    }
+
+    return {
+      start,
+      stop,
+      needsAuthCheck: () => true,
+    };
+  }
+
   const uploadProgress = initUploadProgress();
   window.GalleryUploadProgress = uploadProgress;
+  const stressProgress = initStressProgress();
+  window.GalleryStressProgress = stressProgress;
 
   const adminEntries = Array.from(document.querySelectorAll('[data-admin-entry]'));
   const userAvatar = document.querySelector('[data-user-avatar]');
@@ -1487,7 +1736,11 @@
   }
 
   const shouldCheckUserAuth =
-    userAvatar || loginLinks.length || registerLinks.length || uploadProgress.hasProgressForScope('user');
+    userAvatar ||
+    loginLinks.length ||
+    registerLinks.length ||
+    uploadProgress.hasProgressForScope('user') ||
+    stressProgress.needsAuthCheck();
   if (shouldCheckUserAuth) {
     fetch('/auth/me', { credentials: 'include' })
       .then((resp) => {
@@ -1499,11 +1752,16 @@
           setAuthVisibility(true, data.user, data.groups || []);
           setAuthHint(true);
           uploadProgress.restore('user', data.user);
+          stressProgress.start(data.user);
           return;
         }
         setAuthHint(false);
+        stressProgress.stop();
       })
-      .catch(() => setAuthHint(false));
+      .catch(() => {
+        setAuthHint(false);
+        stressProgress.stop();
+      });
   }
 
   if (uploadProgress.hasProgressForScope('admin')) {

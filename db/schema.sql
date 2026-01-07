@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS images (
     description TEXT,
     tags_json TEXT,                  -- JSON 数组字符串
     collection_override TEXT,
+    stress_job_id INTEGER,
     owner_user_id INTEGER,
     deleted_at DATETIME,
     trash_path TEXT,
@@ -33,6 +34,7 @@ CREATE TABLE IF NOT EXISTS images (
 CREATE INDEX IF NOT EXISTS idx_images_status ON images(status);
 CREATE INDEX IF NOT EXISTS idx_images_created_at ON images(created_at);
 CREATE INDEX IF NOT EXISTS idx_images_deleted_at ON images(deleted_at);
+CREATE INDEX IF NOT EXISTS idx_images_stress_job ON images(stress_job_id);
 
 
 -- 相册表
@@ -148,11 +150,32 @@ CREATE TABLE IF NOT EXISTS upload_requests (
     description TEXT,
     tags_json TEXT,
     collection_override TEXT,
+    stress_job_id INTEGER,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (owner_user_id) REFERENCES auth_users(id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_upload_requests_owner ON upload_requests(owner_user_id);
+CREATE INDEX IF NOT EXISTS idx_upload_requests_stress_job ON upload_requests(stress_job_id);
+
+CREATE TABLE IF NOT EXISTS stress_jobs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    owner_user_id INTEGER NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('running','stopping','stopped','done','failed','cleaned')),
+    total INTEGER NOT NULL,
+    generated INTEGER NOT NULL DEFAULT 0,
+    min_width INTEGER,
+    max_width INTEGER,
+    min_height INTEGER,
+    max_height INTEGER,
+    format TEXT,
+    message TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (owner_user_id) REFERENCES auth_users(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_stress_jobs_owner ON stress_jobs(owner_user_id);
 
 -- 用户收藏（个人点赞）
 CREATE TABLE IF NOT EXISTS user_favorites (

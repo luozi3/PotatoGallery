@@ -55,6 +55,127 @@
     });
   }
 
+  let stressPollTimer = null;
+  let stressJob = null;
+
+  function stressStatusLabel(job, active) {
+    if (!job) return "未启动";
+    if (job.status === "running") return "生成中";
+    if (job.status === "stopping") return "停止中";
+    if (job.status === "failed") return "已失败";
+    if (job.status === "cleaned") return "已清理";
+    if (job.status === "done" && active) return "生成完成 · 等待发布";
+    if (job.status === "done") return "已完成";
+    if (job.status === "stopped") return "已停止";
+    return "未知状态";
+  }
+
+  function parseStressCount() {
+    const raw = stressCountInput ? stressCountInput.value : "";
+    const parsed = Number.parseInt(raw, 10);
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+    return 500;
+  }
+
+  function updateStressCountLabel(total) {
+    if (!stressCount) return;
+    if (total) {
+      stressCount.textContent = `总数 ${total} 张`;
+      return;
+    }
+    stressCount.textContent = `计划 ${parseStressCount()} 张`;
+  }
+
+  function renderStress(data) {
+    if (!stressCard) return;
+    const job = data && data.job ? data.job : null;
+    const counts = (data && data.counts) || {};
+    const total = job ? Number(job.total || 0) : 0;
+    const generated = job ? Number(job.generated || 0) : 0;
+    const published = Number(counts.published || 0);
+    const queued = Number(counts.queued || 0);
+    if (stressStatus) stressStatus.textContent = stressStatusLabel(job, data && data.active);
+    if (stressGenerated) stressGenerated.textContent = `${generated}/${total || 0}`;
+    if (stressPublished) stressPublished.textContent = `${published}/${total || 0}`;
+    if (stressQueued) stressQueued.textContent = `${queued}`;
+    if (stressUser && job && job.username) stressUser.textContent = job.username;
+    if (stressToggle) {
+      const running = job && ["running", "stopping"].includes(job.status);
+      stressToggle.textContent = running ? "停止压测" : "启动压测";
+      stressToggle.disabled = false;
+      if (stressCountInput) stressCountInput.disabled = Boolean(running);
+    }
+    if (stressClean) {
+      stressClean.disabled = !job;
+    }
+    updateStressCountLabel(total);
+  }
+
+  async function fetchStressStatus() {
+    try {
+      const data = await fetchJSON("/upload/admin/stress-test/status");
+      stressJob = data.job || null;
+      renderStress(data);
+      return data;
+    } catch (err) {
+      if (stressHint) stressHint.textContent = err.message;
+      return null;
+    }
+  }
+
+  function startStressPolling(active) {
+    if (stressPollTimer) {
+      clearInterval(stressPollTimer);
+      stressPollTimer = null;
+    }
+    if (!active) return;
+    stressPollTimer = window.setInterval(fetchStressStatus, 3000);
+  }
+
+  async function handleStressToggle() {
+    if (!stressToggle) return;
+    stressToggle.disabled = true;
+    if (stressHint) stressHint.textContent = "处理中...";
+    try {
+      if (stressJob && ["running", "stopping"].includes(stressJob.status)) {
+        await fetchJSON("/upload/admin/stress-test/stop", { method: "POST" });
+      } else {
+        await fetchJSON("/upload/admin/stress-test/start", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            username: stressUser ? stressUser.textContent : "luozi_sama",
+            count: parseStressCount(),
+          }),
+        });
+      }
+      if (stressHint) stressHint.textContent = "";
+    } catch (err) {
+      if (stressHint) stressHint.textContent = err.message;
+    } finally {
+      stressToggle.disabled = false;
+      const data = await fetchStressStatus();
+      startStressPolling(data && data.active);
+    }
+  }
+
+  async function handleStressClean() {
+    if (!stressClean) return;
+    if (!confirm("确认清理压测数据？清理后将触发站点重建。")) return;
+    stressClean.disabled = true;
+    if (stressHint) stressHint.textContent = "清理中...";
+    try {
+      await fetchJSON("/upload/admin/stress-test/cleanup", { method: "POST" });
+      if (stressHint) stressHint.textContent = "压测数据已清理";
+    } catch (err) {
+      if (stressHint) stressHint.textContent = err.message;
+    } finally {
+      stressClean.disabled = false;
+      const data = await fetchStressStatus();
+      startStressPolling(data && data.active);
+    }
+  }
+
   async function ensureAuth() {
     try {
       const data = await fetchJSON("/upload/admin/me");
@@ -143,6 +264,17 @@
   const typeSaveBtn = document.querySelector("[data-admin-type-save]");
   const typeList = document.querySelector("[data-admin-type-list]");
   const typeHint = document.querySelector("[data-admin-type-hint]");
+  const stressCard = document.querySelector("[data-admin-stress]");
+  const stressToggle = document.querySelector("[data-admin-stress-toggle]");
+  const stressClean = document.querySelector("[data-admin-stress-clean]");
+  const stressHint = document.querySelector("[data-admin-stress-hint]");
+  const stressStatus = document.querySelector("[data-admin-stress-status]");
+  const stressGenerated = document.querySelector("[data-admin-stress-generated]");
+  const stressPublished = document.querySelector("[data-admin-stress-published]");
+  const stressQueued = document.querySelector("[data-admin-stress-queued]");
+  const stressUser = document.querySelector("[data-admin-stress-user]");
+  const stressCount = document.querySelector("[data-admin-stress-count]");
+  const stressCountInput = document.querySelector("[data-admin-stress-count-input]");
   const masonry = window.GalleryMasonry ? window.GalleryMasonry.init(grid) : null;
 
   let images = [];
@@ -637,6 +769,16 @@
     loadAuthConfig().catch((err) => {
       if (authHint) authHint.textContent = err.message;
     });
+
+    if (stressCard) {
+      if (stressCountInput) {
+        stressCountInput.addEventListener("input", () => updateStressCountLabel(0));
+        updateStressCountLabel(0);
+      }
+      fetchStressStatus().then((data) => startStressPolling(data && data.active));
+      if (stressToggle) stressToggle.addEventListener("click", handleStressToggle);
+      if (stressClean) stressClean.addEventListener("click", handleStressClean);
+    }
 
     if (grid && refreshBtn) {
       refreshBtn.addEventListener("click", () => loadImages());

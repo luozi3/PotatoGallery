@@ -89,6 +89,56 @@
                   </a>
                 </div>
               </section>
+              <section class="admin-home-section">
+                <header class="admin-home-header">
+                  <h2>压测工具</h2>
+                  <p class="muted">一键生成可配置数量小图，验证上传与发布链路。</p>
+                </header>
+                <div class="admin-home-grid">
+                  <div class="admin-nav-card admin-stress-card" data-admin-stress>
+                    <div class="admin-nav-title">压测开关</div>
+                    <p class="muted">归属账号：<span data-admin-stress-user>luozi_sama</span> · WebP 小图</p>
+                    <div class="admin-stress-summary">
+                      <span class="admin-stress-status" data-admin-stress-status>未启动</span>
+                      <span class="admin-stress-count" data-admin-stress-count>默认 500 张</span>
+                    </div>
+                    <div class="admin-stress-fields admin-fields">
+                      <label class="admin-field">
+                        <span>数量</span>
+                        <input
+                          class="admin-input"
+                          type="number"
+                          min="1"
+                          max="5000"
+                          step="1"
+                          inputmode="numeric"
+                          value="500"
+                          data-admin-stress-count-input
+                        />
+                      </label>
+                    </div>
+                    <div class="admin-stress-progress">
+                      <div class="admin-stress-row">
+                        <span>生成</span>
+                        <strong data-admin-stress-generated>0/0</strong>
+                      </div>
+                      <div class="admin-stress-row">
+                        <span>发布</span>
+                        <strong data-admin-stress-published>0/0</strong>
+                      </div>
+                      <div class="admin-stress-row">
+                        <span>排队</span>
+                        <strong data-admin-stress-queued>0</strong>
+                      </div>
+                    </div>
+                    <div class="admin-stress-actions">
+                      <button class="btn primary" type="button" data-admin-stress-toggle>启动压测</button>
+                      <button class="btn subtle" type="button" data-admin-stress-clean>清理压测数据</button>
+                    </div>
+                    <p class="hint" data-admin-stress-hint></p>
+                  </div>
+                </div>
+              </section>
             </div>
           </section>
         </div>

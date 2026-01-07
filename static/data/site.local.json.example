@@ -18,7 +18,11 @@
     "counter.enabled": "Toggle visit counter image.",
     "counter.img_url": "Counter image URL.",
     "auth_avatar_url": "Default avatar image URL.",
-    "thumb_bg_color": "Background color for thumbnail containers."
+    "thumb_bg_color": "Background color for thumbnail containers.",
+    "error_figure_url": "Fallback illustration for 404/500/maintenance pages.",
+    "error_figure_404_url": "Optional 404 illustration URL (overrides error_figure_url).",
+    "error_figure_error_url": "Optional 500 illustration URL (overrides error_figure_url).",
+    "error_figure_maintenance_url": "Optional maintenance illustration URL (overrides error_figure_url)."
   },
   "site_name": "My Gallery",
   "site_description": "Static illustration gallery for originals and favorites.",
@@ -42,5 +46,9 @@
     "img_url": ""
   },
   "auth_avatar_url": "/thumb/39e2f18e62ab45f5aa871860919516d0.webp",
-  "thumb_bg_color": "#f3e7ff"
+  "thumb_bg_color": "#f3e7ff",
+  "error_figure_url": "/static/images/error-figure.webp",
+  "error_figure_404_url": "",
+  "error_figure_error_url": "",
+  "error_figure_maintenance_url": ""
 }

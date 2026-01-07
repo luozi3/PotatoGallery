@@ -30,6 +30,7 @@ def ensure_schema() -> None:
             "description": "description TEXT",
             "tags_json": "tags_json TEXT",
             "collection_override": "collection_override TEXT",
+            "stress_job_id": "stress_job_id INTEGER",
             "owner_user_id": "owner_user_id INTEGER",
             "deleted_at": "deleted_at DATETIME",
             "trash_path": "trash_path TEXT",
@@ -39,6 +40,7 @@ def ensure_schema() -> None:
             if name not in cols:
                 conn.execute(f"ALTER TABLE images ADD COLUMN {ddl}")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_images_deleted_at ON images(deleted_at)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_images_stress_job ON images(stress_job_id)")
         from . import auth
 
         auth.ensure_schema(conn)
@@ -51,12 +53,40 @@ def ensure_schema() -> None:
                 description TEXT,
                 tags_json TEXT,
                 collection_override TEXT,
+                stress_job_id INTEGER,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (owner_user_id) REFERENCES auth_users(id)
             )
             """
         )
         conn.execute("CREATE INDEX IF NOT EXISTS idx_upload_requests_owner ON upload_requests(owner_user_id)")
+        cols = {row["name"] for row in conn.execute("PRAGMA table_info(upload_requests)").fetchall()}
+        if "stress_job_id" not in cols:
+            conn.execute("ALTER TABLE upload_requests ADD COLUMN stress_job_id INTEGER")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_upload_requests_stress_job ON upload_requests(stress_job_id)"
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS stress_jobs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                owner_user_id INTEGER NOT NULL,
+                status TEXT NOT NULL CHECK (status IN ('running','stopping','stopped','done','failed','cleaned')),
+                total INTEGER NOT NULL,
+                generated INTEGER NOT NULL DEFAULT 0,
+                min_width INTEGER,
+                max_width INTEGER,
+                min_height INTEGER,
+                max_height INTEGER,
+                format TEXT,
+                message TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (owner_user_id) REFERENCES auth_users(id)
+            )
+            """
+        )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_stress_jobs_owner ON stress_jobs(owner_user_id)")
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS user_favorites (

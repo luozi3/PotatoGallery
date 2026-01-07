@@ -140,31 +140,6 @@ body.theme-transition::before {
   opacity: 1;
 }
 
-body.page-home::after,
-body.page-wiki::after,
-body.page-detail::after {
-  content: "";
-  position: fixed;
-  top: 0;
-  left: 0;
-  bottom: 0;
-  width: var(--sidebar-width);
-  background: var(--sidebar-bg);
-  pointer-events: none;
-  z-index: 0;
-  transition: transform 0.3s var(--ease), opacity 0.2s var(--ease);
-}
-
-body.page-home.sidebar-collapsed::after,
-body.page-wiki.sidebar-collapsed::after,
-body.page-detail.sidebar-collapsed::after,
-html.sidebar-collapsed body.page-home::after,
-html.sidebar-collapsed body.page-wiki::after,
-html.sidebar-collapsed body.page-detail::after {
-  transform: translateX(-100%);
-  opacity: 0;
-}
-
 body > * {
   position: relative;
   z-index: 1;
@@ -484,6 +459,7 @@ body.with-sidebar main {
   grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
   gap: 0;
   align-items: start;
+  min-height: calc(100vh - var(--topbar-height));
   transition: grid-template-columns 0.3s var(--ease);
 }
 
@@ -500,10 +476,10 @@ html.sidebar-collapsed body .home-layout {
 }
 
 .left-sidebar {
-  position: fixed;
+  position: sticky;
   top: var(--topbar-height);
   left: 0;
-  bottom: 0;
+  height: calc(100vh - var(--topbar-height));
   align-self: start;
   width: var(--sidebar-width);
   background: var(--sidebar-bg);
@@ -1362,6 +1338,10 @@ html.sidebar-collapsed body .home-main {
 }
 
 .hidden {
+  display: none !important;
+}
+
+[v-cloak] {
   display: none !important;
 }
 
@@ -2279,8 +2259,89 @@ html.sidebar-collapsed body .detail-shell {
   grid-auto-rows: 8px;
 }
 
-.gallery[data-masonry] .illust-card {
+.gallery[data-masonry] .illust-card,
+.gallery[data-masonry] .virtual-spacer {
   grid-row-end: span var(--row-span, 40);
+}
+
+.gallery .virtual-spacer {
+  grid-column: 1 / -1;
+  height: var(--virtual-height, 0px);
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  pointer-events: none;
+}
+
+.illust-card.skeleton {
+  position: relative;
+  overflow: hidden;
+}
+
+.illust-card.skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    120deg,
+    rgba(255, 255, 255, 0),
+    rgba(47, 125, 217, 0.12),
+    rgba(255, 255, 255, 0)
+  );
+  transform: translateX(-60%);
+  animation: skeleton-shimmer 1.6s ease-in-out infinite;
+}
+
+.illust-card.skeleton .skeleton-block,
+.illust-card.skeleton .skeleton-line,
+.illust-card.skeleton .skeleton-pill {
+  background: var(--panel-strong);
+  border-radius: 999px;
+}
+
+.illust-card.skeleton .thumb-shell {
+  border-bottom: 1px solid var(--border);
+}
+
+.illust-card.skeleton .skeleton-line {
+  height: 12px;
+  border-radius: 8px;
+}
+
+.illust-card.skeleton .skeleton-line.title {
+  height: 14px;
+  width: 70%;
+}
+
+.illust-card.skeleton .skeleton-line.short {
+  width: 52%;
+}
+
+.illust-card.skeleton .skeleton-tags {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.illust-card.skeleton .skeleton-pill {
+  height: 18px;
+  width: 52px;
+  border-radius: 999px;
+}
+
+.load-sentinel {
+  grid-column: 1 / -1;
+  height: 1px;
+  pointer-events: none;
+}
+
+@keyframes skeleton-shimmer {
+  0% {
+    transform: translateX(-60%);
+  }
+  100% {
+    transform: translateX(60%);
+  }
 }
 
 .gallery[data-masonry] {
@@ -2400,12 +2461,6 @@ html.sidebar-collapsed body .detail-shell {
   body.sidebar-collapsed .home-layout,
   html.sidebar-collapsed body .home-layout {
     grid-template-columns: 1fr;
-  }
-
-  body.page-home::after,
-  body.page-wiki::after,
-  body.page-detail::after {
-    display: none;
   }
 
   body.sidebar-open {

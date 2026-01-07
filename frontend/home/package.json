@@ -1,0 +1,16 @@
+{
+  "name": "potato-gallery-home",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build"
+  },
+  "dependencies": {
+    "vue": "^3.4.27"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.2.0",
+    "@vue/compiler-sfc": "^3.4.27",
+    "vite": "^5.2.0"
+  }
+}

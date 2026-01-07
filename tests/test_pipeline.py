@@ -49,6 +49,7 @@ def reload_modules():
         "app.tagging",
         "app.static_site",
         "app.upload_service",
+        "app.stress_test",
         "app.worker",
         "app.maintenance",
     ]:
@@ -66,6 +67,38 @@ def make_image(path: Path, size=(320, 200), color=(220, 180, 150)):
     img = Image.new("RGB", size, color)
     path.parent.mkdir(parents=True, exist_ok=True)
     img.save(path, format="PNG")
+
+
+def extract_home_bootstrap(html: str) -> dict:
+    match = re.search(
+        r'<script type="application/json" id="home-bootstrap">(.*?)</script>',
+        html,
+        re.S,
+    )
+    assert match, "home bootstrap not found in index.html"
+    return json.loads(match.group(1))
+
+
+def load_home_manifest(www_dir: Path) -> dict:
+    manifest_path = www_dir / "static" / "data" / "home_manifest.json"
+    return json.loads(manifest_path.read_text(encoding="utf-8"))
+
+
+def find_home_image(www_dir: Path, uuid: str) -> dict:
+    data_dir = www_dir / "static" / "data"
+    manifest = load_home_manifest(www_dir)
+    for chunk in manifest.get("chunks", []):
+        chunk_name = str(chunk.get("path") or "").split("?", 1)[0]
+        if not chunk_name:
+            continue
+        chunk_path = data_dir / chunk_name
+        if not chunk_path.exists():
+            continue
+        payload = json.loads(chunk_path.read_text(encoding="utf-8"))
+        for img in payload.get("images", []):
+            if img.get("uuid") == uuid:
+                return img
+    return {}
 
 
 def login_user(client, username: str, password: str):
@@ -250,13 +283,23 @@ def test_worker_process_and_publish(tmp_path):
     assert not (config.WWW_DIR / "wall.html").exists()
 
     index_html_text = index_html.read_text()
-    assert "onerror=\"this.onerror=null;this.src='/raw/" in index_html_text
     assert 'data-collection-tab' in index_html_text
     assert 'data-filter-pill' in index_html_text
-    assert 'gallery.js' in index_html_text
+    assert 'id="home-bootstrap"' in index_html_text
+    assert 'home.js' in index_html_text
+    assert 'vue.runtime.global.prod.js' in index_html_text
     assert "gallery.css?v=" in index_html_text
-    assert "gallery.js?v=" in index_html_text
-    assert 'data-collection="favorites"' in index_html_text
+    assert "home.js?v=" in index_html_text
+    home_bootstrap = extract_home_bootstrap(index_html_text)
+    assert any(item.get("slug") == "favorites" for item in home_bootstrap.get("collections", []))
+    assert "?v=" in str(home_bootstrap.get("manifest_path", ""))
+    data_dir = config.WWW_DIR / "static" / "data"
+    assert (data_dir / "home_bootstrap.json").exists()
+    assert (data_dir / "home_manifest.json").exists()
+    manifest = load_home_manifest(config.WWW_DIR)
+    assert manifest.get("chunk_size") == 50
+    assert manifest.get("chunks")
+    assert "?v=" in str(manifest["chunks"][0].get("path", ""))
 
     with db.connect() as conn:
         row = conn.execute(
@@ -265,12 +308,16 @@ def test_worker_process_and_publish(tmp_path):
         ).fetchone()
     assert row["status"] == "published"
     assert row["thumb_width"] and row["thumb_height"]
-    html = index_html_text
-    assert f"/thumb/{Path(row['thumb_path']).name}" in html
-    assert "--thumb-ratio" in html
+    image_entry = find_home_image(config.WWW_DIR, uid)
+    assert image_entry
+    assert image_entry.get("thumb_filename") == Path(row["thumb_path"]).name
+    assert image_entry.get("thumb_width") == row["thumb_width"]
+    assert image_entry.get("thumb_height") == row["thumb_height"]
     css = (config.STATIC / "styles" / "gallery.css").read_text()
     assert "object-fit: contain" in css
     assert (config.WWW_DIR / "static" / "js" / "gallery.js").exists()
+    assert (config.WWW_DIR / "static" / "js" / "home.js").exists()
+    assert (config.WWW_DIR / "static" / "vendor" / "vue.runtime.global.prod.js").exists()
 
 
 def test_small_image_keeps_thumbnail_ratio(tmp_path):
@@ -300,7 +347,11 @@ def test_small_image_keeps_thumbnail_ratio(tmp_path):
     assert row["thumb_height"] == 80
 
     html = (config.WWW_DIR / "index.html").read_text()
-    assert f"/thumb/{Path(row['thumb_path']).name}" in html
+    image_entry = find_home_image(config.WWW_DIR, uid)
+    assert image_entry
+    assert image_entry.get("thumb_filename") == Path(row["thumb_path"]).name
+    assert image_entry.get("thumb_width") == row["thumb_width"]
+    assert image_entry.get("thumb_height") == row["thumb_height"]
 
 
 def test_collections_config_respected(tmp_path):

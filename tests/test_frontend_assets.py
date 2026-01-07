@@ -87,6 +87,26 @@ def test_html_sidebar_collapsed_support():
     assert re.search(r"html\.sidebar-collapsed\s+body\s+\.detail-shell", css)
 
 
+def test_sidebar_layout_uses_sticky_viewport_height():
+    css = read_text("static/styles/gallery.css")
+    assert re.search(
+        r"\.home-layout\s*\{[^}]*min-height:\s*calc\(100vh\s*-\s*var\(--topbar-height\)\)",
+        css,
+        re.S,
+    )
+    assert re.search(r"\.left-sidebar\s*\{[^}]*position:\s*sticky", css, re.S)
+    assert re.search(
+        r"\.left-sidebar\s*\{[^}]*height:\s*calc\(100vh\s*-\s*var\(--topbar-height\)\)",
+        css,
+        re.S,
+    )
+    assert re.search(
+        r"@media \(max-width: 640px\)[\s\S]*?\.left-sidebar[\s\S]*?position:\s*fixed",
+        css,
+        re.S,
+    )
+
+
 def test_live2d_html_hidden_rule():
     css = read_text("static/styles/gallery.css")
     assert re.search(r"html\.live2d-hidden\s+#landlord", css)
@@ -97,6 +117,50 @@ def test_sidebar_restore_back_forward_hook():
     assert "sidebar-restore-open" in js
     assert "pagehide" in js
     assert "pageshow" in js
+
+
+def test_home_virtual_recalc_skips_full_layout_refresh():
+    app = read_text("frontend/home/src/App.vue")
+    start = app.find("function scheduleVirtualRecalc()")
+    end = app.find("function scheduleVirtualScroll()")
+    assert start != -1 and end != -1 and end > start
+    snippet = app[start:end]
+    assert "scheduleLayoutRefresh" not in snippet
+
+
+def test_home_grid_metrics_handles_minmax_repeat():
+    app = read_text("frontend/home/src/App.vue")
+    assert "gridTemplateColumns" in app
+    assert "minmax" in app
+    assert "auto-fill" in app or "auto-fit" in app
+
+
+def test_home_grid_metrics_reads_card_thumb_max_from_grid():
+    app = read_text("frontend/home/src/App.vue")
+    start = app.find("function readGridMetrics()")
+    end = app.find("function estimateItemHeight")
+    assert start != -1 and end != -1 and end > start
+    snippet = app[start:end]
+    assert "--card-thumb-max" in snippet
+    assert "document.documentElement" not in snippet
+
+
+def test_home_grid_metrics_update_from_card_positions():
+    app = read_text("frontend/home/src/App.vue")
+    assert "updateGridMetricsFromRects" in app
+    assert "getBoundingClientRect().top" in app
+
+
+def test_masonry_refresh_keeps_ready_state():
+    js = read_text("static/js/ui.js")
+    assert "classList.add('masonry-ready')" in js
+    assert "classList.remove('masonry-ready')" not in js
+
+
+def test_stress_progress_dismissed_state_persisted():
+    js = read_text("static/js/ui.js")
+    assert "gallery_stress_progress_dismissed_v1" in js
+    assert "setDismissedJobId" in js
 
 
 def test_controls_use_theme_panel_background():
@@ -288,7 +352,21 @@ def test_admin_home_navigation_cards():
     assert 'href="/admin/collections/"' in html
     assert 'href="/admin/auth/"' in html
     assert 'href="/admin/tags/"' in html
+
+
+def test_admin_stress_tool_controls_present():
+    html = read_text("static/templates/admin.html.j2")
+    assert "data-admin-stress" in html
+    assert "data-admin-stress-count" in html
+    assert "data-admin-stress-count-input" in html
     assert 'href="/status/"' in html
+
+
+def test_home_prefetch_logic_present():
+    app = read_text("frontend/home/src/App.vue")
+    assert "maybePrefetchNext" in app
+    assert "loadNextChunk()" in app
+    assert "updateCardBodyEstimate" in app
 
 
 def test_admin_dashboard_grid_styles_present():
@@ -524,6 +602,17 @@ def test_wiki_page_template_exists():
     assert "wiki.js" in html
 
 
+def test_error_pages_support_custom_figures():
+    templates = [
+        "static/templates/404.html.j2",
+        "static/templates/error.html.j2",
+        "static/templates/maintenance.html.j2",
+    ]
+    for template in templates:
+        html = read_text(template)
+        assert "error_figure_url" in html
+
+
 def test_wiki_page_uses_sidebar_layout():
     html = read_text("static/templates/pages/wiki.html.j2")
     assert "data-left-sidebar" in html
@@ -635,7 +724,31 @@ def test_homepage_tag_strip_has_all_tags_link():
     html = read_text("static/templates/index.html.j2")
     assert "tag-chip-more" in html
     assert "→全部标签" in html
-    assert "top_tags[:6]" in html
+    assert "topTags.slice(0, 6)" in html
+
+
+def test_homepage_vue_payload_present():
+    html = read_text("static/templates/index.html.j2")
+    assert 'id="home-bootstrap"' in html
+    assert "vue.runtime.global.prod.js" in html
+    assert "home.js" in html
+
+
+def test_homepage_masonry_root_ref_bound():
+    app = read_text("frontend/home/src/App.vue")
+    assert 'ref="rootEl"' in app
+
+
+def test_homepage_masonry_cards_no_content_visibility():
+    css = read_text("static/styles/gallery.css")
+    assert "content-visibility: auto" not in css
+
+
+def test_homepage_masonry_relayout_uses_card_blocks():
+    js = read_text("static/js/ui.js")
+    assert "relayoutGrid" in js
+    assert "thumb-shell" in js
+    assert "card-body" in js
 
 
 def test_homepage_tag_strip_balance_styles():

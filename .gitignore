@@ -10,6 +10,7 @@ logs/
 *.pyc
 __pycache__/
 static/live2d/
+static/images/
 static/js/live2d.js
 *.egg-info/
 *.py[cod]

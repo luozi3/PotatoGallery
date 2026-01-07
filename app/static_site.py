@@ -70,6 +70,11 @@ DEFAULT_SITE_CONFIG = {
     "counter": {"enabled": False, "img_url": ""},
     "auth_avatar_url": "/thumb/39e2f18e62ab45f5aa871860919516d0.webp",
     "thumb_bg_color": "#f3e7ff",
+    # Error page illustration fallback; per-page keys can override this.
+    "error_figure_url": "/static/images/error-figure.webp",
+    "error_figure_404_url": "",
+    "error_figure_error_url": "",
+    "error_figure_maintenance_url": "",
 }
 
 
@@ -749,6 +754,50 @@ def build_site(
         tags_list,
         key=lambda item: (-int(item.get("count") or 0), str(item.get("tag") or "")),
     )
+    home_images = [
+        {
+            "uuid": img.get("uuid"),
+            "detail_path": img.get("detail_path"),
+            "title": img.get("title"),
+            "description": img.get("description") or "",
+            "tags": img.get("tags", []),
+            "collection": img.get("collection"),
+            "width": img.get("width"),
+            "height": img.get("height"),
+            "thumb_width": img.get("thumb_width"),
+            "thumb_height": img.get("thumb_height"),
+            "thumb_filename": img.get("thumb_filename"),
+            "raw_filename": img.get("raw_filename"),
+            "bytes_human": img.get("bytes_human"),
+            "orientation": img.get("orientation"),
+            "size_bucket": img.get("size_bucket"),
+        }
+        for img in images_ctx
+    ]
+    home_chunk_size = 50
+    collection_titles = {item["slug"]: item["title"] for item in collections_list}
+    cache_buster = f"?v={static_version}"
+    home_bootstrap = {
+        "version": 1,
+        "generated_at": int(time.time()),
+        "stats": stats,
+        "collections": collections_list,
+        "collection_titles": collection_titles,
+        "top_tags": top_tags,
+        "tag_slug_map": tag_slug_map,
+        "tag_style_map": tag_style_map,
+        "manifest_path": f"/static/data/home_manifest.json{cache_buster}",
+        "chunk_size": home_chunk_size,
+        "total_images": len(home_images),
+        "site": {
+            "site_name": site_name,
+            "site_description": site_description,
+            "site_url": site_url,
+            "brand_name": site.get("brand_name", ""),
+            "brand_tagline": site.get("brand_tagline", ""),
+        },
+    }
+    home_bootstrap_json = json.dumps(home_bootstrap, ensure_ascii=False).replace("</", "<\\/")
     alias_pages = []
     seen_alias = set()
     for tag in ordered_tags:
@@ -812,6 +861,59 @@ def build_site(
 
     data_dir = static_target / "data"
     data_dir.mkdir(parents=True, exist_ok=True)
+    home_chunks = []
+    collection_index: Dict[str, List[int]] = {}
+    for idx in range(0, len(home_images), home_chunk_size):
+        chunk_id = idx // home_chunk_size
+        chunk_images = home_images[idx : idx + home_chunk_size]
+        chunk_name = f"home_images_{chunk_id:03d}.json"
+        home_chunks.append(
+            {
+                "id": chunk_id,
+                "path": f"{chunk_name}{cache_buster}",
+                "count": len(chunk_images),
+                "start_index": idx,
+                "end_index": idx + len(chunk_images) - 1,
+            }
+        )
+        collections_in_chunk = sorted(
+            {img.get("collection") for img in chunk_images if img.get("collection")}
+        )
+        for collection in collections_in_chunk:
+            collection_index.setdefault(collection, []).append(chunk_id)
+        _atomic_write_text(
+            data_dir / chunk_name,
+            json.dumps(
+                {
+                    "version": 1,
+                    "generated_at": int(time.time()),
+                    "chunk": chunk_id,
+                    "count": len(chunk_images),
+                    "images": chunk_images,
+                },
+                ensure_ascii=False,
+            ),
+        )
+    for collection in collections_list:
+        collection_index.setdefault(collection["slug"], [])
+    home_manifest = {
+        "version": 1,
+        "generated_at": int(time.time()),
+        "order": "created_desc",
+        "chunk_size": home_chunk_size,
+        "total_images": len(home_images),
+        "base_path": "/static/data/",
+        "chunks": home_chunks,
+        "collection_index": collection_index,
+    }
+    _atomic_write_text(
+        data_dir / "home_manifest.json",
+        json.dumps(home_manifest, ensure_ascii=False, indent=2),
+    )
+    _atomic_write_text(
+        data_dir / "home_bootstrap.json",
+        home_bootstrap_json,
+    )
     search_index = {
         "generated_at": int(time.time()),
         "images": [
@@ -914,6 +1016,7 @@ def build_site(
         json_ld=index_json_ld,
         tag_slug_map=tag_slug_map,
         tag_style_map=tag_style_map,
+        home_bootstrap_json=home_bootstrap_json,
         static_version=static_version,
     )
     _atomic_write_text(staging_dir / "index.html", index_html)

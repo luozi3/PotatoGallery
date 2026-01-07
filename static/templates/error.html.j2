@@ -22,6 +22,8 @@
       <div class="home-main">
         <div class="error-main">
           <section class="error-hero">
+            {# 优先使用 error_figure_error_url，否则回退到 error_figure_url。 #}
+            {% set error_figure_url = site.error_figure_error_url or site.error_figure_url or '/static/images/error-figure.webp' %}
             <div class="error-card">
               <div class="error-eyebrow">很抱歉</div>
               <h1 class="error-title">您浏览的页面暂时无法访问</h1>
@@ -38,7 +40,7 @@
             </div>
             <figure class="error-figure">
               <div class="error-figure-frame">
-                <img src="/static/images/error-figure.webp" alt="等待中的小人插画" width="950" height="1200" loading="lazy" decoding="async">
+                <img src="{{ error_figure_url }}" alt="等待中的小人插画" width="950" height="1200" loading="lazy" decoding="async">
               </div>
               <figcaption>请稍后重试，或前往状态页查看当前服务运行情况。</figcaption>
             </figure>

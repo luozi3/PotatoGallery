@@ -13,6 +13,7 @@ from . import db
 from . import static_site
 from . import storage
 from . import tagging
+from . import stress_test
 
 bp = Blueprint("user", __name__)
 
@@ -341,6 +342,17 @@ def user_upload_status():
     if not uuid_value:
         return _json_error("参数错误", 400)
     status = _resolve_upload_status(uuid_value, user.id)
+    resp = jsonify({"ok": True, **status})
+    resp.headers["Cache-Control"] = "no-store, max-age=0"
+    return resp
+
+
+@bp.get("/api/stress-test/status")
+def user_stress_status():
+    user, err = _require_user()
+    if err:
+        return err
+    status = stress_test.get_status_for_user(user.id)
     resp = jsonify({"ok": True, **status})
     resp.headers["Cache-Control"] = "no-store, max-age=0"
     return resp
