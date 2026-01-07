@@ -14,6 +14,21 @@
   src="https://github.com/user-attachments/assets/420c10e5-d871-410e-b202-ebe2cfffd96b" 
 />
 
+---
+
+<details>
+<summary> 🌟🌟🌟点击展开细节图片展示内容</summary>
+  <img width="1851" height="1009" alt="图片" src="https://github.com/user-attachments/assets/0de83815-308d-4625-9370-4053c2349ecd" />
+  <img width="310" height="193" alt="图片" src="https://github.com/user-attachments/assets/1c8c0b07-54ec-42a7-875b-a33e2ad19a3a" />
+  <img width="1843" height="1004" alt="图片" src="https://github.com/user-attachments/assets/050df4ae-0864-4875-9e28-7d7620dd0ff5" />
+  <img width="1829" height="1234" alt="图片" src="https://github.com/user-attachments/assets/45235c54-5011-436f-a343-e0db054e74c5" />
+  <img width="1173" height="372" alt="图片" src="https://github.com/user-attachments/assets/e95ccafa-87ae-485f-8027-717cd70d84e5" />
+  <img width="1583" height="917" alt="图片" src="https://github.com/user-attachments/assets/3725ba42-5862-4d88-94ff-426a7581cc66" />
+  <img width="1583" height="917" alt="图片" src="https://github.com/user-attachments/assets/65260ce2-2f9e-456c-95f3-484fbc768298" />
+  <img width="1184" height="328" alt="图片" src="https://github.com/user-attachments/assets/bf2c4064-0f10-4ccf-a315-418abde304e6" />
+
+</details> 
+
 
 ---
 ## 👋 致访客
@@ -23,7 +38,6 @@
 **Hello! Due to limited personal time, I am currently unable to actively develop new features.
 However, the project code is fully functional and operational, and community contributions are most welcom**
 
----
 
 ---
 ## 🌟 核心理念：稳如泰山
