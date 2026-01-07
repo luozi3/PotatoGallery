@@ -16,7 +16,16 @@
 
 
 ---
+## 👋 致访客
 
+**你好！我目前因个人时间有限，无法继续积极开发新功能。
+但项目代码完整可用，且非常欢迎社区贡献！**
+**Hello! Due to limited personal time, I am currently unable to actively develop new features.
+However, the project code is fully functional and operational, and community contributions are most welcom**
+
+---
+
+---
 ## 🌟 核心理念：稳如泰山
 - **极致只读**：90% 的访问直接命中 Nginx 静态文件，即便数据库宕机，站点依然可读。
 - **异步解耦**：上传、图片处理、页面生成全异步串行，绝不挤占前台内存。
