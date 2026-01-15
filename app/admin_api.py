@@ -1,12 +1,17 @@
 import datetime
+import io
 import json
+import random
 import re
+import threading
+import time
 import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from flask import Blueprint, jsonify, request
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
+from PIL import Image, ImageDraw
 from . import auth
 from . import config
 from . import db
@@ -17,6 +22,89 @@ from . import storage
 bp = Blueprint("admin", __name__)
 
 _UPLOAD_UUID_RE = re.compile(r"^[0-9a-f]{32}$")
+STRESS_TAG = "__stress_test__"
+STRESS_TITLE = "压测随机图"
+STRESS_DESCRIPTION = "压测工具自动生成"
+_STRESS_TASK_TTL = 30 * 60
+_STRESS_TASKS: Dict[str, Dict[str, Any]] = {}
+_STRESS_TASK_LOCK = threading.Lock()
+
+
+def _format_stress_title(index: Optional[int], total: Optional[int]) -> str:
+    if index and total:
+        return f"{STRESS_TITLE} 第{index}/{total}张"
+    if index:
+        return f"{STRESS_TITLE} 第{index}张"
+    return STRESS_TITLE
+
+
+def _format_stress_description(index: Optional[int], total: Optional[int]) -> str:
+    if index and total:
+        return f"{STRESS_DESCRIPTION}（第{index}/{total}张）"
+    if index:
+        return f"{STRESS_DESCRIPTION}（第{index}张）"
+    return STRESS_DESCRIPTION
+
+
+def _parse_positive_int(value: Any) -> Optional[int]:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    if parsed <= 0:
+        return None
+    return parsed
+
+
+def _prune_stress_tasks(now_ts: Optional[float] = None) -> None:
+    now = now_ts or time.time()
+    expired = []
+    for task_id, task in _STRESS_TASKS.items():
+        updated_at = float(task.get("updated_at") or 0)
+        if now - updated_at > _STRESS_TASK_TTL:
+            expired.append(task_id)
+    for task_id in expired:
+        _STRESS_TASKS.pop(task_id, None)
+
+
+def _create_stress_task(total: int) -> Dict[str, Any]:
+    now = time.time()
+    task_id = uuid.uuid4().hex
+    task = {
+        "task_id": task_id,
+        "stage": "queued",
+        "total": int(total or 0),
+        "done": 0,
+        "deleted": 0,
+        "pending_removed": 0,
+        "message": "",
+        "created_at": now,
+        "updated_at": now,
+    }
+    with _STRESS_TASK_LOCK:
+        _prune_stress_tasks(now)
+        _STRESS_TASKS[task_id] = task
+    return dict(task)
+
+
+def _get_stress_task(task_id: str) -> Optional[Dict[str, Any]]:
+    if not task_id:
+        return None
+    with _STRESS_TASK_LOCK:
+        task = _STRESS_TASKS.get(task_id)
+        return dict(task) if task else None
+
+
+def _update_stress_task(task_id: str, **updates: Any) -> Optional[Dict[str, Any]]:
+    if not task_id:
+        return None
+    with _STRESS_TASK_LOCK:
+        task = _STRESS_TASKS.get(task_id)
+        if not task:
+            return None
+        task.update(updates)
+        task["updated_at"] = time.time()
+        return dict(task)
 
 
 def _wiki_path() -> Path:
@@ -166,6 +254,228 @@ def _resolve_upload_status(uuid_value: str, owner_user_id: int) -> dict:
     if _file_exists_with_uuid(config.QUARANTINE_DIR, uuid_value):
         return {"stage": "failed", "percent": 100, "message": "已隔离"}
     return {"stage": "missing", "percent": 0, "message": "未找到记录"}
+
+
+def _random_color() -> Tuple[int, int, int]:
+    return (
+        random.randint(24, 220),
+        random.randint(24, 220),
+        random.randint(24, 220),
+    )
+
+
+def _generate_stress_image() -> Tuple[bytes, int, int]:
+    width = random.randint(480, 1080)
+    height = random.randint(360, 900)
+    img = Image.new("RGB", (width, height), _random_color())
+    draw = ImageDraw.Draw(img)
+    for _ in range(random.randint(4, 9)):
+        x1 = random.randint(0, max(0, width - 40))
+        y1 = random.randint(0, max(0, height - 40))
+        x2 = random.randint(x1 + 20, width)
+        y2 = random.randint(y1 + 20, height)
+        draw.rectangle([x1, y1, x2, y2], fill=_random_color())
+    buf = io.BytesIO()
+    img.save(buf, format="PNG", optimize=True)
+    return buf.getvalue(), width, height
+
+
+def _count_pending_stress_requests(conn) -> int:
+    marker = f'%"{STRESS_TAG}"%'
+    row = conn.execute(
+        "SELECT COUNT(1) AS total FROM upload_requests WHERE tags_json LIKE ?",
+        (marker,),
+    ).fetchone()
+    return int(row["total"] or 0) if row else 0
+
+
+def _count_stress_images(conn) -> int:
+    marker = f'%"{STRESS_TAG}"%'
+    row = conn.execute(
+        "SELECT COUNT(1) AS total FROM images WHERE deleted_at IS NULL AND tags_json LIKE ?",
+        (marker,),
+    ).fetchone()
+    return int(row["total"] or 0) if row else 0
+
+
+def _list_pending_stress_requests(conn) -> List[str]:
+    marker = f'%"{STRESS_TAG}"%'
+    rows = conn.execute(
+        "SELECT uuid FROM upload_requests WHERE tags_json LIKE ?",
+        (marker,),
+    ).fetchall()
+    return [row["uuid"] for row in rows]
+
+
+def _list_stress_images(conn) -> List[Dict[str, Any]]:
+    marker = f'%"{STRESS_TAG}"%'
+    rows = conn.execute(
+        """
+        SELECT uuid, stored_path, thumb_path, ext, deleted_at
+        FROM images
+        WHERE deleted_at IS NULL AND tags_json LIKE ?
+        """,
+        (marker,),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def _cleanup_pending_stress_requests(conn) -> int:
+    marker = f'%"{STRESS_TAG}"%'
+    rows = conn.execute(
+        "SELECT uuid FROM upload_requests WHERE tags_json LIKE ?",
+        (marker,),
+    ).fetchall()
+    removed = 0
+    for row in rows:
+        uuid_value = row["uuid"]
+        for ext in set(config.ALLOWED_MIME.values()):
+            raw_path = config.RAW_DIR / f"{uuid_value}{ext}"
+            if raw_path.exists():
+                try:
+                    storage.move_to_trash(raw_path, raw_path.name)
+                except Exception:
+                    raw_path.unlink(missing_ok=True)
+        conn.execute("DELETE FROM upload_requests WHERE uuid=?", (uuid_value,))
+        removed += 1
+    return removed
+
+
+def _cleanup_stress_images(conn) -> int:
+    marker = f'%"{STRESS_TAG}"%'
+    rows = conn.execute(
+        """
+        SELECT uuid, stored_path, thumb_path, ext, deleted_at
+        FROM images
+        WHERE deleted_at IS NULL AND tags_json LIKE ?
+        """,
+        (marker,),
+    ).fetchall()
+    deleted = 0
+    for row in rows:
+        if row["deleted_at"]:
+            continue
+        uuid_value = row["uuid"]
+        raw_path = config.STORAGE / row["stored_path"] if row["stored_path"] else None
+        trash_path = ""
+        ext = row["ext"] or ""
+        if raw_path and raw_path.exists():
+            try:
+                trash_path = str(
+                    storage.move_to_trash(raw_path, f"{uuid_value}{ext}").relative_to(config.STORAGE)
+                )
+            except Exception:
+                raw_path.unlink(missing_ok=True)
+        thumb_path = row["thumb_path"]
+        if thumb_path:
+            try:
+                (config.STORAGE / thumb_path).unlink(missing_ok=True)
+            except Exception:
+                pass
+        now = datetime.datetime.utcnow()
+        purge_after = now + datetime.timedelta(days=config.TRASH_RETENTION_DAYS)
+        conn.execute(
+            """
+            UPDATE images
+            SET deleted_at=?, trash_path=?, purge_after=?, updated_at=CURRENT_TIMESTAMP
+            WHERE uuid=?
+            """,
+            (now.isoformat(), trash_path, purge_after.isoformat(), uuid_value),
+        )
+        deleted += 1
+    return deleted
+
+
+def _delete_pending_stress_request(uuid_value: str) -> None:
+    for ext in set(config.ALLOWED_MIME.values()):
+        raw_path = config.RAW_DIR / f"{uuid_value}{ext}"
+        if raw_path.exists():
+            try:
+                storage.move_to_trash(raw_path, raw_path.name)
+            except Exception:
+                raw_path.unlink(missing_ok=True)
+    with db.transaction() as conn:
+        conn.execute("DELETE FROM upload_requests WHERE uuid=?", (uuid_value,))
+
+
+def _delete_stress_image_row(row: Dict[str, Any]) -> None:
+    uuid_value = row.get("uuid")
+    if not uuid_value:
+        return
+    raw_path = config.STORAGE / row["stored_path"] if row.get("stored_path") else None
+    trash_path = ""
+    ext = row.get("ext") or ""
+    if raw_path and raw_path.exists():
+        try:
+            trash_path = str(storage.move_to_trash(raw_path, f"{uuid_value}{ext}").relative_to(config.STORAGE))
+        except Exception:
+            raw_path.unlink(missing_ok=True)
+    thumb_path = row.get("thumb_path")
+    if thumb_path:
+        try:
+            (config.STORAGE / thumb_path).unlink(missing_ok=True)
+        except Exception:
+            pass
+    now = datetime.datetime.utcnow()
+    purge_after = now + datetime.timedelta(days=config.TRASH_RETENTION_DAYS)
+    with db.transaction() as conn:
+        conn.execute(
+            """
+            UPDATE images
+            SET deleted_at=?, trash_path=?, purge_after=?, updated_at=CURRENT_TIMESTAMP
+            WHERE uuid=?
+            """,
+            (now.isoformat(), trash_path, purge_after.isoformat(), uuid_value),
+        )
+
+
+def _run_stress_cleanup_task(task_id: str) -> None:
+    deleted = 0
+    pending_removed = 0
+    try:
+        db.ensure_schema()
+        with db.connect() as conn:
+            pending = _list_pending_stress_requests(conn)
+            images = _list_stress_images(conn)
+        total = len(pending) + len(images)
+        _update_stress_task(
+            task_id,
+            stage="deleting",
+            total=total,
+            done=0,
+            deleted=0,
+            pending_removed=0,
+            message="清理中",
+        )
+        for uuid_value in pending:
+            _delete_pending_stress_request(uuid_value)
+            pending_removed += 1
+            _update_stress_task(
+                task_id,
+                done=deleted + pending_removed,
+                pending_removed=pending_removed,
+                deleted=deleted,
+                message=f"已删除 {deleted} 张，清理待处理 {pending_removed} 张",
+            )
+        for row in images:
+            _delete_stress_image_row(row)
+            deleted += 1
+            _update_stress_task(
+                task_id,
+                done=deleted + pending_removed,
+                pending_removed=pending_removed,
+                deleted=deleted,
+                message=f"已删除 {deleted} 张，清理待处理 {pending_removed} 张",
+            )
+        if deleted or pending_removed:
+            _touch_rebuild_flag("stress_cleanup")
+        _update_stress_task(
+            task_id,
+            stage="completed",
+            message=f"已删除 {deleted} 张，清理待处理 {pending_removed} 张",
+        )
+    except Exception as exc:  # noqa: BLE001
+        _update_stress_task(task_id, stage="failed", message=f"清理失败: {exc}")
 
 
 def _parse_upload_form() -> Tuple[Optional[dict], Optional[str]]:
@@ -449,6 +759,178 @@ def admin_upload_status():
     resp = jsonify({"ok": True, **status})
     resp.headers["Cache-Control"] = "no-store, max-age=0"
     return resp
+
+
+@bp.post("/upload/admin/stress/generate")
+def admin_stress_generate():
+    user = _require_admin()
+    if not user:
+        return _json_error("未授权", 401)
+    if storage.upload_paused():
+        return _json_error("上传已暂停：磁盘保护", 503)
+    if not storage.disk_has_space(config.STORAGE):
+        return _json_error("磁盘空间不足，已暂停上传", 503)
+
+    owner_id = _get_user_id(user)
+    if not owner_id:
+        return _json_error("管理员账号不存在", 500)
+
+    payload = request.get_json(silent=True) or {}
+    index = _parse_positive_int(payload.get("index"))
+    total = _parse_positive_int(payload.get("total"))
+    if total and index and index > total:
+        total = index
+    title = _format_stress_title(index, total)
+    description = _format_stress_description(index, total)
+
+    upload_uuid = uuid.uuid4().hex
+    tmp_path = config.UPLOAD_TMP / f"{upload_uuid}.part"
+    try:
+        image_bytes, width, height = _generate_stress_image()
+        bytes_written, sha256 = storage.write_stream_to_tmp(io.BytesIO(image_bytes), tmp_path)
+    except ValueError as exc:
+        storage.move_to_quarantine(tmp_path, f"size_error: {exc}")
+        return _json_error(str(exc), 413)
+    except Exception as exc:  # noqa: BLE001
+        storage.move_to_quarantine(tmp_path, f"write_error: {exc}")
+        return _json_error("写入失败", 500)
+
+    mime = "image/png"
+    ext = _allowed_extension_from_mime(mime) or ".png"
+    if ext not in config.ALLOWED_MIME.values():
+        storage.move_to_quarantine(tmp_path, "stress_ext_not_allowed")
+        return _json_error("不支持的文件类型")
+
+    try:
+        with db.transaction() as conn:
+            conn.execute(
+                """
+                INSERT INTO upload_requests (uuid, owner_user_id, title, description, tags_json, collection_override)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    upload_uuid,
+                    owner_id,
+                    title,
+                    description,
+                    json.dumps([STRESS_TAG], ensure_ascii=False),
+                    None,
+                ),
+            )
+    except Exception:  # noqa: BLE001
+        storage.move_to_quarantine(tmp_path, "meta_error")
+        return _json_error("记录上传信息失败", 500)
+
+    raw_name = f"{upload_uuid}{ext}"
+    raw_path = config.RAW_DIR / raw_name
+    try:
+        storage.atomic_move(tmp_path, raw_path)
+    except Exception as exc:  # noqa: BLE001
+        storage.move_to_quarantine(tmp_path, f"move_error: {exc}")
+        with db.transaction() as conn:
+            conn.execute("DELETE FROM upload_requests WHERE uuid=?", (upload_uuid,))
+        return _json_error("提交失败", 500)
+
+    try:
+        db.insert_audit("admin_stress_generate", upload_uuid, f"user={user}")
+    except Exception:
+        pass
+
+    return jsonify(
+        {
+            "ok": True,
+            "uuid": upload_uuid,
+            "bytes": bytes_written,
+            "sha256": sha256,
+            "mime": mime,
+            "width": width,
+            "height": height,
+            "index": index,
+            "total": total,
+        }
+    ), 201
+
+
+@bp.post("/upload/admin/stress/cleanup/start")
+def admin_stress_cleanup_start():
+    user = _require_admin()
+    if not user:
+        return _json_error("未授权", 401)
+    db.ensure_schema()
+    with db.connect() as conn:
+        total = _count_pending_stress_requests(conn) + _count_stress_images(conn)
+    task = _create_stress_task(total)
+    if total <= 0:
+        _update_stress_task(task["task_id"], stage="completed", message="没有可清理的压测图片")
+        return jsonify(
+            {
+                "ok": True,
+                "task_id": task["task_id"],
+                "total": 0,
+                "stage": "completed",
+                "message": "没有可清理的压测图片",
+            }
+        )
+    _update_stress_task(task["task_id"], stage="deleting", message="清理中")
+    thread = threading.Thread(target=_run_stress_cleanup_task, args=(task["task_id"],), daemon=True)
+    thread.start()
+    return jsonify(
+        {
+            "ok": True,
+            "task_id": task["task_id"],
+            "total": int(total),
+            "stage": "deleting",
+        }
+    )
+
+
+@bp.get("/upload/admin/stress/cleanup/status")
+def admin_stress_cleanup_status():
+    user = _require_admin()
+    if not user:
+        return _json_error("未授权", 401)
+    task_id = str(request.args.get("task_id") or "").strip()
+    task = _get_stress_task(task_id)
+    if not task:
+        return _json_error("任务不存在", 404)
+    total = int(task.get("total") or 0)
+    done = int(task.get("done") or 0)
+    percent = 0
+    if total > 0:
+        percent = min(100, max(0, round(done * 100 / total)))
+    resp = jsonify(
+        {
+            "ok": True,
+            "task_id": task_id,
+            "stage": task.get("stage") or "queued",
+            "total": total,
+            "done": done,
+            "percent": percent,
+            "message": task.get("message") or "",
+            "deleted": int(task.get("deleted") or 0),
+            "pending_removed": int(task.get("pending_removed") or 0),
+        }
+    )
+    resp.headers["Cache-Control"] = "no-store, max-age=0"
+    return resp
+
+
+@bp.post("/upload/admin/stress/cleanup")
+def admin_stress_cleanup():
+    user = _require_admin()
+    if not user:
+        return _json_error("未授权", 401)
+    db.ensure_schema()
+    with db.transaction() as conn:
+        pending_removed = _cleanup_pending_stress_requests(conn)
+        deleted = _cleanup_stress_images(conn)
+    if deleted or pending_removed:
+        _touch_rebuild_flag("stress_cleanup")
+    try:
+        db.insert_audit("admin_stress_cleanup", "", f"user={user}")
+    except Exception:
+        pass
+    return jsonify({"ok": True, "deleted": deleted, "pending_removed": pending_removed})
 
 
 @bp.get("/upload/admin/images")

@@ -16,6 +16,11 @@ from . import tagging
 
 bp = Blueprint("user", __name__)
 
+HOME_DEFAULT_LIMIT = 40
+HOME_MAX_LIMIT = 80
+HOME_CHUNK_FACTOR = 3
+HOME_MAX_PAGES = 8
+
 
 def _serializer() -> URLSafeTimedSerializer:
     return URLSafeTimedSerializer(config.USER_SECRET, salt="gallery-user")
@@ -211,6 +216,160 @@ def _build_image_item(
     return item
 
 
+def _parse_limit(raw: Optional[str], default: int, min_value: int, max_value: int) -> int:
+    try:
+        value = int(str(raw or "").strip())
+    except (TypeError, ValueError):
+        return default
+    if value < min_value:
+        return min_value
+    return min(value, max_value)
+
+
+def _parse_home_cursor(raw: str) -> Optional[Tuple[str, int]]:
+    text = str(raw or "").strip()
+    if not text:
+        return None
+    if "|" not in text:
+        return None
+    created_at, id_part = text.split("|", 1)
+    created_at = created_at.strip()
+    if not created_at:
+        return None
+    try:
+        image_id = int(id_part.strip())
+    except (TypeError, ValueError):
+        return None
+    return created_at, image_id
+
+
+def _cursor_from_row(row: dict) -> Optional[str]:
+    created_at = row.get("created_at")
+    image_id = row.get("id")
+    if not created_at or image_id is None:
+        return None
+    return f"{created_at}|{int(image_id)}"
+
+
+def _build_tag_maps() -> Tuple[dict, dict, dict]:
+    tags_meta, _ = tagging.load_tags_config()
+    tag_types_meta, tag_types_order = tagging.load_tag_types_config()
+    alias_map = tagging.build_alias_map(tags_meta)
+    tag_slug_map = {
+        tag: (info.get("slug") or tagging.safe_tag_slug(tag))
+        for tag, info in tags_meta.items()
+        if not info.get("alias_to")
+    }
+    default_tag_type = tagging.default_tag_type(tag_types_meta, tag_types_order)
+    tag_type_styles: dict = {}
+    ordered_types = (tag_types_order or []) + sorted(tag_types_meta.keys())
+    seen_types = set()
+    for type_id in ordered_types:
+        if type_id in seen_types:
+            continue
+        seen_types.add(type_id)
+        info = tag_types_meta.get(type_id) or {}
+        color = str(info.get("color") or "#7b8794")
+        style = static_site._tag_style(color)
+        tag_type_styles[type_id] = {
+            "type": type_id,
+            "label": info.get("label") or type_id,
+            "color": color,
+            "style": style["style"],
+        }
+    default_style = tag_type_styles.get(default_tag_type) or static_site._tag_style("#7b8794")
+    tag_style_map: dict = {}
+    for tag, info in tags_meta.items():
+        canonical = tagging.normalize_tag(info.get("alias_to") or "") or tag
+        canonical_info = tags_meta.get(canonical) or info
+        type_id = canonical_info.get("type") or default_tag_type
+        style_info = tag_type_styles.get(type_id) or default_style
+        tag_style_map[tag] = style_info.get("style", "")
+    return alias_map, tag_slug_map, tag_style_map
+
+
+def _build_collection_lookup(collections_meta: dict) -> dict:
+    lookup: dict = {}
+    for key, info in collections_meta.items():
+        for uid in info.get("uuids", set()) or []:
+            lookup[str(uid).lower()] = key
+    return lookup
+
+
+def _resolve_collection_cached(
+    row_dict: dict,
+    collection_lookup: dict,
+    default_collection: str,
+) -> str:
+    override = row_dict.get("collection_override")
+    if override:
+        return str(override)
+    uuid = str(row_dict.get("uuid") or "").lower()
+    return collection_lookup.get(uuid, default_collection)
+
+
+def _build_home_item(
+    row_dict: dict,
+    alias_map: dict,
+    tag_slug_map: dict,
+    tag_style_map: dict,
+    collection_lookup: dict,
+    default_collection: str,
+    collections_meta: dict,
+) -> dict:
+    uuid = row_dict.get("uuid") or ""
+    image_id = row_dict.get("id")
+    width = row_dict.get("width")
+    height = row_dict.get("height")
+    tags = tagging.parse_tags_json(row_dict.get("tags_json"), alias_map, drop_unknown=True)
+    tag_items = [
+        {
+            "tag": tag,
+            "slug": tag_slug_map.get(tag, tagging.safe_tag_slug(tag)),
+            "style": tag_style_map.get(tag, ""),
+        }
+        for tag in tags
+    ]
+    collection = row_dict.get("collection") or _resolve_collection_cached(
+        row_dict,
+        collection_lookup,
+        default_collection,
+    )
+    collection_title = collections_meta.get(collection, {}).get("title", collection)
+    orientation = row_dict.get("orientation") or static_site.classify_orientation(
+        int(width) if width else None,
+        int(height) if height else None,
+    )
+    size_bucket = row_dict.get("size_bucket") or static_site.size_bucket(
+        int(width) if width else None,
+        int(height) if height else None,
+    )
+    thumb_path_value = row_dict.get("thumb_path")
+    thumb_name = Path(thumb_path_value).name if thumb_path_value else ""
+    return {
+        "id": int(image_id) if image_id is not None else None,
+        "uuid": uuid,
+        "detail_path": static_site.image_detail_path(image_id, uuid),
+        "title": row_dict.get("title_override")
+        or static_site.simple_title(row_dict.get("original_name") or ""),
+        "description": row_dict.get("description") or "",
+        "tags": tag_items,
+        "collection": collection,
+        "collection_title": collection_title,
+        "raw_filename": f"{uuid}{row_dict.get('ext') or ''}",
+        "thumb_filename": thumb_name,
+        "bytes_human": static_site.human_bytes(int(row_dict.get("bytes") or 0)),
+        "width": width,
+        "height": height,
+        "thumb_width": row_dict.get("thumb_width"),
+        "thumb_height": row_dict.get("thumb_height"),
+        "dominant_color": row_dict.get("dominant_color"),
+        "created_at": row_dict.get("created_at"),
+        "orientation": orientation,
+        "size_bucket": size_bucket,
+    }
+
+
 def _parse_upload_form() -> Tuple[Optional[dict], Optional[str]]:
     title = str(request.form.get("title") or "").strip()
     description = str(request.form.get("description") or "").strip()
@@ -397,6 +556,118 @@ def _load_collections_list() -> Tuple[List[dict], str]:
             }
         )
     return items, default_collection
+
+
+@bp.get("/api/home/images")
+def home_images():
+    db.ensure_schema()
+    limit = _parse_limit(request.args.get("limit"), HOME_DEFAULT_LIMIT, 1, HOME_MAX_LIMIT)
+    cursor = _parse_home_cursor(request.args.get("cursor") or "")
+    if request.args.get("cursor") and not cursor:
+        return _json_error("参数错误", 400)
+
+    collections_meta, default_collection, _ = static_site.load_collections_config()
+    collection_lookup = _build_collection_lookup(collections_meta)
+    collection_filter = str(request.args.get("collection") or "all").strip().lower()
+    if collection_filter != "all" and collection_filter not in collections_meta:
+        return _json_error("分区不存在", 400)
+
+    orientation_filter = str(request.args.get("orientation") or "all").strip().lower()
+    allowed_orientations = {"all", "portrait", "landscape", "square", "unknown"}
+    if orientation_filter not in allowed_orientations:
+        return _json_error("参数错误", 400)
+
+    size_filter = str(request.args.get("size") or "all").strip().lower()
+    allowed_sizes = {"all", "ultra", "large", "medium", "compact", "unknown"}
+    if size_filter not in allowed_sizes:
+        return _json_error("参数错误", 400)
+
+    alias_map, tag_slug_map, tag_style_map = _build_tag_maps()
+
+    items: List[dict] = []
+    next_cursor: Optional[str] = None
+    has_more = False
+    chunk_size = min(limit * HOME_CHUNK_FACTOR, 200)
+    current_cursor = cursor
+    last_row: Optional[dict] = None
+
+    with db.connect() as conn:
+        for _ in range(HOME_MAX_PAGES):
+            params: List[object] = []
+            cursor_clause = ""
+            if current_cursor:
+                cursor_clause = "AND (created_at < ? OR (created_at = ? AND id < ?))"
+                params.extend([current_cursor[0], current_cursor[0], current_cursor[1]])
+            rows = conn.execute(
+                f"""
+                SELECT id, uuid, original_name, ext, bytes, width, height, thumb_width, thumb_height,
+                       dominant_color, created_at, thumb_path,
+                       title_override, description, tags_json, collection_override
+                FROM images
+                WHERE status IN ('processed','published')
+                  AND deleted_at IS NULL
+                  {cursor_clause}
+                ORDER BY created_at DESC, id DESC
+                LIMIT ?
+                """,
+                (*params, chunk_size),
+            ).fetchall()
+            if not rows:
+                break
+
+            processed_in_batch = 0
+            stop = False
+            for row in rows:
+                processed_in_batch += 1
+                row_dict = dict(row)
+                last_row = row_dict
+                collection = _resolve_collection_cached(row_dict, collection_lookup, default_collection)
+                if collection_filter != "all" and collection != collection_filter:
+                    continue
+                orientation = static_site.classify_orientation(
+                    int(row_dict.get("width")) if row_dict.get("width") else None,
+                    int(row_dict.get("height")) if row_dict.get("height") else None,
+                )
+                if orientation_filter != "all" and orientation != orientation_filter:
+                    continue
+                size_bucket = static_site.size_bucket(
+                    int(row_dict.get("width")) if row_dict.get("width") else None,
+                    int(row_dict.get("height")) if row_dict.get("height") else None,
+                )
+                if size_filter != "all" and size_bucket != size_filter:
+                    continue
+                row_dict["collection"] = collection
+                row_dict["orientation"] = orientation
+                row_dict["size_bucket"] = size_bucket
+                item = _build_home_item(
+                    row_dict,
+                    alias_map,
+                    tag_slug_map,
+                    tag_style_map,
+                    collection_lookup,
+                    default_collection,
+                    collections_meta,
+                )
+                items.append(item)
+                if len(items) >= limit:
+                    has_more = processed_in_batch < len(rows) or len(rows) == chunk_size
+                    next_cursor = _cursor_from_row(row_dict)
+                    stop = True
+                    break
+
+            if stop:
+                break
+            if len(rows) < chunk_size:
+                break
+            if not last_row:
+                break
+            current_cursor = (str(last_row.get("created_at") or ""), int(last_row.get("id") or 0))
+        else:
+            if last_row:
+                next_cursor = _cursor_from_row(last_row)
+                has_more = True
+
+    return jsonify({"ok": True, "items": items, "next_cursor": next_cursor, "has_more": has_more})
 
 
 @bp.get("/api/favorites")

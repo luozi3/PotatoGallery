@@ -1,92 +1,291 @@
 (function () {
   if (window.__galleryInit) return;
   const gallery = document.querySelector('[data-gallery-grid]');
-  const cards = gallery ? Array.from(gallery.querySelectorAll('[data-image-card]')) : [];
-  const empty = gallery ? gallery.querySelector('[data-empty-state]') : null;
+  if (!gallery) return;
+
+  const empty = gallery.querySelector('[data-empty-state]');
   const tabs = Array.from(document.querySelectorAll('[data-collection-tab]'));
   const pills = Array.from(document.querySelectorAll('[data-filter-pill]'));
   const jumps = Array.from(document.querySelectorAll('[data-jump-collection]'));
   const summary = document.querySelector('[data-filter-summary]');
   const summaryList = summary ? summary.querySelector('[data-filter-summary-list]') : null;
   const summaryClear = summary ? summary.querySelector('[data-filter-summary-clear]') : null;
+  const masonry = window.GalleryMasonry ? window.GalleryMasonry.init(gallery) : null;
 
-  const masonryGrids = Array.from(document.querySelectorAll('[data-masonry]'));
-  const MASONRY_READY_TIMEOUT = 1200;
+  const ORIENTATION_LABELS = {
+    portrait: '竖屏',
+    landscape: '横屏',
+    square: '方形',
+    unknown: '未标',
+  };
+  const SIZE_LABELS = {
+    ultra: '超清',
+    large: '高清',
+    medium: '中等',
+    compact: '轻量',
+    unknown: '未标',
+  };
 
-  function waitForGridImages(grid) {
-    const images = Array.from(grid.querySelectorAll('img'));
-    if (!images.length) return Promise.resolve();
-    let remaining = images.length;
-    let resolved = false;
-    return new Promise((resolve) => {
-      const done = () => {
-        if (resolved) return;
-        resolved = true;
-        resolve();
-      };
-      const tick = () => {
-        remaining -= 1;
-        if (remaining <= 0) done();
-      };
-      images.forEach((img) => {
-        if (img.complete) {
-          tick();
-          return;
-        }
-        img.addEventListener('load', tick, { once: true });
-        img.addEventListener('error', tick, { once: true });
-      });
-      window.setTimeout(done, MASONRY_READY_TIMEOUT);
-    });
-  }
-
-  function relayoutMasonry() {
-    masonryGrids.forEach((grid) => {
-      const rowHeight = parseInt(getComputedStyle(grid).getPropertyValue('grid-auto-rows')) || 8;
-      const rowGap = parseInt(getComputedStyle(grid).getPropertyValue('grid-row-gap')) || 0;
-      const items = Array.from(grid.querySelectorAll('[data-masonry-item]'));
-      items.forEach((item) => {
-        if (item.classList.contains('hidden')) {
-          return;
-        }
-        // Reset span before measuring to avoid using an already-stretched height.
-        item.style.setProperty('--row-span', '1');
-        const height = item.scrollHeight || item.getBoundingClientRect().height;
-        const span = Math.max(1, Math.ceil((height + rowGap) / (rowHeight + rowGap)));
-        item.style.setProperty('--row-span', span);
-      });
-    });
-  }
-
-  if (masonryGrids.length) {
-    const observer = 'ResizeObserver' in window ? new ResizeObserver(() => relayoutMasonry()) : null;
-    masonryGrids.forEach((grid) => {
-      grid.querySelectorAll('img').forEach((img) => {
-        img.addEventListener('load', relayoutMasonry);
-      });
-      if (observer) {
-        grid.querySelectorAll('[data-masonry-item]').forEach((item) => observer.observe(item));
-      }
-    });
-    window.addEventListener('resize', () => {
-      window.requestAnimationFrame(relayoutMasonry);
-    });
-    window.requestAnimationFrame(relayoutMasonry);
-    masonryGrids.forEach((grid) => {
-      waitForGridImages(grid).then(() => {
-        window.requestAnimationFrame(() => {
-          relayoutMasonry();
-          grid.classList.add('masonry-ready');
-        });
-      });
-    });
-  }
-
-  const filters = {
+  const state = {
     collection: 'all',
     orientation: 'all',
     size: 'all',
+    cursor: null,
+    hasMore: true,
+    loading: false,
   };
+  const requestState = { seq: 0 };
+  const pageLimit = parseInt(gallery.dataset.homeLimit || '40', 10) || 40;
+
+  function initStateFromDom() {
+    const cards = Array.from(gallery.querySelectorAll('[data-image-card]'));
+    const last = cards[cards.length - 1];
+    if (last && last.dataset.createdAt && last.dataset.imageId) {
+      state.cursor = `${last.dataset.createdAt}|${last.dataset.imageId}`;
+    }
+    const total = parseInt(gallery.dataset.total || '0', 10);
+    if (total && cards.length >= total) {
+      state.hasMore = false;
+    }
+  }
+
+  const sentinel = document.createElement('div');
+  sentinel.className = 'gallery-sentinel';
+  sentinel.dataset.gallerySentinel = '1';
+  gallery.insertAdjacentElement('afterend', sentinel);
+
+  const loader = document.createElement('div');
+  loader.className = 'gallery-loader';
+  loader.textContent = '加载中…';
+  loader.hidden = true;
+  sentinel.insertAdjacentElement('afterend', loader);
+
+  const errorBox = document.createElement('div');
+  errorBox.className = 'gallery-error';
+  errorBox.hidden = true;
+  const errorText = document.createElement('span');
+  errorText.textContent = '加载失败';
+  const retryButton = document.createElement('button');
+  retryButton.type = 'button';
+  retryButton.className = 'btn ghost';
+  retryButton.textContent = '重试';
+  errorBox.append(errorText, retryButton);
+  loader.insertAdjacentElement('afterend', errorBox);
+
+  function setLoading(value) {
+    state.loading = value;
+    loader.hidden = !value;
+  }
+
+  function setError(message) {
+    if (!message) {
+      errorBox.hidden = true;
+      return;
+    }
+    errorText.textContent = message;
+    errorBox.hidden = false;
+  }
+
+  function escapeText(value) {
+    return String(value || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/\"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function createCard(item) {
+    const article = document.createElement('article');
+    article.className = 'illust-card';
+    article.dataset.imageCard = '1';
+    article.dataset.masonryItem = '1';
+    if (item.detail_path) {
+      article.dataset.cardLink = item.detail_path;
+    }
+    if (item.id) {
+      article.dataset.imageId = String(item.id);
+    }
+    if (item.created_at) {
+      article.dataset.createdAt = item.created_at;
+    }
+    article.dataset.collection = item.collection || 'all';
+    article.dataset.orientation = item.orientation || 'unknown';
+    article.dataset.size = item.size_bucket || 'unknown';
+    article.tabIndex = 0;
+    article.setAttribute('role', 'link');
+    article.setAttribute('aria-label', escapeText(item.title || ''));
+
+    const link = document.createElement('a');
+    link.className = 'thumb-link';
+    link.href = item.detail_path || '/';
+    link.setAttribute('aria-label', escapeText(item.title || ''));
+
+    const shell = document.createElement('div');
+    shell.className = 'thumb-shell';
+    const ratio = item.thumb_width && item.thumb_height ? `${item.thumb_width}/${item.thumb_height}` : '1/1';
+    shell.style.setProperty('--thumb-ratio', ratio);
+
+    const img = document.createElement('img');
+    img.className = 'thumb';
+    img.alt = item.title || '';
+    img.loading = 'lazy';
+    if (item.thumb_width) img.width = item.thumb_width;
+    if (item.thumb_height) img.height = item.thumb_height;
+    img.src = item.thumb_filename ? `/thumb/${item.thumb_filename}` : '';
+    if (item.raw_filename) {
+      img.onerror = () => {
+        img.onerror = null;
+        img.src = `/raw/${item.raw_filename}`;
+      };
+    }
+
+    shell.appendChild(img);
+    link.appendChild(shell);
+    article.appendChild(link);
+
+    const body = document.createElement('div');
+    body.className = 'card-body';
+
+    const title = document.createElement('div');
+    title.className = 'title';
+    title.textContent = item.title || '';
+    body.appendChild(title);
+
+    if (item.description) {
+      const desc = document.createElement('p');
+      desc.className = 'desc';
+      desc.textContent = item.description;
+      body.appendChild(desc);
+    }
+
+    const meta = document.createElement('div');
+    meta.className = 'meta';
+    const sizeText = item.width && item.height ? `${item.width}×${item.height}` : '-';
+    const bytesText = item.bytes_human || '-';
+    const collectionText = item.collection_title || item.collection || '-';
+    [sizeText, bytesText, collectionText].forEach((text) => {
+      const span = document.createElement('span');
+      span.textContent = text;
+      meta.appendChild(span);
+    });
+    body.appendChild(meta);
+
+    const tags = document.createElement('div');
+    tags.className = 'tags';
+    const orientationTag = document.createElement('span');
+    orientationTag.className = 'tag accent';
+    orientationTag.textContent = ORIENTATION_LABELS[item.orientation] || ORIENTATION_LABELS.unknown;
+    tags.appendChild(orientationTag);
+
+    const sizeTag = document.createElement('span');
+    sizeTag.className = 'tag';
+    sizeTag.textContent = SIZE_LABELS[item.size_bucket] || SIZE_LABELS.unknown;
+    tags.appendChild(sizeTag);
+
+    (item.tags || []).slice(0, 3).forEach((tag) => {
+      const tagLink = document.createElement('a');
+      tagLink.className = 'tag ghost';
+      tagLink.href = `/tags/${encodeURIComponent(tag.slug || tag.tag || '')}/`;
+      if (tag.style) tagLink.setAttribute('style', tag.style);
+      tagLink.textContent = `#${tag.tag || ''}`;
+      tags.appendChild(tagLink);
+    });
+
+    body.appendChild(tags);
+    article.appendChild(body);
+    return article;
+  }
+
+  function updateEmptyState() {
+    if (!empty) return;
+    const cards = gallery.querySelectorAll('[data-image-card]');
+    empty.classList.toggle('show', cards.length === 0 && !state.loading);
+  }
+
+  function appendItems(items) {
+    if (!items.length) return;
+    const fragment = document.createDocumentFragment();
+    const newCards = [];
+    items.forEach((item) => {
+      const card = createCard(item);
+      newCards.push(card);
+      fragment.appendChild(card);
+    });
+    gallery.appendChild(fragment);
+    if (window.GalleryCardLinks) {
+      window.GalleryCardLinks.init(newCards);
+    }
+    if (masonry && masonry.refresh) {
+      masonry.refresh({ soft: true, items: newCards });
+    }
+  }
+
+  function clearCards() {
+    gallery.querySelectorAll('[data-image-card]').forEach((node) => node.remove());
+    updateEmptyState();
+  }
+
+  function buildQuery(cursor) {
+    const params = new URLSearchParams();
+    params.set('limit', String(pageLimit));
+    if (cursor) {
+      params.set('cursor', cursor);
+    }
+    if (state.collection !== 'all') {
+      params.set('collection', state.collection);
+    }
+    if (state.orientation !== 'all') {
+      params.set('orientation', state.orientation);
+    }
+    if (state.size !== 'all') {
+      params.set('size', state.size);
+    }
+    return params.toString();
+  }
+
+  function resolveCursorFromItem(item) {
+    if (!item || !item.created_at || !item.id) return null;
+    return `${item.created_at}|${item.id}`;
+  }
+
+  function loadNextPage(reset = false) {
+    if (state.loading) return;
+    if (!state.hasMore && !reset) return;
+    setError('');
+    if (reset) {
+      clearCards();
+      state.cursor = null;
+      state.hasMore = true;
+    }
+    setLoading(true);
+    updateEmptyState();
+    const requestId = (requestState.seq += 1);
+    const query = buildQuery(reset ? null : state.cursor);
+    fetch(`/api/home/images?${query}`)
+      .then((resp) => {
+        if (!resp.ok) throw new Error('bad response');
+        return resp.json();
+      })
+      .then((data) => {
+        if (requestId !== requestState.seq) return;
+        const items = Array.isArray(data.items) ? data.items : [];
+        appendItems(items);
+        const nextCursor = data.next_cursor || resolveCursorFromItem(items[items.length - 1]);
+        state.cursor = nextCursor || state.cursor;
+        state.hasMore = Boolean(data.has_more) && Boolean(nextCursor);
+        setLoading(false);
+        updateEmptyState();
+      })
+      .catch(() => {
+        if (requestId !== requestState.seq) return;
+        setLoading(false);
+        setError('加载失败');
+        updateEmptyState();
+      });
+  }
+
+  retryButton.addEventListener('click', () => loadNextPage(false));
 
   function setActive(buttons, activeEl) {
     buttons.forEach((btn) => {
@@ -98,28 +297,6 @@
         btn.setAttribute('aria-pressed', btn === activeEl);
       }
     });
-  }
-
-  function applyFilters() {
-    if (!gallery) return;
-    let visible = 0;
-    cards.forEach((card) => {
-      const matchCollection = filters.collection === 'all' || card.dataset.collection === filters.collection;
-      const matchOrientation =
-        filters.orientation === 'all' || card.dataset.orientation === filters.orientation;
-      const matchSize = filters.size === 'all' || card.dataset.size === filters.size;
-      const show = matchCollection && matchOrientation && matchSize;
-      card.classList.toggle('hidden', !show);
-      if (show) {
-        card.style.setProperty('--row-span', '1');
-      }
-      if (show) visible += 1;
-    });
-    if (empty) {
-      empty.classList.toggle('show', visible === 0);
-    }
-    window.requestAnimationFrame(() => window.requestAnimationFrame(relayoutMasonry));
-    updateFilterSummary();
   }
 
   function getButtonLabel(button) {
@@ -164,15 +341,20 @@
     summaryList.innerHTML = active
       .map(
         (item) =>
-          `<button class="filter-chip" type="button" data-filter-chip="${item.filter}" aria-label="移除筛选 ${item.label}">${item.label} ×</button>`
+          `<button class=\"filter-chip\" type=\"button\" data-filter-chip=\"${item.filter}\" aria-label=\"移除筛选 ${item.label}\">${item.label} ×</button>`
       )
       .join('');
     summary.hidden = active.length === 0;
   }
 
+  function applyFilters() {
+    updateFilterSummary();
+    loadNextPage(true);
+  }
+
   tabs.forEach((tab) => {
     tab.addEventListener('click', () => {
-      filters.collection = tab.dataset.collection || 'all';
+      state.collection = tab.dataset.collection || 'all';
       setActive(tabs, tab);
       applyFilters();
     });
@@ -182,7 +364,7 @@
     pill.addEventListener('click', () => {
       const filter = pill.dataset.filter;
       if (!filter) return;
-      filters[filter] = pill.dataset.value || 'all';
+      state[filter] = pill.dataset.value || 'all';
       const siblings = pills.filter((p) => p.dataset.filter === filter);
       setActive(siblings, pill);
       applyFilters();
@@ -221,6 +403,21 @@
     });
   });
 
-  applyFilters();
+  const observer = new IntersectionObserver(
+    (entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) {
+        loadNextPage(false);
+      }
+    },
+    { rootMargin: '200px 0px' }
+  );
+  observer.observe(sentinel);
+
+  initStateFromDom();
+  updateFilterSummary();
+  updateEmptyState();
+  if (masonry && masonry.refresh) {
+    masonry.refresh();
+  }
   window.__galleryInit = true;
 })();

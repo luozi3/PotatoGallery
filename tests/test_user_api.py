@@ -193,6 +193,78 @@ def test_user_upload_status_progress(tmp_path):
     assert payload["stage"] == "published"
 
 
+def test_home_api_pagination_and_filters(tmp_path):
+    seed_test_root(tmp_path)
+    modules = setup_env(tmp_path)
+    worker = modules["app.worker"]
+    upload_service = modules["app.upload_service"]
+    config = modules["app.config"]
+    db = modules["app.db"]
+
+    data_dir = config.STATIC / "data"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    tags_cfg = {"tags": [{"tag": "猫咪", "slug": "cat"}]}
+    (data_dir / "tags.json").write_text(json.dumps(tags_cfg, ensure_ascii=False), encoding="utf-8")
+    collections_cfg = {
+        "default_collection": "main",
+        "collections": [
+            {"slug": "main", "title": "主分区", "uuids": ["a" * 32, "c" * 32]},
+            {"slug": "alt", "title": "副分区", "uuids": ["b" * 32]},
+        ],
+    }
+    (data_dir / "collections.json").write_text(
+        json.dumps(collections_cfg, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    raw_a = config.RAW_DIR / ("a" * 32 + ".png")
+    raw_b = config.RAW_DIR / ("b" * 32 + ".png")
+    raw_c = config.RAW_DIR / ("c" * 32 + ".png")
+    make_image(raw_a, size=(600, 400))
+    make_image(raw_b, size=(400, 600))
+    make_image(raw_c, size=(500, 500))
+    assert worker.process_file(raw_a)
+    assert worker.process_file(raw_b)
+    assert worker.process_file(raw_c)
+
+    with db.connect() as conn:
+        conn.execute("UPDATE images SET tags_json=? WHERE uuid=?", (json.dumps(["猫咪"], ensure_ascii=False), "a" * 32))
+        conn.execute("UPDATE images SET tags_json=? WHERE uuid=?", (json.dumps(["猫咪"], ensure_ascii=False), "b" * 32))
+        conn.execute("UPDATE images SET tags_json=? WHERE uuid=?", (json.dumps(["猫咪"], ensure_ascii=False), "c" * 32))
+
+    app = upload_service.create_app()
+    client = app.test_client()
+    base_url = "https://example.com"
+    headers = {"X-Forwarded-Proto": "https"}
+
+    resp = client.get("/api/home/images?limit=2", headers=headers, base_url=base_url)
+    assert resp.status_code == 200
+    payload = resp.get_json()
+    assert payload["ok"] is True
+    assert len(payload["items"]) == 2
+    assert payload["has_more"] is True
+    cursor = payload["next_cursor"]
+    assert cursor
+    assert payload["items"][0]["id"] > payload["items"][1]["id"]
+
+    resp = client.get(f"/api/home/images?limit=2&cursor={cursor}", headers=headers, base_url=base_url)
+    payload = resp.get_json()
+    assert len(payload["items"]) == 1
+    assert payload["has_more"] is False
+
+    resp = client.get("/api/home/images?orientation=portrait", headers=headers, base_url=base_url)
+    payload = resp.get_json()
+    assert len(payload["items"]) == 1
+    assert payload["items"][0]["orientation"] == "portrait"
+
+    resp = client.get("/api/home/images?collection=alt", headers=headers, base_url=base_url)
+    payload = resp.get_json()
+    assert len(payload["items"]) == 1
+    assert payload["items"][0]["collection"] == "alt"
+    assert payload["items"][0]["tags"][0]["slug"] == "cat"
+    assert "--tag-color" in payload["items"][0]["tags"][0]["style"]
+
+
 def test_user_favorites_flow(tmp_path):
     seed_test_root(tmp_path)
     modules = setup_env(tmp_path)

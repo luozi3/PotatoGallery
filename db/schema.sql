@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS images (
 CREATE INDEX IF NOT EXISTS idx_images_status ON images(status);
 CREATE INDEX IF NOT EXISTS idx_images_created_at ON images(created_at);
 CREATE INDEX IF NOT EXISTS idx_images_deleted_at ON images(deleted_at);
+CREATE INDEX IF NOT EXISTS idx_images_publish_order ON images(status, deleted_at, created_at, id);
 
 
 -- 相册表

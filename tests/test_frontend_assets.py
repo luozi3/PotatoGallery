@@ -99,6 +99,30 @@ def test_sidebar_restore_back_forward_hook():
     assert "pageshow" in js
 
 
+def test_default_theme_is_light():
+    js = read_text("static/js/ui.js")
+    assert re.search(r"const initialTheme\s*=\s*savedTheme\s*\|\|\s*'light'", js)
+
+
+def test_admin_stress_controls_have_stop_retry():
+    html = read_text("static/templates/admin_upload.html.j2")
+    assert "data-admin-stress-stop" in html
+    assert "data-admin-stress-retry" in html
+
+
+def test_upload_progress_supports_retry_pause():
+    js = read_text("static/js/ui.js")
+    assert "retrying" in js
+    assert "paused" in js
+    assert "stopped" in js
+
+
+def test_admin_stress_retry_abortable_requests():
+    js = read_text("static/js/admin.js")
+    assert "AbortController" in js
+    assert "REQUEST_TIMEOUT_MS" in js
+
+
 def test_controls_use_theme_panel_background():
     css = read_text("static/styles/gallery.css")
     assert re.search(
@@ -169,6 +193,20 @@ def test_detail_page_dual_sidebar_layout_present():
         re.S,
     )
     assert ".detail-static-sidebar" in css
+
+
+def test_detail_image_fit_rules_present():
+    html = read_text("static/templates/detail.html.j2")
+    assert "data-thumb-width" in html
+    assert "data-full-width" in html
+    css = read_text("static/styles/gallery.css")
+    assert re.search(r"\.detail-media\s*\{[^}]*--detail-fit-width", css, re.S)
+    assert re.search(r"\.detail-frame\s*\{[^}]*width:\s*var\(--detail-fit-width", css, re.S)
+    assert re.search(r'\.detail-media\[data-image-mode="full"\]\s+\.detail-frame\s*\{[^}]*max-width:\s*none', css, re.S)
+    js = read_text("static/js/ui.js")
+    assert "--detail-fit-width" in js
+    assert "--detail-fit-height" in js
+    assert "applyDetailImageFit" in js
 
 
 def test_status_page_has_uptime_and_requests_cards():
@@ -366,19 +404,19 @@ def test_live2d_message_path_absolute():
 
 
 def test_masonry_relayout_uses_scrollheight():
-    js = read_text("static/js/gallery.js")
+    js = read_text("static/js/ui.js")
     assert "scrollHeight" in js
     assert "requestAnimationFrame" in js
-    assert "relayoutMasonry" in js
+    assert "relayoutGrid" in js
 
 
 def test_masonry_relayout_resets_row_span_before_measure():
-    js = read_text("static/js/gallery.js")
+    js = read_text("static/js/ui.js")
     assert "setProperty('--row-span', '1')" in js
 
 
 def test_masonry_ready_class_applied_after_layout():
-    js = read_text("static/js/gallery.js")
+    js = read_text("static/js/ui.js")
     assert "classList.add('masonry-ready')" in js
 
 
@@ -394,12 +432,52 @@ def test_masonry_ready_set_for_dynamic_pages():
 def test_masonry_helper_shared_across_pages():
     ui_js = read_text("static/js/ui.js")
     assert "GalleryMasonry" in ui_js
+    gallery_js = read_text("static/js/gallery.js")
+    assert "GalleryMasonry" in gallery_js
     search_js = read_text("static/js/search.js")
     admin_js = read_text("static/js/admin.js")
     user_js = read_text("static/js/user.js")
     assert "GalleryMasonry" in search_js
     assert "GalleryMasonry" in admin_js
     assert "GalleryMasonry" in user_js
+
+
+def test_tag_page_masonry_init():
+    js = read_text("static/js/ui.js")
+    assert "initTagPageMasonry" in js
+    assert "page-tag" in js
+    assert "data-masonry" in js
+
+
+def test_tag_editor_toggle_hooked():
+    js = read_text("static/js/ui.js")
+    assert "data-tag-editor-toggle" in js
+
+
+def test_masonry_refresh_supports_soft_items():
+    js = read_text("static/js/ui.js")
+    assert "opts.soft" in js
+    assert "opts.items" in js
+    assert "allowSoft" in js
+
+
+def test_homepage_masonry_soft_refresh_on_append():
+    js = read_text("static/js/gallery.js")
+    assert "masonry.refresh({ soft: true" in js or "masonry.refresh({soft: true" in js
+
+
+def test_back_to_top_button_present():
+    js = read_text("static/js/ui.js")
+    assert "back-to-top" in js
+    assert "scrollTo({ top: 0" in js
+
+
+def test_back_to_top_uses_upload_offset():
+    css = read_text("static/styles/gallery.css")
+    assert ".back-to-top" in css
+    assert "var(--upload-progress-offset" in css
+    js = read_text("static/js/ui.js")
+    assert "--upload-progress-offset" in js
 
 
 def test_suggest_panels_have_styles():
@@ -533,7 +611,7 @@ def test_wiki_page_uses_sidebar_layout():
 
 
 def test_masonry_ready_waits_for_images_or_timeout():
-    js = read_text("static/js/gallery.js")
+    js = read_text("static/js/ui.js")
     assert "img.complete" in js
     assert "addEventListener('error'" in js
     assert "MASONRY_READY_TIMEOUT" in js
@@ -614,6 +692,13 @@ def test_cards_have_click_targets():
     tag_html = read_text("static/templates/tag.html.j2")
     assert "data-card-link" in index_html
     assert "data-card-link" in tag_html
+
+
+def test_tag_page_editor_toggle_present():
+    html = read_text("static/templates/tag.html.j2")
+    assert "data-tag-editor-toggle" in html
+    assert "id=\"tag-editor-panel\"" in html
+    assert "data-tag-editor" in html
 
 
 def test_homepage_live2d_toggle_before_wiki_heading():

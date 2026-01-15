@@ -92,9 +92,9 @@
           </div>
         </section>
 
-        <section class="gallery" data-gallery-grid data-masonry aria-live="polite">
+        <section class="gallery" data-gallery-grid data-masonry data-home-limit="{{ home_limit or 40 }}" data-total="{{ stats.total }}" aria-live="polite">
       {% for image in images %}
-      <article class="illust-card" data-image-card data-masonry-item data-card-link="{{ image.detail_path }}" data-collection="{{ image.collection }}" data-orientation="{{ image.orientation }}" data-size="{{ image.size_bucket }}" tabindex="0" role="link" aria-label="{{ image.title }}">
+      <article class="illust-card" data-image-card data-masonry-item data-card-link="{{ image.detail_path }}" data-image-id="{{ image.id or image.short_id }}" data-created-at="{{ image.created_at or '' }}" data-collection="{{ image.collection }}" data-orientation="{{ image.orientation }}" data-size="{{ image.size_bucket }}" tabindex="0" role="link" aria-label="{{ image.title }}">
         <a class="thumb-link" href="{{ image.detail_path }}" aria-label="{{ image.title }}">
           <div class="thumb-shell" style="--thumb-ratio: {{ image.thumb_width }}/{{ image.thumb_height }};">
             <img class="thumb" src="/thumb/{{ image.thumb_filename }}" alt="{{ image.title }}" loading="lazy" width="{{ image.thumb_width }}" height="{{ image.thumb_height }}" onerror="this.onerror=null;this.src='/raw/{{ image.raw_filename }}';">

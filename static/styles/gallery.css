@@ -1612,6 +1612,8 @@ html.sidebar-collapsed body .detail-shell {
 .detail-media {
   display: grid;
   gap: 10px;
+  --detail-fit-width: 100%;
+  --detail-fit-height: auto;
 }
 
 .detail-media-actions {
@@ -1622,11 +1624,24 @@ html.sidebar-collapsed body .detail-shell {
 
 .detail-frame {
   position: relative;
-  width: 100%;
+  width: var(--detail-fit-width, 100%);
+  height: var(--detail-fit-height, auto);
+  justify-self: center;
+  align-self: start;
   border-radius: 0;
   overflow: hidden;
   border: 1px solid var(--border);
   background: var(--thumb-bg);
+}
+
+.detail-media[data-image-mode="thumb"] .detail-frame {
+  max-width: 100%;
+}
+
+.detail-media[data-image-mode="full"] .detail-frame {
+  max-width: none;
+  max-height: none;
+  justify-self: start;
 }
 
 .detail-overlay {
@@ -2281,6 +2296,26 @@ html.sidebar-collapsed body .detail-shell {
 
 .gallery[data-masonry] .illust-card {
   grid-row-end: span var(--row-span, 40);
+}
+
+.gallery-sentinel {
+  width: 100%;
+  height: 1px;
+}
+
+.gallery-loader,
+.gallery-error {
+  margin: 12px auto 0;
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.gallery-error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
 }
 
 .gallery[data-masonry] {
@@ -3230,6 +3265,22 @@ body.with-sidebar .auth-main {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.admin-switch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.admin-switch input {
+  width: auto;
+}
+
+.admin-stress-panel {
+  margin-top: 16px;
 }
 
 .admin-form-grid,
@@ -4815,6 +4866,52 @@ html.sidebar-collapsed body .wiki-shell {
 }
 }
 
+.back-to-top {
+  position: fixed;
+  right: 24px;
+  bottom: calc(24px + var(--upload-progress-offset, 0px));
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--shadow-soft);
+  opacity: 0;
+  transform: translateY(10px);
+  transition: opacity 0.22s var(--ease), transform 0.22s var(--ease), box-shadow 0.22s var(--ease), border-color 0.22s var(--ease);
+  pointer-events: none;
+  z-index: 1100;
+}
+
+.back-to-top::before {
+  content: '';
+  width: 10px;
+  height: 10px;
+  border-top: 2px solid currentColor;
+  border-right: 2px solid currentColor;
+  transform: translateY(2px) rotate(-45deg);
+}
+
+.back-to-top.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.back-to-top:hover {
+  border-color: var(--accent);
+  box-shadow: var(--shadow);
+}
+
+.back-to-top:focus-visible {
+  outline: 2px solid var(--accent-outline);
+  outline-offset: 2px;
+}
+
 .upload-progress {
   position: fixed;
   right: 24px;
@@ -4883,6 +4980,13 @@ html.sidebar-collapsed body .wiki-shell {
 }
 
 @media (max-width: 640px) {
+  .back-to-top {
+    right: 12px;
+    bottom: calc(14px + var(--upload-progress-offset, 0px));
+    width: 40px;
+    height: 40px;
+  }
+
   .upload-progress {
     right: 12px;
     left: 12px;

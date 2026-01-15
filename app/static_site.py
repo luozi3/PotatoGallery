@@ -49,6 +49,7 @@ DEFAULT_COLLECTION_META = {
         "description": "精挑细选的二次元插画，展示收藏的画风。",
     },
 }
+HOME_PAGE_LIMIT = 40
 DEFAULT_SITE_CONFIG = {
     "site_name": "PotatoGallery 插画馆",
     "site_description": "静态插画展示站点，包含原创与精选收藏。",
@@ -898,8 +899,10 @@ def build_site(
         json.dumps(manifest, ensure_ascii=False, indent=2),
     )
 
+    home_images = images_ctx[:HOME_PAGE_LIMIT]
     index_html = env.get_template("index.html.j2").render(
-        images=images_ctx,
+        images=home_images,
+        home_limit=HOME_PAGE_LIMIT,
         stats=stats,
         collections=collections_ctx,
         collections_list=collections_list,

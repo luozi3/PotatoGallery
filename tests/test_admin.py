@@ -1,4 +1,5 @@
 import json
+import time
 from uuid import uuid4
 
 from test_pipeline import make_image, seed_test_root, setup_env
@@ -140,6 +141,76 @@ def test_admin_upload_status_progress(tmp_path):
     resp = client.get(f"/upload/admin/upload/status?uuid={uuid}")
     payload = resp.get_json()
     assert payload["stage"] == "published"
+
+
+def test_admin_stress_generate_and_cleanup(tmp_path):
+    seed_test_root(tmp_path)
+    modules = setup_env(tmp_path)
+    config = modules["app.config"]
+    auth = modules["app.auth"]
+    storage = modules["app.storage"]
+    worker = modules["app.worker"]
+    db = modules["app.db"]
+    upload_service = modules["app.upload_service"]
+
+    storage.ensure_dirs()
+    auth.create_user("admin", "secret", groups=[config.ADMIN_GROUP])
+    app = upload_service.create_app()
+    client = app.test_client()
+    resp = client.post(
+        "/upload/admin/login",
+        json={"username": "admin", "password": "secret"},
+    )
+    assert resp.status_code == 200
+
+    resp = client.post("/upload/admin/stress/generate", json={"index": 1, "total": 2})
+    assert resp.status_code == 201
+    uuid_processed = resp.get_json()["uuid"]
+    resp = client.post("/upload/admin/stress/generate", json={"index": 2, "total": 2})
+    assert resp.status_code == 201
+    uuid_pending = resp.get_json()["uuid"]
+
+    raw_processed = config.RAW_DIR / f"{uuid_processed}.png"
+    raw_pending = config.RAW_DIR / f"{uuid_pending}.png"
+    assert raw_processed.exists()
+    assert raw_pending.exists()
+    with db.connect() as conn:
+        row = conn.execute(
+            "SELECT title, description FROM upload_requests WHERE uuid=?",
+            (uuid_processed,),
+        ).fetchone()
+    assert "第1/2张" in row["title"]
+    assert "第1/2张" in row["description"]
+    assert worker.process_file(raw_processed)
+
+    resp = client.post("/upload/admin/stress/cleanup/start")
+    assert resp.status_code == 200
+    payload = resp.get_json()
+    task_id = payload["task_id"]
+    status = {}
+    for _ in range(200):
+        resp = client.get(f"/upload/admin/stress/cleanup/status?task_id={task_id}")
+        assert resp.status_code == 200
+        status = resp.get_json()
+        if status["stage"] in {"completed", "failed"}:
+            break
+        time.sleep(0.01)
+    assert status.get("stage") == "completed"
+    assert status["deleted"] >= 1
+    assert status["pending_removed"] >= 1
+
+    with db.connect() as conn:
+        row = conn.execute(
+            "SELECT deleted_at FROM images WHERE uuid=?",
+            (uuid_processed,),
+        ).fetchone()
+        pending = conn.execute(
+            "SELECT 1 FROM upload_requests WHERE uuid=?",
+            (uuid_pending,),
+        ).fetchone()
+    assert row["deleted_at"]
+    assert pending is None
+    assert not raw_pending.exists()
 
 
 def test_search_index_and_tags_pages(tmp_path):

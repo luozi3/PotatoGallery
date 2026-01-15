@@ -149,6 +149,10 @@
                width="{{ thumb_width }}"
                height="{{ thumb_height }}"
                data-detail-image
+               data-thumb-width="{{ thumb_width }}"
+               data-thumb-height="{{ thumb_height }}"
+               data-full-width="{{ image.width }}"
+               data-full-height="{{ image.height }}"
                data-thumb-src="{{ thumb_src }}"
                data-full-src="{{ full_src }}"
                onerror="this.onerror=null;this.src='{{ full_src }}';">

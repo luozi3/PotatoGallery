@@ -27,6 +27,8 @@
     return data;
   }
 
+  const sleep = (ms) => new Promise((resolve) => window.setTimeout(resolve, ms));
+
   function uploadWithProgress(url, formData, onProgress) {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
@@ -118,6 +120,13 @@
   const uploadForm = document.querySelector("[data-admin-upload-form]");
   const uploadCollection = document.querySelector("[data-admin-upload-collection]");
   const uploadHint = document.querySelector("[data-admin-upload-hint]");
+  const stressToggle = document.querySelector("[data-admin-stress-toggle]");
+  const stressCountInput = document.querySelector("[data-admin-stress-count]");
+  const stressGenerateBtn = document.querySelector("[data-admin-stress-generate]");
+  const stressStopBtn = document.querySelector("[data-admin-stress-stop]");
+  const stressRetryBtn = document.querySelector("[data-admin-stress-retry]");
+  const stressDeleteBtn = document.querySelector("[data-admin-stress-delete]");
+  const stressHint = document.querySelector("[data-admin-stress-hint]");
   const tagAddBtn = document.querySelector("[data-admin-tag-add]");
   const tagSearchInput = document.querySelector("[data-admin-tag-search]");
   const tagSuggestList = document.querySelector("[data-admin-tag-suggest-list]");
@@ -710,7 +719,340 @@
       });
     }
 
+    initStressTool();
     initTagsPage();
+  }
+
+  function initStressTool() {
+    if (!stressToggle || !stressGenerateBtn || !stressDeleteBtn || !stressCountInput) return;
+    const progress = window.GalleryUploadProgress;
+    const STORAGE_KEY = "admin-stress-enabled";
+    const MAX_RETRIES = 3;
+    const RETRY_DELAY_MS = 1500;
+    const REQUEST_TIMEOUT_MS = 12000;
+    const state = {
+      total: 0,
+      nextIndex: 1,
+      generated: 0,
+      uploaded: 0,
+      running: false,
+      paused: false,
+      stopRequested: false,
+      deleting: false,
+      stage: "",
+      currentRequest: null,
+      abortReason: "",
+      retrySleepTimer: null,
+      retrySleepResolve: null,
+    };
+
+    if (localStorage.getItem(STORAGE_KEY) === "1") {
+      stressToggle.checked = true;
+    }
+
+    const setHint = (message) => {
+      if (stressHint) stressHint.textContent = message || "";
+    };
+
+    const summaryText = () =>
+      `生成 ${state.generated}/${state.total} · 上传 ${state.uploaded}/${state.total}`;
+
+    const applyState = () => {
+      const enabled = stressToggle.checked;
+      const busy = state.running || state.paused || state.deleting;
+      stressGenerateBtn.disabled = !enabled || busy;
+      stressDeleteBtn.disabled = !enabled || busy;
+      stressCountInput.disabled = !enabled || busy;
+      if (stressStopBtn) stressStopBtn.disabled = !enabled || (!state.running && !state.paused);
+      if (stressRetryBtn)
+        stressRetryBtn.disabled = !enabled || !(state.paused || state.stage === "retrying");
+      localStorage.setItem(STORAGE_KEY, enabled ? "1" : "0");
+    };
+
+    const parseCount = () => {
+      const raw = parseInt(stressCountInput.value || "0", 10);
+      if (!Number.isFinite(raw) || raw <= 0) return 0;
+      return Math.min(raw, 500);
+    };
+
+    const clearRetrySleep = () => {
+      if (state.retrySleepTimer) {
+        window.clearTimeout(state.retrySleepTimer);
+      }
+      state.retrySleepTimer = null;
+      state.retrySleepResolve = null;
+    };
+
+    const wakeRetrySleep = () => {
+      if (!state.retrySleepResolve) return;
+      const resolve = state.retrySleepResolve;
+      clearRetrySleep();
+      resolve();
+    };
+
+    const abortCurrentRequest = (reason) => {
+      if (!state.currentRequest) return;
+      state.abortReason = reason || "abort";
+      state.currentRequest.abort();
+    };
+
+    const updateProgress = (stage, message) => {
+      if (!progress || !currentAdminUser) return;
+      state.stage = stage;
+      const loaded =
+        stage === "uploading" || stage === "retrying" || stage === "paused"
+          ? state.uploaded
+          : state.generated;
+      progress.updateTask("admin", currentAdminUser, {
+        stage,
+        loaded,
+        total: state.total,
+        unit: "count",
+        message: message || summaryText(),
+      });
+    };
+
+    const startProgress = () => {
+      if (!progress || !currentAdminUser) return;
+      state.stage = "generating";
+      progress.startTask("admin", currentAdminUser, {
+        stage: "generating",
+        total: state.total,
+        loaded: 0,
+        unit: "count",
+        message: summaryText(),
+      });
+    };
+
+    const requestGenerate = async (index, total) => {
+      for (let attempt = 1; attempt <= MAX_RETRIES; attempt += 1) {
+        if (state.stopRequested) return { stopped: true };
+        const controller = new AbortController();
+        state.currentRequest = controller;
+        state.abortReason = "";
+        let timeoutId = null;
+        if (REQUEST_TIMEOUT_MS > 0) {
+          timeoutId = window.setTimeout(() => {
+            if (!state.abortReason) state.abortReason = "timeout";
+            controller.abort();
+          }, REQUEST_TIMEOUT_MS);
+        }
+        try {
+          const data = await fetchJSON("/upload/admin/stress/generate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ index, total }),
+            signal: controller.signal,
+          });
+          if (timeoutId) window.clearTimeout(timeoutId);
+          if (state.currentRequest === controller) state.currentRequest = null;
+          return { data };
+        } catch (err) {
+          if (timeoutId) window.clearTimeout(timeoutId);
+          if (state.currentRequest === controller) state.currentRequest = null;
+          const isAbort = err && err.name === "AbortError";
+          if (isAbort && state.stopRequested && state.abortReason === "stop") {
+            state.abortReason = "";
+            return { stopped: true };
+          }
+          if (attempt >= MAX_RETRIES) {
+            state.abortReason = "";
+            throw err;
+          }
+          const reason =
+            isAbort && state.abortReason === "timeout" ? "请求超时" : "请求失败";
+          const delayMs = state.abortReason === "retry" ? 0 : RETRY_DELAY_MS * attempt;
+          state.abortReason = "";
+          updateProgress(
+            "retrying",
+            `${reason}，${Math.round(delayMs / 1000)}s 后重试 ${attempt}/${MAX_RETRIES}`
+          );
+          if (delayMs > 0) {
+            await new Promise((resolve) => {
+              state.retrySleepResolve = resolve;
+              state.retrySleepTimer = window.setTimeout(resolve, delayMs);
+            });
+            clearRetrySleep();
+          }
+          if (state.stopRequested) return { stopped: true };
+        }
+      }
+      return { data: null };
+    };
+
+    const finishStopped = () => {
+      state.running = false;
+      state.paused = false;
+      state.stopRequested = false;
+      state.stage = "stopped";
+      abortCurrentRequest("");
+      clearRetrySleep();
+      updateProgress("stopped", `已停止：${summaryText()}`);
+      setHint(`已停止：${summaryText()}`);
+      applyState();
+    };
+
+    const finishCompleted = () => {
+      state.running = false;
+      state.paused = false;
+      state.stopRequested = false;
+      state.stage = "completed";
+      clearRetrySleep();
+      updateProgress("completed", `已生成并提交 ${state.total} 张`);
+      setHint(`已生成 ${state.total} 张`);
+      applyState();
+    };
+
+    const pauseWithError = (err) => {
+      state.running = false;
+      state.paused = true;
+      state.stopRequested = false;
+      state.generated = Math.max(state.uploaded, state.generated);
+      state.stage = "paused";
+      clearRetrySleep();
+      const message = `请求失败：${err.message || "网络错误"}，可重试或停止`;
+      updateProgress("paused", message);
+      setHint(message);
+      applyState();
+    };
+
+    const runGeneration = async () => {
+      state.running = true;
+      state.paused = false;
+      applyState();
+      while (state.nextIndex <= state.total) {
+        if (state.stopRequested) break;
+        const index = state.nextIndex;
+        state.generated = Math.max(state.generated, index);
+        updateProgress("generating", summaryText());
+        try {
+          const result = await requestGenerate(index, state.total);
+          if (result && result.stopped) {
+            break;
+          }
+        } catch (err) {
+          pauseWithError(err);
+          return;
+        }
+        state.uploaded = Math.max(state.uploaded, index);
+        updateProgress("uploading", summaryText());
+        state.nextIndex += 1;
+        if (state.stopRequested) break;
+      }
+      if (state.stopRequested) {
+        finishStopped();
+        return;
+      }
+      finishCompleted();
+    };
+
+    stressToggle.addEventListener("change", () => {
+      setHint("");
+      applyState();
+    });
+
+    stressGenerateBtn.addEventListener("click", async () => {
+      if (state.running || state.paused || state.deleting || !stressToggle.checked) return;
+      const count = parseCount();
+      if (!count) {
+        setHint("请输入有效数量");
+        return;
+      }
+      state.total = count;
+      state.nextIndex = 1;
+      state.generated = 0;
+      state.uploaded = 0;
+      state.stopRequested = false;
+      state.running = true;
+      state.paused = false;
+      state.stage = "generating";
+      applyState();
+      setHint(`开始生成 ${count} 张...`);
+      startProgress();
+      await runGeneration();
+    });
+
+    if (stressStopBtn) {
+      stressStopBtn.addEventListener("click", () => {
+        if (!stressToggle.checked || (!state.running && !state.paused)) return;
+        if (state.paused) {
+          finishStopped();
+          return;
+        }
+        state.stopRequested = true;
+        abortCurrentRequest("stop");
+        wakeRetrySleep();
+        setHint("正在停止...");
+      });
+    }
+
+    if (stressRetryBtn) {
+      stressRetryBtn.addEventListener("click", async () => {
+        if (!stressToggle.checked) return;
+        if (state.paused) {
+          state.stopRequested = false;
+          state.running = true;
+          state.paused = false;
+          state.stage = "generating";
+          applyState();
+          setHint(`继续生成 ${state.total} 张...`);
+          updateProgress("generating", summaryText());
+          await runGeneration();
+          return;
+        }
+        if (state.stage === "retrying") {
+          abortCurrentRequest("retry");
+          wakeRetrySleep();
+        }
+      });
+    }
+
+    stressDeleteBtn.addEventListener("click", async () => {
+      if (state.running || state.paused || state.deleting || !stressToggle.checked) return;
+      if (!window.confirm("确认删除所有压测图片？")) return;
+      state.deleting = true;
+      applyState();
+      setHint("清理中...");
+      let taskId = "";
+      try {
+        const data = await fetchJSON("/upload/admin/stress/cleanup/start", { method: "POST" });
+        taskId = data.task_id || "";
+        const total = data.total || 0;
+        if (progress && currentAdminUser && taskId) {
+          progress.startTask("admin", currentAdminUser, {
+            stage: data.stage || "deleting",
+            loaded: 0,
+            total,
+            unit: "count",
+            message: data.message || "",
+            status_url: `/upload/admin/stress/cleanup/status?task_id=${taskId}`,
+          });
+        }
+        if (data.stage === "completed") {
+          setHint(data.message || "没有可清理的压测图片");
+        } else if (taskId) {
+          for (let i = 0; i < 300; i += 1) {
+            await sleep(2000);
+            const status = await fetchJSON(
+              `/upload/admin/stress/cleanup/status?task_id=${taskId}`
+            );
+            if (status && status.message) {
+              setHint(status.message);
+            }
+            if (status.stage === "completed" || status.stage === "failed") {
+              break;
+            }
+          }
+        }
+      } catch (err) {
+        setHint(err.message);
+      } finally {
+        state.deleting = false;
+        applyState();
+      }
+    });
+
+    applyState();
   }
 
   async function initTagsPage() {

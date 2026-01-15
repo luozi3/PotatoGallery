@@ -4,8 +4,7 @@
   const themeToggle = document.querySelector('[data-theme-toggle]');
   const themeMeta = document.querySelector('meta[name=theme-color]');
   const savedTheme = localStorage.getItem('theme');
-  const initialTheme =
-    savedTheme || (body && body.classList.contains('page-home') ? 'dark' : 'light');
+  const initialTheme = savedTheme || 'light';
   const SIDEBAR_RESTORE_KEY = 'sidebar-restore-open';
 
   function applyTheme(theme, animate) {
@@ -126,8 +125,33 @@
   const masonryState = new WeakMap();
   const MASONRY_READY_TIMEOUT = 1200;
 
-  function waitForGridImages(grid) {
-    const images = Array.from(grid.querySelectorAll('img'));
+  function normalizeItems(items) {
+    if (!items) return null;
+    if (Array.isArray(items)) return items;
+    return Array.from(items);
+  }
+
+  function collectItems(grid, items) {
+    const targets = normalizeItems(items);
+    if (targets && targets.length) return targets;
+    return Array.from(grid.querySelectorAll('[data-masonry-item]'));
+  }
+
+  function collectImages(grid, items) {
+    const targets = normalizeItems(items);
+    if (!targets || !targets.length) {
+      return Array.from(grid.querySelectorAll('img'));
+    }
+    const images = [];
+    targets.forEach((item) => {
+      if (!item || !item.querySelectorAll) return;
+      item.querySelectorAll('img').forEach((img) => images.push(img));
+    });
+    return images;
+  }
+
+  function waitForGridImages(grid, items) {
+    const images = collectImages(grid, items);
     if (!images.length) return Promise.resolve();
     let remaining = images.length;
     let resolved = false;
@@ -153,10 +177,10 @@
     });
   }
 
-  function relayoutGrid(grid) {
+  function relayoutGrid(grid, items) {
     const rowHeight = parseInt(getComputedStyle(grid).getPropertyValue('grid-auto-rows')) || 8;
     const rowGap = parseInt(getComputedStyle(grid).getPropertyValue('grid-row-gap')) || 0;
-    grid.querySelectorAll('[data-masonry-item]').forEach((item) => {
+    collectItems(grid, items).forEach((item) => {
       if (item.classList.contains('hidden')) return;
       item.style.setProperty('--row-span', '1');
       const height = item.scrollHeight || item.getBoundingClientRect().height;
@@ -178,8 +202,8 @@
       masonryState.set(grid, state);
     }
 
-    function bindImages() {
-      grid.querySelectorAll('img').forEach((img) => {
+    function bindImages(items) {
+      collectImages(grid, items).forEach((img) => {
         if (state.boundImages.has(img)) return;
         state.boundImages.add(img);
         img.addEventListener('load', () => window.requestAnimationFrame(() => relayoutGrid(grid)));
@@ -187,22 +211,29 @@
       });
     }
 
-    function observeItems() {
+    function observeItems(items) {
       if (!state.observer) return;
-      grid
-        .querySelectorAll('[data-masonry-item]')
-        .forEach((item) => state.observer.observe(item));
+      collectItems(grid, items).forEach((item) => state.observer.observe(item));
     }
 
-    function refresh() {
-      bindImages();
-      observeItems();
-      grid.classList.remove('masonry-ready');
-      window.requestAnimationFrame(() => relayoutGrid(grid));
-      waitForGridImages(grid).then(() => {
+    function refresh(options) {
+      const opts = options && typeof options === 'object' ? options : {};
+      const items = normalizeItems(opts.items);
+      const ready = grid.classList.contains('masonry-ready');
+      const allowSoft = Boolean(opts.soft) && ready;
+      const relayoutTargets = allowSoft ? items : null;
+      bindImages(items);
+      observeItems(items);
+      if (!allowSoft) {
+        grid.classList.remove('masonry-ready');
+      }
+      window.requestAnimationFrame(() => relayoutGrid(grid, relayoutTargets));
+      waitForGridImages(grid, relayoutTargets).then(() => {
         window.requestAnimationFrame(() => {
-          relayoutGrid(grid);
-          grid.classList.add('masonry-ready');
+          relayoutGrid(grid, relayoutTargets);
+          if (!allowSoft) {
+            grid.classList.add('masonry-ready');
+          }
         });
       });
     }
@@ -211,6 +242,21 @@
   }
 
   window.GalleryMasonry = { init: initMasonry };
+
+  function initTagPageMasonry() {
+    if (!body || body.classList.contains('page-admin')) return;
+    if (!body.classList.contains('page-tag')) return;
+    const grid = document.querySelector('.page-tag .gallery[data-masonry]');
+    if (!grid || !window.GalleryMasonry) return;
+    const masonry = window.GalleryMasonry.init(grid);
+    if (masonry && masonry.refresh) {
+      masonry.refresh();
+    } else {
+      grid.classList.add('masonry-ready');
+    }
+  }
+
+  initTagPageMasonry();
 
   const leftSidebar = document.querySelector('[data-left-sidebar]');
   const leftToggles = Array.from(document.querySelectorAll('[data-left-toggle]'));
@@ -1032,6 +1078,48 @@
     });
   }
 
+  function initBackToTop() {
+    if (!body || body.classList.contains('page-admin')) return;
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'back-to-top';
+    button.dataset.backToTop = '1';
+    button.setAttribute('aria-label', '返回顶部');
+    document.body.appendChild(button);
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const threshold = 640;
+    let visible = false;
+    let ticking = false;
+
+    function update() {
+      ticking = false;
+      const shouldShow = window.scrollY > threshold;
+      if (visible === shouldShow) return;
+      visible = shouldShow;
+      button.classList.toggle('is-visible', visible);
+    }
+
+    function onScroll() {
+      if (ticking) return;
+      ticking = true;
+      window.requestAnimationFrame(update);
+    }
+
+    button.addEventListener('click', () => {
+      if (reduceMotion.matches) {
+        window.scrollTo(0, 0);
+        return;
+      }
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+
+    window.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', onScroll);
+    update();
+  }
+
+  initBackToTop();
+
   function initUploadProgress() {
     const STORAGE_PREFIX = 'gallery_upload_progress_v1:';
     const MAX_PROGRESS_AGE = 20 * 60 * 1000;
@@ -1078,8 +1166,18 @@
 
     function stageLabel(stage) {
       switch (stage) {
+        case 'generating':
+          return '生成中';
         case 'uploading':
           return '上传中';
+        case 'retrying':
+          return '重试中';
+        case 'paused':
+          return '已暂停';
+        case 'stopped':
+          return '已停止';
+        case 'deleting':
+          return '删除中';
         case 'queued':
           return '排队中';
         case 'processing':
@@ -1087,6 +1185,7 @@
         case 'processed':
           return '等待发布';
         case 'published':
+        case 'completed':
           return '已完成';
         case 'failed':
           return '处理失败';
@@ -1097,6 +1196,28 @@
 
     function stageMetaText(current) {
       if (!current) return '';
+      if (current.stage === 'failed') {
+        return current.message || '处理失败';
+      }
+      if (current.unit === 'count') {
+        const loaded = Number(current.loaded || 0);
+        const total = Number(current.total || 0);
+        const base = total ? `${loaded} / ${total} 张` : `${loaded} 张`;
+        if (current.message) return current.message;
+        if (current.stage === 'generating') {
+          return `已生成 ${base}`;
+        }
+        if (current.stage === 'uploading') {
+          return `已上传 ${base}`;
+        }
+        if (current.stage === 'deleting') {
+          return `已删除 ${base}`;
+        }
+        if (current.stage === 'completed') {
+          return '已完成';
+        }
+        return base;
+      }
       if (current.stage === 'uploading') {
         const loaded = formatBytes(current.loaded || 0);
         const total = formatBytes(current.total || 0);
@@ -1112,9 +1233,6 @@
       if (current.stage === 'processing') {
         return '生成缩略图中';
       }
-      if (current.stage === 'failed') {
-        return current.message || '处理失败';
-      }
       if (current.stage === 'published') {
         return '发布完成';
       }
@@ -1123,6 +1241,11 @@
 
     function getPercent(current) {
       if (!current) return 0;
+      if (current.unit === 'count') {
+        const total = Number(current.total || 0);
+        if (!total) return 0;
+        return Math.min(100, Math.round((Number(current.loaded || 0) / total) * 100));
+      }
       if (current.stage === 'uploading') {
         const total = Number(current.total || 0);
         if (!total) return 0;
@@ -1155,6 +1278,21 @@
       state.metaEl = shell.querySelector('[data-upload-progress-meta]');
     }
 
+    function setFloatingOffset(value) {
+      const safeValue = Number(value || 0);
+      root.style.setProperty('--upload-progress-offset', safeValue ? `${safeValue}px` : '0px');
+    }
+
+    function syncFloatingOffset() {
+      if (!state.shell || !state.shell.classList.contains('is-visible')) {
+        setFloatingOffset(0);
+        return;
+      }
+      const rect = state.shell.getBoundingClientRect();
+      const gap = 12;
+      setFloatingOffset(Math.ceil(rect.height + gap));
+    }
+
     function render(current) {
       if (!current) return;
       ensureShell();
@@ -1168,6 +1306,7 @@
         clearTimeout(state.removeTimer);
         state.removeTimer = null;
       }
+      window.requestAnimationFrame(syncFloatingOffset);
     }
 
     function hideShell(immediate) {
@@ -1184,6 +1323,7 @@
         state.percentEl = null;
         state.fillEl = null;
         state.metaEl = null;
+        setFloatingOffset(0);
       };
       if (immediate) {
         remove();
@@ -1191,6 +1331,11 @@
       }
       state.removeTimer = window.setTimeout(remove, 240);
     }
+
+    window.addEventListener('resize', () => {
+      if (!state.shell || !state.shell.classList.contains('is-visible')) return;
+      window.requestAnimationFrame(syncFloatingOffset);
+    });
 
     function stopPolling() {
       if (!state.pollTimer) return;
@@ -1209,17 +1354,29 @@
       localStorage.removeItem(buildKey(current.scope, current.user));
     }
 
+    function isTerminalStage(stage) {
+      return ['published', 'failed', 'missing', 'completed', 'stopped'].includes(stage);
+    }
+
+    function shouldPoll(current) {
+      if (!current) return false;
+      if (current.status_url) {
+        return !isTerminalStage(current.stage);
+      }
+      return ['queued', 'processing', 'processed'].includes(current.stage);
+    }
+
     function setCurrent(current, persist = true) {
       state.current = current;
       if (persist) saveProgress(current);
       if (!current) return;
       render(current);
-      if (['queued', 'processing', 'processed'].includes(current.stage)) {
+      if (shouldPoll(current)) {
         startPolling(current);
       } else {
         stopPolling();
       }
-      if (['published', 'failed', 'missing'].includes(current.stage)) {
+      if (isTerminalStage(current.stage)) {
         clearProgress(current);
         window.setTimeout(() => hideShell(false), 800);
       }
@@ -1240,6 +1397,8 @@
           speed_bps: 0,
           started_at: Date.now(),
           message: '',
+          unit: 'bytes',
+          status_url: '',
         },
         true
       );
@@ -1264,6 +1423,8 @@
           percent: 0,
           started_at: state.current ? state.current.started_at : now,
           message: '',
+          unit: state.current ? state.current.unit : 'bytes',
+          status_url: state.current ? state.current.status_url : '',
         },
         true
       );
@@ -1283,6 +1444,8 @@
           speed_bps: 0,
           started_at: state.current ? state.current.started_at : Date.now(),
           message: '',
+          unit: state.current ? state.current.unit : '',
+          status_url: state.current ? state.current.status_url : '',
         },
         true
       );
@@ -1302,6 +1465,56 @@
           speed_bps: 0,
           started_at: state.current ? state.current.started_at : Date.now(),
           message: message || '上传失败',
+          unit: state.current ? state.current.unit : '',
+          status_url: state.current ? state.current.status_url : '',
+        },
+        true
+      );
+    }
+
+    function startTask(scope, user, payload) {
+      if (!scope || !user) return;
+      const now = Date.now();
+      const total = Number(payload && payload.total ? payload.total : 0);
+      const loaded = Number(payload && payload.loaded ? payload.loaded : 0);
+      setCurrent(
+        {
+          scope,
+          user,
+          uuid: payload && payload.uuid ? payload.uuid : null,
+          stage: payload && payload.stage ? payload.stage : 'queued',
+          percent: payload && payload.percent ? payload.percent : 0,
+          loaded,
+          total,
+          speed_bps: 0,
+          started_at: now,
+          message: payload && payload.message ? payload.message : '',
+          unit: payload && payload.unit ? payload.unit : 'count',
+          status_url: payload && payload.status_url ? payload.status_url : '',
+        },
+        true
+      );
+    }
+
+    function updateTask(scope, user, payload) {
+      if (!scope || !user || !payload) return;
+      const now = Date.now();
+      const current = state.current || {};
+      const hasProp = (key) => Object.prototype.hasOwnProperty.call(payload, key);
+      setCurrent(
+        {
+          scope,
+          user,
+          uuid: hasProp('uuid') ? payload.uuid : current.uuid,
+          stage: hasProp('stage') ? payload.stage : current.stage,
+          percent: hasProp('percent') ? payload.percent : current.percent,
+          loaded: hasProp('loaded') ? payload.loaded : current.loaded,
+          total: hasProp('total') ? payload.total : current.total,
+          speed_bps: 0,
+          started_at: current.started_at || now,
+          message: hasProp('message') ? payload.message : current.message,
+          unit: hasProp('unit') ? payload.unit : current.unit,
+          status_url: hasProp('status_url') ? payload.status_url : current.status_url,
         },
         true
       );
@@ -1336,40 +1549,53 @@
     }
 
     function fetchStatus(current) {
-      if (!current || !current.uuid) return Promise.resolve(null);
+      if (!current) return Promise.resolve(null);
       const stamp = Date.now();
-      const endpoint =
-        current.scope === 'admin'
-          ? `/upload/admin/upload/status?uuid=${current.uuid}&t=${stamp}`
-          : `/api/upload/status?uuid=${current.uuid}&t=${stamp}`;
+      let endpoint = '';
+      if (current.status_url) {
+        const separator = current.status_url.includes('?') ? '&' : '?';
+        endpoint = `${current.status_url}${separator}t=${stamp}`;
+      } else {
+        if (!current.uuid) return Promise.resolve(null);
+        endpoint =
+          current.scope === 'admin'
+            ? `/upload/admin/upload/status?uuid=${current.uuid}&t=${stamp}`
+            : `/api/upload/status?uuid=${current.uuid}&t=${stamp}`;
+      }
       return fetch(endpoint, { credentials: 'include', cache: 'no-store' })
         .then((resp) => (resp.ok ? resp.json() : null))
         .catch(() => null);
     }
 
     function startPolling(current) {
-      if (state.pollTimer || !current || !current.uuid) return;
+      if (state.pollTimer || !current || (!current.uuid && !current.status_url)) return;
       state.pollTimer = window.setInterval(async () => {
         const latest = state.current;
-        if (!latest || !latest.uuid) {
+        if (!latest || (!latest.uuid && !latest.status_url)) {
           stopPolling();
           return;
         }
         const data = await fetchStatus(latest);
         if (!data || !data.ok) return;
-        if (!state.current || state.current.uuid !== latest.uuid) return;
+        if (!state.current) return;
+        if (!latest.status_url && state.current.uuid !== latest.uuid) return;
+        const loaded = data.done != null ? data.done : latest.loaded;
+        const total = data.total != null ? data.total : latest.total;
+        const unit = data.unit != null ? data.unit : latest.unit;
         setCurrent(
           {
             scope: latest.scope,
             user: latest.user,
             uuid: latest.uuid,
             stage: data.stage || latest.stage,
-            percent: data.percent || latest.percent,
-            loaded: latest.loaded,
-            total: latest.total,
+            percent: data.percent != null ? data.percent : latest.percent,
+            loaded,
+            total,
             speed_bps: 0,
             started_at: latest.started_at,
-            message: data.message || '',
+            message: data.message || latest.message || '',
+            unit,
+            status_url: latest.status_url,
           },
           true
         );
@@ -1395,6 +1621,8 @@
       updateUpload,
       finishUpload,
       fail,
+      startTask,
+      updateTask,
       restore,
       hasProgressForScope,
     };
@@ -1520,6 +1748,63 @@
   if (detailMedia) {
     const image = detailMedia.querySelector('[data-detail-image]');
     const status = detailMedia.querySelector('[data-image-status]');
+    const frame = detailMedia.querySelector('.detail-frame');
+    let detailFitScheduled = false;
+
+    const parseSize = (value) => {
+      const parsed = parseFloat(value || '');
+      return Number.isFinite(parsed) ? parsed : 0;
+    };
+
+    const thumbWidth = image ? parseSize(image.dataset.thumbWidth) || parseSize(image.getAttribute('width')) : 0;
+    const thumbHeight = image ? parseSize(image.dataset.thumbHeight) || parseSize(image.getAttribute('height')) : 0;
+    let fullWidth = image ? parseSize(image.dataset.fullWidth) : 0;
+    let fullHeight = image ? parseSize(image.dataset.fullHeight) : 0;
+
+    const getRatio = (width, height) => {
+      if (width > 0 && height > 0) return width / height;
+      if (image && image.naturalWidth > 0 && image.naturalHeight > 0) {
+        return image.naturalWidth / image.naturalHeight;
+      }
+      return 1;
+    };
+
+    const applyDetailImageFit = () => {
+      if (!frame || !image) return;
+      const availableWidth = Math.floor(detailMedia.getBoundingClientRect().width);
+      if (!Number.isFinite(availableWidth) || availableWidth <= 0) return;
+      const mode = detailMedia.dataset.imageMode === 'full' ? 'full' : 'thumb';
+      if (mode === 'full') {
+        let fitWidth = fullWidth || image.naturalWidth;
+        let fitHeight = fullHeight || image.naturalHeight;
+        if (!fitWidth || !fitHeight) {
+          const ratio = getRatio(fullWidth, fullHeight);
+          fitWidth = availableWidth;
+          fitHeight = fitWidth / ratio;
+        }
+        detailMedia.style.setProperty('--detail-fit-width', `${Math.floor(fitWidth)}px`);
+        detailMedia.style.setProperty('--detail-fit-height', `${Math.floor(fitHeight)}px`);
+        return;
+      }
+
+      const baseWidth = thumbWidth || image.naturalWidth || availableWidth;
+      const baseHeight = thumbHeight || image.naturalHeight;
+      const ratio = getRatio(baseWidth, baseHeight);
+      const fitWidth = Math.min(availableWidth, baseWidth);
+      const fitHeight = fitWidth / ratio;
+      detailMedia.style.setProperty('--detail-fit-width', `${Math.floor(fitWidth)}px`);
+      detailMedia.style.setProperty('--detail-fit-height', `${Math.floor(fitHeight)}px`);
+    };
+
+    const scheduleDetailImageFit = () => {
+      if (detailFitScheduled) return;
+      detailFitScheduled = true;
+      window.requestAnimationFrame(() => {
+        detailFitScheduled = false;
+        applyDetailImageFit();
+      });
+    };
+
     if (image) {
       const thumbSrc = image.dataset.thumbSrc || image.getAttribute('src') || '';
       const fullSrc = image.dataset.fullSrc || '';
@@ -1534,6 +1819,7 @@
           image.src = thumbSrc;
         }
         if (status) status.textContent = useFull ? '原图' : '略缩图';
+        scheduleDetailImageFit();
       };
 
       if (canToggle) {
@@ -1545,6 +1831,23 @@
       } else {
         if (status) status.textContent = '原图';
         detailMedia.dataset.imageMode = 'full';
+      }
+    }
+
+    if (frame && image) {
+      applyDetailImageFit();
+      window.addEventListener('resize', scheduleDetailImageFit);
+      window.addEventListener('orientationchange', scheduleDetailImageFit);
+      image.addEventListener('load', () => {
+        if (detailMedia.dataset.imageMode === 'full') {
+          if (!fullWidth && image.naturalWidth) fullWidth = image.naturalWidth;
+          if (!fullHeight && image.naturalHeight) fullHeight = image.naturalHeight;
+        }
+        scheduleDetailImageFit();
+      });
+      if ('ResizeObserver' in window) {
+        const resizeObserver = new ResizeObserver(() => scheduleDetailImageFit());
+        resizeObserver.observe(detailMedia);
       }
     }
   }
@@ -1566,6 +1869,7 @@
   if (tagEditor) {
     const tagName = tagEditor.dataset.tagName || '';
     const aliasOf = tagEditor.dataset.tagAliasOf || '';
+    const tagEditorToggle = document.querySelector('[data-tag-editor-toggle]');
     const slugField = tagEditor.querySelector('[data-tag-editor-slug]');
     const introField = tagEditor.querySelector('[data-tag-editor-intro]');
     const aliasesField = tagEditor.querySelector('[data-tag-editor-aliases]');
@@ -1595,11 +1899,30 @@
       return data;
     }
 
+    function setEditorOpen(open) {
+      tagEditor.hidden = !open;
+      if (tagEditorToggle) {
+        tagEditorToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+      }
+    }
+
+    function enableEditorToggle() {
+      if (!tagEditorToggle) {
+        tagEditor.hidden = false;
+        return;
+      }
+      tagEditorToggle.hidden = false;
+      setEditorOpen(false);
+      tagEditorToggle.addEventListener('click', () => {
+        setEditorOpen(tagEditor.hidden);
+      });
+    }
+
     fetch('/upload/admin/me', { credentials: 'include' })
       .then((resp) => (resp.ok ? resp.json() : null))
       .then((data) => {
         if (!data || !data.ok) return;
-        tagEditor.hidden = false;
+        enableEditorToggle();
         return fetchJSON('/upload/admin/tags');
       })
       .then((data) => {

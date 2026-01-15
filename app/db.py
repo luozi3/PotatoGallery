@@ -39,6 +39,9 @@ def ensure_schema() -> None:
             if name not in cols:
                 conn.execute(f"ALTER TABLE images ADD COLUMN {ddl}")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_images_deleted_at ON images(deleted_at)")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_images_publish_order ON images(status, deleted_at, created_at, id)"
+        )
         from . import auth
 
         auth.ensure_schema(conn)
