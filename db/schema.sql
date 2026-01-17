@@ -125,6 +125,7 @@ CREATE TABLE IF NOT EXISTS auth_invites (
     max_uses INTEGER,
     used_count INTEGER NOT NULL DEFAULT 0,
     note TEXT,
+    expires_at DATETIME,
     is_active INTEGER NOT NULL DEFAULT 1,
     created_by TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -159,6 +160,9 @@ CREATE INDEX IF NOT EXISTS idx_upload_requests_owner ON upload_requests(owner_us
 CREATE TABLE IF NOT EXISTS user_favorites (
     user_id INTEGER NOT NULL,
     image_uuid TEXT NOT NULL,
+    rating INTEGER DEFAULT 0,
+    flag TEXT,
+    color_label TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (user_id, image_uuid),
     FOREIGN KEY (user_id) REFERENCES auth_users(id) ON DELETE CASCADE,

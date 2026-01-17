@@ -107,8 +107,18 @@
   const empty = document.querySelector("[data-admin-empty]");
   const refreshBtn = document.querySelector("[data-admin-refresh]");
   const trashBtn = document.querySelector("[data-admin-toggle-trash]");
+  const trashPageBtn = document.querySelector("[data-admin-trash-page]");
+  const trashAllBtn = document.querySelector("[data-admin-trash-all]");
+  const trashHint = document.querySelector("[data-admin-trash-hint]");
   const queryInput = document.querySelector("[data-admin-query]");
   const collectionFilter = document.querySelector("[data-admin-collection-filter]");
+  const pagination = document.querySelector("[data-admin-pagination]");
+  const pagePrevBtn = document.querySelector("[data-admin-page-prev]");
+  const pageNextBtn = document.querySelector("[data-admin-page-next]");
+  const pageList = document.querySelector("[data-admin-page-list]");
+  const pageSummary = document.querySelector("[data-admin-page-summary]");
+  const pageInput = document.querySelector("[data-admin-page-input]");
+  const pageJumpBtn = document.querySelector("[data-admin-page-jump]");
   const collectionList = document.querySelector("[data-admin-collection-list]");
   const addCollectionBtn = document.querySelector("[data-admin-add-collection]");
   const saveCollectionsBtn = document.querySelector("[data-admin-save-collections]");
@@ -117,6 +127,17 @@
   const authModeSelect = document.querySelector("[data-admin-auth-mode]");
   const authSaveBtn = document.querySelector("[data-admin-auth-save]");
   const authHint = document.querySelector("[data-admin-auth-hint]");
+  const inviteList = document.querySelector("[data-admin-invite-list]");
+  const inviteHint = document.querySelector("[data-admin-invite-hint]");
+  const inviteNoteInput = document.querySelector("[data-admin-invite-note]");
+  const inviteExpiresAtInput = document.querySelector("[data-admin-invite-expires-at]");
+  const inviteExpiresDaysInput = document.querySelector("[data-admin-invite-expires-days]");
+  const inviteLimitToggle = document.querySelector("[data-admin-invite-limit]");
+  const inviteMaxUsesInput = document.querySelector("[data-admin-invite-max-uses]");
+  const inviteCreateBtn = document.querySelector("[data-admin-invite-create]");
+  const inviteRefreshBtn = document.querySelector("[data-admin-invite-refresh]");
+  const inviteCreatedWrap = document.querySelector("[data-admin-invite-created]");
+  const inviteCreatedCode = document.querySelector("[data-admin-invite-code]");
   const uploadForm = document.querySelector("[data-admin-upload-form]");
   const uploadCollection = document.querySelector("[data-admin-upload-collection]");
   const uploadHint = document.querySelector("[data-admin-upload-hint]");
@@ -152,12 +173,24 @@
   const typeSaveBtn = document.querySelector("[data-admin-type-save]");
   const typeList = document.querySelector("[data-admin-type-list]");
   const typeHint = document.querySelector("[data-admin-type-hint]");
-  const masonry = window.GalleryMasonry ? window.GalleryMasonry.init(grid) : null;
+  const masonry =
+    grid && grid.hasAttribute("data-masonry") && window.GalleryMasonry
+      ? window.GalleryMasonry.init(grid)
+      : null;
 
   let images = [];
   let collections = [];
   let defaultCollection = "";
   let showTrash = false;
+  let trashBusy = false;
+  let currentPage = 1;
+  let totalPages = 1;
+  let totalItems = 0;
+  const PAGE_SIZE = 40;
+  const filterState = {
+    query: "",
+    collection: "all",
+  };
   let currentAdminUser = "";
 
   function escapeHtml(text) {
@@ -322,6 +355,7 @@
       ),
     ];
     collectionFilter.innerHTML = options.join("");
+    collectionFilter.value = filterState.collection || "all";
   }
 
   function renderUploadCollections() {
@@ -356,16 +390,142 @@
     });
   }
 
+  function readUrlState() {
+    const params = new URLSearchParams(window.location.search);
+    const pageRaw = parseInt(params.get("p") || "1", 10);
+    currentPage = Number.isFinite(pageRaw) && pageRaw > 0 ? pageRaw : 1;
+    filterState.query = params.get("q") || "";
+    filterState.collection = params.get("collection") || "all";
+    showTrash = (params.get("status") || "").toLowerCase() === "trash";
+    if (queryInput) queryInput.value = filterState.query;
+  }
+
+  function buildQueryParams(page) {
+    const params = new URLSearchParams();
+    params.set("p", String(page || 1));
+    params.set("status", showTrash ? "trash" : "active");
+    if (filterState.query) {
+      params.set("q", filterState.query);
+    }
+    if (filterState.collection && filterState.collection !== "all") {
+      params.set("collection", filterState.collection);
+    }
+    return params;
+  }
+
+  function syncUrl(page) {
+    const params = buildQueryParams(page);
+    const next = `${window.location.pathname}?${params.toString()}`;
+    window.history.replaceState(null, "", next);
+  }
+
+  function setTrashHint(message) {
+    if (!trashHint) return;
+    trashHint.textContent = message || "";
+    syncTrashActions();
+  }
+
+  function syncTrashActions() {
+    const isTrash = showTrash;
+    const hasItems = Array.isArray(images) && images.length > 0;
+    if (trashPageBtn) {
+      trashPageBtn.hidden = !isTrash;
+      trashPageBtn.disabled = !isTrash || trashBusy || !hasItems;
+    }
+    if (trashAllBtn) {
+      trashAllBtn.hidden = !isTrash;
+      trashAllBtn.disabled = !isTrash || trashBusy;
+    }
+    if (trashHint) {
+      trashHint.hidden = !isTrash || !trashHint.textContent;
+    }
+  }
+
+  async function purgeTrash(uuids, resetPage) {
+    if (trashBusy) return;
+    const payload = {};
+    if (Array.isArray(uuids)) {
+      payload.uuids = uuids;
+    }
+    trashBusy = true;
+    syncTrashActions();
+    setTrashHint("删除中...");
+    try {
+      await fetchJSON("/upload/admin/images/trash/purge", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      currentPage = resetPage ? 1 : currentPage;
+      await loadImages(currentPage);
+      setTrashHint("已删除");
+    } catch (err) {
+      setTrashHint(err.message);
+    } finally {
+      trashBusy = false;
+      syncTrashActions();
+    }
+  }
+
+  function buildPageItems(total, current) {
+    if (total <= 1) return [];
+    const pages = new Set([1, total, current, current - 1, current + 1, current - 2, current + 2]);
+    const list = Array.from(pages)
+      .filter((page) => page >= 1 && page <= total)
+      .sort((a, b) => a - b);
+    return list;
+  }
+
+  function renderPagination() {
+    if (!pagination || !pageList || !pagePrevBtn || !pageNextBtn) return;
+    if (totalItems <= 0) {
+      pagination.hidden = true;
+      return;
+    }
+    const safeTotal = Math.max(1, totalPages || 1);
+    pagination.hidden = false;
+    pagePrevBtn.disabled = currentPage <= 1;
+    pageNextBtn.disabled = currentPage >= safeTotal;
+    if (pageSummary) {
+      pageSummary.textContent = `共 ${safeTotal} 页 / 共 ${totalItems} 张`;
+    }
+    if (pageInput) {
+      pageInput.max = String(safeTotal);
+      pageInput.value = String(currentPage);
+      pageInput.disabled = safeTotal <= 1;
+    }
+    if (pageJumpBtn) {
+      pageJumpBtn.disabled = safeTotal <= 1;
+    }
+    const items = buildPageItems(safeTotal, currentPage);
+    let html = "";
+    let last = 0;
+    items.forEach((page) => {
+      if (last && page - last > 1) {
+        html += '<span class="page-ellipsis">…</span>';
+      }
+      const active = page === currentPage ? " is-active" : "";
+      html += `<button class="page-number${active}" type="button" data-page="${page}">${page}</button>`;
+      last = page;
+    });
+    pageList.innerHTML = html;
+  }
+
+  function jumpToPage(rawValue) {
+    if (!totalPages) return;
+    const target = parseInt(rawValue || "0", 10);
+    if (!Number.isFinite(target)) return;
+    const safeTotal = Math.max(1, totalPages || 1);
+    const clamped = Math.max(1, Math.min(safeTotal, target));
+    if (clamped === currentPage) return;
+    loadImages(clamped);
+  }
+
   function renderImages(list) {
     if (!grid) return;
     if (!list.length) {
       grid.innerHTML = "";
       if (empty) empty.classList.add("show");
-      if (masonry) {
-        masonry.refresh();
-      } else {
-        grid.classList.add("masonry-ready");
-      }
       return;
     }
     if (empty) empty.classList.remove("show");
@@ -418,31 +578,9 @@
         const thumbHeight = img.thumb_height || 1;
         const detailPath = escapeHtml(resolveDetailPath(img));
         const metaItems = [dimension, bytesText, collectionTitle].filter(Boolean);
-        return `
-        <article class="illust-card admin-card" data-masonry-item data-admin-uuid="${escapeHtml(
-          img.uuid
-        )}">
-          <a class="thumb-link" href="${detailPath}">
-            <div class="thumb-shell" style="--thumb-ratio:${thumbWidth}/${thumbHeight};">
-              <img class="thumb" src="/thumb/${escapeHtml(
-                img.thumb_filename || ""
-              )}" alt="${escapeHtml(img.title || "")}" loading="lazy" width="${thumbWidth}" height="${thumbHeight}" onerror="this.onerror=null;this.src='/raw/${escapeHtml(
-          img.raw_filename || ""
-        )}';">
-            </div>
-          </a>
-          <div class="card-body">
-            <div class="title">${escapeHtml(titleText)}</div>
-            ${descriptionText ? `<p class="desc">${escapeHtml(descriptionText)}</p>` : ""}
-            <div class="meta">
-              ${metaItems.map((item) => `<span>${escapeHtml(item)}</span>`).join("")}
-            </div>
-            <div class="tags">
-              <span class="tag accent">${escapeHtml(orientationLabel)}</span>
-              <span class="tag">${escapeHtml(sizeLabel)}</span>
-              ${tagLinks}
-            </div>
-          </div>
+        const showEditor = !showTrash;
+        const editorHtml = showEditor
+          ? `
           <div class="admin-card-editor">
             <div class="admin-fields-grid">
               <div class="admin-field">
@@ -486,13 +624,43 @@
               }</p>
             </div>
           </div>
+          `
+          : "";
+        return `
+        <article class="illust-card admin-card" data-admin-uuid="${escapeHtml(
+          img.uuid
+        )}" data-masonry-item>
+          <a class="thumb-link" href="${detailPath}">
+            <div class="thumb-shell" style="--thumb-ratio:${thumbWidth}/${thumbHeight};">
+              <img class="thumb" src="/thumb/${escapeHtml(
+                img.thumb_filename || ""
+              )}" alt="${escapeHtml(img.title || "")}" loading="lazy" width="${thumbWidth}" height="${thumbHeight}" onerror="this.onerror=null;this.src='/raw/${escapeHtml(
+          img.raw_filename || ""
+        )}';">
+            </div>
+          </a>
+          <div class="card-body">
+            <div class="title">${escapeHtml(titleText)}</div>
+            ${descriptionText ? `<p class="desc">${escapeHtml(descriptionText)}</p>` : ""}
+            <div class="meta">
+              ${metaItems.map((item) => `<span>${escapeHtml(item)}</span>`).join("")}
+            </div>
+            <div class="tags">
+              <span class="tag accent">${escapeHtml(orientationLabel)}</span>
+              <span class="tag">${escapeHtml(sizeLabel)}</span>
+              ${tagLinks}
+            </div>
+          </div>
+          ${editorHtml}
         </article>
         `;
       })
       .join("");
 
-    initTagSuggest(grid);
-    initTagEditors(grid);
+    if (!showTrash) {
+      initTagSuggest(grid);
+      initTagEditors(grid);
+    }
 
     grid.querySelectorAll("[data-admin-uuid]").forEach((card) => {
       const uuid = card.dataset.adminUuid;
@@ -501,42 +669,52 @@
       if (select && img) {
         select.value = img.collection || "";
       }
-      card.querySelector("[data-action='save']").addEventListener("click", async () => {
-        const title = card.querySelector("[data-field='title']").value.trim();
-        const description = card.querySelector("[data-field='description']").value.trim();
-        const tags = card.querySelector("[data-field='tags']").value.trim();
-        const collection = card.querySelector("[data-field='collection']").value;
-        const status = card.querySelector("[data-field='status']");
-        status.textContent = "保存中...";
-        try {
-          await fetchJSON(`/upload/admin/images/${uuid}/update`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ title, description, tags, collection }),
-          });
-          status.textContent = "已保存，等待刷新发布";
-        } catch (err) {
-          status.textContent = err.message;
-        }
-      });
-      card.querySelector("[data-action='delete']").addEventListener("click", async () => {
-        if (!confirm("确认删除该作品？")) return;
-        const status = card.querySelector("[data-field='status']");
-        status.textContent = "删除中...";
-        try {
-          await fetchJSON(`/upload/admin/images/${uuid}/delete`, { method: "POST" });
-          card.remove();
-        } catch (err) {
-          status.textContent = err.message;
-        }
-      });
+      const saveBtn = card.querySelector("[data-action='save']");
+      if (saveBtn) {
+        saveBtn.addEventListener("click", async () => {
+          const titleInput = card.querySelector("[data-field='title']");
+          const descInput = card.querySelector("[data-field='description']");
+          const tagsInput = card.querySelector("[data-field='tags']");
+          const collectionInput = card.querySelector("[data-field='collection']");
+          const status = card.querySelector("[data-field='status']");
+          if (!titleInput || !descInput || !tagsInput || !collectionInput || !status) return;
+          const title = titleInput.value.trim();
+          const description = descInput.value.trim();
+          const tags = tagsInput.value.trim();
+          const collection = collectionInput.value;
+          status.textContent = "保存中...";
+          try {
+            await fetchJSON(`/upload/admin/images/${uuid}/update`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ title, description, tags, collection }),
+            });
+            status.textContent = "已保存，等待刷新发布";
+          } catch (err) {
+            status.textContent = err.message;
+          }
+        });
+      }
+      const deleteBtn = card.querySelector("[data-action='delete']");
+      if (deleteBtn) {
+        deleteBtn.addEventListener("click", async () => {
+          if (!confirm("确认删除该作品？")) return;
+          const status = card.querySelector("[data-field='status']");
+          if (!status) return;
+          status.textContent = "删除中...";
+          try {
+            await fetchJSON(`/upload/admin/images/${uuid}/delete`, { method: "POST" });
+            card.remove();
+          } catch (err) {
+            status.textContent = err.message;
+          }
+        });
+      }
     });
 
     if (masonry) {
       masonry.refresh();
-      return;
     }
-    grid.classList.add("masonry-ready");
   }
 
   function initTagSuggest(container) {
@@ -548,32 +726,29 @@
   }
 
   function applyFilters() {
-    const term = (queryInput && queryInput.value.trim().toLowerCase()) || "";
-    const collection = collectionFilter ? collectionFilter.value : "all";
-    const filtered = images.filter((img) => {
-      if (collection !== "all" && img.collection !== collection) return false;
-      if (!term) return true;
-      const hay = `${img.title || ""} ${img.description || ""}`.toLowerCase();
-      const tags = (img.tags || []).map((t) => String(t).toLowerCase());
-      if (term.startsWith("#")) {
-        const tagTerm = term.slice(1);
-        return tags.some((t) => t.includes(tagTerm));
-      }
-      return hay.includes(term) || tags.some((t) => t.includes(term));
-    });
-    renderImages(filtered);
+    filterState.query = (queryInput && queryInput.value.trim()) || "";
+    filterState.collection = collectionFilter ? collectionFilter.value : "all";
+    loadImages(1);
   }
 
-  async function loadImages() {
-    const data = await fetchJSON(`/upload/admin/images?status=${showTrash ? "trash" : "active"}`);
+  async function loadImages(page) {
+    const targetPage = page || currentPage || 1;
+    const params = buildQueryParams(targetPage);
+    const data = await fetchJSON(`/upload/admin/images?${params.toString()}`);
     images = data.images || [];
     collections = data.collections || [];
     defaultCollection = data.default_collection || "";
+    currentPage = Number(data.page || targetPage) || 1;
+    totalPages = Number(data.pages || 1) || 1;
+    totalItems = Number(data.total || images.length) || 0;
     renderCollections();
     renderCollectionFilter();
     renderUploadCollections();
     bindCollectionActions();
-    applyFilters();
+    renderImages(images);
+    renderPagination();
+    syncTrashActions();
+    syncUrl(currentPage);
   }
 
   async function loadAuthConfig() {
@@ -598,6 +773,170 @@
     } catch (err) {
       if (authHint) authHint.textContent = err.message;
     }
+  }
+
+  function normalizeInviteDateInput(value) {
+    if (!value) return "";
+    return String(value).trim();
+  }
+
+  function buildInviteExpiresAt() {
+    const directValue = normalizeInviteDateInput(
+      inviteExpiresAtInput ? inviteExpiresAtInput.value : ""
+    );
+    if (directValue) {
+      return directValue;
+    }
+    const daysValue = inviteExpiresDaysInput ? inviteExpiresDaysInput.value : "";
+    const days = parseInt(daysValue || "0", 10);
+    if (!Number.isFinite(days) || days <= 0) {
+      return "";
+    }
+    const now = new Date();
+    now.setDate(now.getDate() + days);
+    const pad = (num) => String(num).padStart(2, "0");
+    return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(
+      now.getHours()
+    )}:${pad(now.getMinutes())}`;
+  }
+
+  function parseInviteDate(value) {
+    if (!value) return null;
+    const normalized = String(value).trim().replace(" ", "T");
+    const parsed = new Date(normalized);
+    if (Number.isNaN(parsed.getTime())) return null;
+    return parsed;
+  }
+
+  function formatInviteDate(value) {
+    const date = parseInviteDate(value);
+    if (!date) return value || "不过期";
+    const pad = (num) => String(num).padStart(2, "0");
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(
+      date.getDate()
+    )} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  }
+
+  function formatInviteRemaining(value) {
+    const date = parseInviteDate(value);
+    if (!date) return "不过期";
+    const diff = date.getTime() - Date.now();
+    if (diff <= 0) return "已过期";
+    const hours = Math.ceil(diff / 3600000);
+    if (hours < 24) {
+      return `剩余 ${hours} 小时`;
+    }
+    const days = Math.ceil(diff / 86400000);
+    return `剩余 ${days} 天`;
+  }
+
+  function renderInviteCreated(code) {
+    if (!inviteCreatedWrap || !inviteCreatedCode) return;
+    if (!code) {
+      inviteCreatedWrap.hidden = true;
+      inviteCreatedCode.textContent = "";
+      return;
+    }
+    inviteCreatedWrap.hidden = false;
+    inviteCreatedCode.textContent = code;
+  }
+
+  function renderInvites(list) {
+    if (!inviteList) return;
+    if (!list || !list.length) {
+      inviteList.innerHTML = '<div class="empty">暂无邀请码。</div>';
+      return;
+    }
+    inviteList.innerHTML = list
+      .map((invite) => {
+        const codeText = `${invite.code_prefix || ""}****`;
+        const maxUses =
+          invite.max_uses === null || invite.max_uses === undefined
+            ? "不限"
+            : invite.max_uses;
+        const usedText = `${invite.used_count || 0}/${maxUses}`;
+        const expiresAt = invite.expires_at || "";
+        const expiresLabel = expiresAt ? formatInviteDate(expiresAt) : "不过期";
+        const remainingLabel = formatInviteRemaining(expiresAt);
+        const statusText =
+          !invite.is_active ? "停用" : remainingLabel === "已过期" ? "已过期" : "启用";
+        const noteText = invite.note ? escapeHtml(invite.note) : "无备注";
+        const disableLabel = invite.is_active ? "停用" : "已停用";
+        const disableAttr = invite.is_active ? "" : "disabled";
+        return `
+          <div class="admin-invite-card">
+            <div class="admin-invite-main">
+              <div class="admin-invite-code">${escapeHtml(codeText)}</div>
+              <div class="admin-invite-meta">
+                <span>已用 ${escapeHtml(usedText)}</span>
+                <span>${escapeHtml(statusText)}</span>
+                <span>${escapeHtml(expiresLabel)}</span>
+                <span>${escapeHtml(remainingLabel)}</span>
+              </div>
+              <div class="admin-invite-note">${noteText}</div>
+            </div>
+            <div class="admin-invite-actions">
+              <button class="btn ghost" type="button" data-invite-disable data-invite-id="${
+                invite.id
+              }" ${disableAttr}>${disableLabel}</button>
+            </div>
+          </div>
+        `;
+      })
+      .join("");
+  }
+
+  async function loadInvites() {
+    if (!inviteList) return;
+    const data = await fetchJSON("/upload/admin/invites");
+    renderInvites(data.invites || []);
+  }
+
+  async function createInvite() {
+    if (!inviteCreateBtn) return;
+    if (inviteHint) inviteHint.textContent = "创建中...";
+    renderInviteCreated("");
+    const limitEnabled = inviteLimitToggle ? inviteLimitToggle.checked : true;
+    let maxUses = inviteMaxUsesInput ? inviteMaxUsesInput.value : "";
+    if (!limitEnabled) {
+      maxUses = "";
+    }
+    const expiresAt = buildInviteExpiresAt();
+    try {
+      const payload = {
+        note: inviteNoteInput ? inviteNoteInput.value.trim() : "",
+        max_uses: maxUses,
+        expires_at: expiresAt,
+      };
+      const data = await fetchJSON("/upload/admin/invites", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (inviteHint) inviteHint.textContent = "已创建";
+      renderInviteCreated(data.code || "");
+      await loadInvites();
+    } catch (err) {
+      if (inviteHint) inviteHint.textContent = err.message;
+    }
+  }
+
+  async function disableInvite(inviteId) {
+    if (!inviteId) return;
+    if (!confirm("确认停用该邀请码？")) return;
+    if (inviteHint) inviteHint.textContent = "停用中...";
+    try {
+      await fetchJSON(`/upload/admin/invites/${inviteId}/disable`, { method: "POST" });
+      if (inviteHint) inviteHint.textContent = "已停用";
+      await loadInvites();
+    } catch (err) {
+      if (inviteHint) inviteHint.textContent = err.message;
+    }
+  }
+
+  function syncInviteLimitState() {
+    if (!inviteMaxUsesInput || !inviteLimitToggle) return;
+    inviteMaxUsesInput.disabled = !inviteLimitToggle.checked;
   }
 
   async function saveCollections() {
@@ -633,8 +972,13 @@
   }
 
   function initAdmin() {
+    readUrlState();
+    if (trashBtn) {
+      trashBtn.textContent = showTrash ? "查看正常作品" : "查看垃圾桶";
+    }
+    syncTrashActions();
     if (grid) {
-      loadImages().catch((err) => {
+      loadImages(currentPage).catch((err) => {
         if (empty) empty.textContent = err.message;
       });
     } else if (collectionList || uploadCollection || collectionFilter || defaultCollectionSelect) {
@@ -646,25 +990,121 @@
     loadAuthConfig().catch((err) => {
       if (authHint) authHint.textContent = err.message;
     });
+    loadInvites().catch((err) => {
+      if (inviteHint) inviteHint.textContent = err.message;
+    });
 
     if (grid && refreshBtn) {
-      refreshBtn.addEventListener("click", () => loadImages());
+      refreshBtn.addEventListener("click", () => loadImages(currentPage));
     }
 
     if (trashBtn) {
       trashBtn.addEventListener("click", () => {
         showTrash = !showTrash;
         trashBtn.textContent = showTrash ? "查看正常作品" : "查看垃圾桶";
-        loadImages();
+        currentPage = 1;
+        syncTrashActions();
+        loadImages(currentPage);
+      });
+    }
+
+    if (trashPageBtn) {
+      trashPageBtn.addEventListener("click", async () => {
+        if (!showTrash) return;
+        const uuids = (images || []).map((item) => item.uuid).filter(Boolean);
+        if (!uuids.length) return;
+        if (!confirm("确认永久删除本页垃圾桶作品？此操作不可恢复。")) return;
+        await purgeTrash(uuids, false);
+      });
+    }
+
+    if (trashAllBtn) {
+      trashAllBtn.addEventListener("click", async () => {
+        if (!showTrash) return;
+        if (!confirm("确认清空垃圾桶？此操作不可恢复。")) return;
+        await purgeTrash(null, true);
       });
     }
 
     if (queryInput) {
-      queryInput.addEventListener("input", applyFilters);
+      let searchTimer = null;
+      queryInput.addEventListener("input", () => {
+        if (searchTimer) window.clearTimeout(searchTimer);
+        searchTimer = window.setTimeout(() => {
+          searchTimer = null;
+          applyFilters();
+        }, 300);
+      });
     }
 
     if (collectionFilter) {
       collectionFilter.addEventListener("change", applyFilters);
+    }
+
+    if (pagePrevBtn) {
+      pagePrevBtn.addEventListener("click", () => {
+        if (currentPage <= 1) return;
+        loadImages(currentPage - 1);
+      });
+    }
+
+    if (pageNextBtn) {
+      pageNextBtn.addEventListener("click", () => {
+        if (currentPage >= totalPages) return;
+        loadImages(currentPage + 1);
+      });
+    }
+
+    if (pageList) {
+      pageList.addEventListener("click", (event) => {
+        const btn = event.target.closest("[data-page]");
+        if (!btn) return;
+        const target = parseInt(btn.dataset.page || "1", 10);
+        if (!Number.isFinite(target) || target === currentPage) return;
+        loadImages(target);
+      });
+    }
+
+    if (pageInput) {
+      pageInput.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter") return;
+        event.preventDefault();
+        jumpToPage(pageInput.value);
+      });
+    }
+
+    if (pageJumpBtn) {
+      pageJumpBtn.addEventListener("click", () => {
+        if (!pageInput) return;
+        jumpToPage(pageInput.value);
+      });
+    }
+
+    if (inviteLimitToggle) {
+      syncInviteLimitState();
+      inviteLimitToggle.addEventListener("change", syncInviteLimitState);
+    }
+
+    if (inviteCreateBtn) {
+      inviteCreateBtn.addEventListener("click", createInvite);
+    }
+
+    if (inviteRefreshBtn) {
+      inviteRefreshBtn.addEventListener("click", () => {
+        loadInvites().catch((err) => {
+          if (inviteHint) inviteHint.textContent = err.message;
+        });
+      });
+    }
+
+    if (inviteList) {
+      inviteList.addEventListener("click", (event) => {
+        const btn = event.target.closest("[data-invite-disable]");
+        if (!btn) return;
+        const inviteId = btn.dataset.inviteId;
+        if (!inviteId) return;
+        disableInvite(inviteId);
+      });
     }
 
     if (addCollectionBtn) {
@@ -1071,6 +1511,67 @@
     let tagInfoMap = new Map();
     let tagParentMap = new Map();
     let tagChildMap = new Map();
+    let pendingTypeFilter = "";
+    const TAG_FILTER_STORAGE_KEY = "admin-tags-filters-v1";
+
+    function loadTagFilterPrefs() {
+      if (!("localStorage" in window)) return {};
+      try {
+        const raw = window.localStorage.getItem(TAG_FILTER_STORAGE_KEY);
+        if (!raw) return {};
+        const data = JSON.parse(raw);
+        return data && typeof data === "object" ? data : {};
+      } catch (err) {
+        return {};
+      }
+    }
+
+    function persistTagFilterPrefs() {
+      if (!("localStorage" in window)) return;
+      const payload = {};
+      if (tagShowEmptyToggle) payload.showEmpty = Boolean(tagShowEmptyToggle.checked);
+      if (tagCandidateToggle) payload.candidate = Boolean(tagCandidateToggle.checked);
+      if (tagPageSizeSelect) {
+        const size = parseInt(tagPageSizeSelect.value || "0", 10);
+        if (Number.isFinite(size) && size > 0) payload.pageSize = size;
+      }
+      if (tagSortSelect) payload.sort = tagSortSelect.value || "count-desc";
+      if (tagTypeFilter) payload.type = tagTypeFilter.value || "all";
+      try {
+        window.localStorage.setItem(TAG_FILTER_STORAGE_KEY, JSON.stringify(payload));
+      } catch (err) {
+        // ignore
+      }
+    }
+
+    const savedFilters = loadTagFilterPrefs();
+    if (tagShowEmptyToggle && typeof savedFilters.showEmpty === "boolean") {
+      tagShowEmptyToggle.checked = savedFilters.showEmpty;
+    }
+    if (tagCandidateToggle && typeof savedFilters.candidate === "boolean") {
+      tagCandidateToggle.checked = savedFilters.candidate;
+    }
+    if (tagPageSizeSelect && Number.isFinite(savedFilters.pageSize)) {
+      const targetValue = String(savedFilters.pageSize);
+      const hasOption = Array.from(tagPageSizeSelect.options).some(
+        (option) => option.value === targetValue
+      );
+      if (hasOption) {
+        tagPageSizeSelect.value = targetValue;
+      }
+    }
+    if (tagSortSelect && savedFilters.sort) {
+      tagSortSelect.value = String(savedFilters.sort);
+    }
+    if (savedFilters.type) {
+      pendingTypeFilter = String(savedFilters.type);
+    }
+    if (tagPageSizeSelect) {
+      const parsed = parseInt(tagPageSizeSelect.value || "0", 10);
+      if (Number.isFinite(parsed) && parsed > 0) {
+        tagPageSize = parsed;
+      }
+    }
 
     const defaultType = () => {
       const first = tagTypes.length ? String(tagTypes[0].type || "") : "";
@@ -1338,7 +1839,10 @@
           ...tagTypes.map((item) => String(item.type || "")),
           ...unknownTypes,
         ]);
-        tagTypeFilter.value = values.has(current) ? current : "all";
+        const preferred = pendingTypeFilter || current;
+        tagTypeFilter.value = values.has(preferred) ? preferred : "all";
+        pendingTypeFilter = "";
+        persistTagFilterPrefs();
       }
       renderTagTypeSummary();
     }
@@ -1958,6 +2462,7 @@
         if (tagTypeFilter) tagTypeFilter.value = "all";
         if (tagShowEmptyToggle) tagShowEmptyToggle.checked = true;
         tagPage = 1;
+        persistTagFilterPrefs();
         applyTagFilters({ resetPage: true });
         openTagEditor(newTag);
       });
@@ -1976,23 +2481,38 @@
     }
 
     if (tagTypeFilter) {
-      tagTypeFilter.addEventListener("change", () => applyTagFilters({ resetPage: true }));
+      tagTypeFilter.addEventListener("change", () => {
+        persistTagFilterPrefs();
+        applyTagFilters({ resetPage: true });
+      });
     }
 
     if (tagSortSelect) {
-      tagSortSelect.addEventListener("change", () => applyTagFilters({ resetPage: true }));
+      tagSortSelect.addEventListener("change", () => {
+        persistTagFilterPrefs();
+        applyTagFilters({ resetPage: true });
+      });
     }
 
     if (tagShowEmptyToggle) {
-      tagShowEmptyToggle.addEventListener("change", () => applyTagFilters({ resetPage: true }));
+      tagShowEmptyToggle.addEventListener("change", () => {
+        persistTagFilterPrefs();
+        applyTagFilters({ resetPage: true });
+      });
     }
 
     if (tagCandidateToggle) {
-      tagCandidateToggle.addEventListener("change", () => applyTagFilters({ resetPage: true }));
+      tagCandidateToggle.addEventListener("change", () => {
+        persistTagFilterPrefs();
+        applyTagFilters({ resetPage: true });
+      });
     }
 
     if (tagPageSizeSelect) {
-      tagPageSizeSelect.addEventListener("change", () => applyTagFilters({ resetPage: true }));
+      tagPageSizeSelect.addEventListener("change", () => {
+        persistTagFilterPrefs();
+        applyTagFilters({ resetPage: true });
+      });
     }
 
     if (tagPrevBtn) {

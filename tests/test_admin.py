@@ -38,6 +38,10 @@ def test_admin_update_and_delete(tmp_path):
     assert resp.status_code == 200
     data = resp.get_json()
     assert data["images"]
+    assert data["page"] == 1
+    assert data["page_size"] == 40
+    assert data["total"] >= 1
+    assert data["pages"] >= 1
 
     resp = client.post(
         f"/upload/admin/images/{uid}/update",
@@ -66,6 +70,63 @@ def test_admin_update_and_delete(tmp_path):
     assert row["deleted_at"]
 
 
+def test_admin_purge_trash_page_and_all(tmp_path):
+    seed_test_root(tmp_path)
+    modules = setup_env(tmp_path)
+    config = modules["app.config"]
+    auth = modules["app.auth"]
+    storage = modules["app.storage"]
+    worker = modules["app.worker"]
+    db = modules["app.db"]
+    upload_service = modules["app.upload_service"]
+
+    storage.ensure_dirs()
+    auth.create_user("admin", "secret", groups=[config.ADMIN_GROUP])
+    uid1 = "a" * 32
+    uid2 = "b" * 32
+    raw_path1 = config.RAW_DIR / f"{uid1}.png"
+    raw_path2 = config.RAW_DIR / f"{uid2}.png"
+    make_image(raw_path1)
+    make_image(raw_path2)
+    assert worker.process_file(raw_path1)
+    assert worker.process_file(raw_path2)
+
+    app = upload_service.create_app()
+    client = app.test_client()
+    resp = client.post("/upload/admin/login", json={"username": "admin", "password": "secret"})
+    assert resp.status_code == 200
+
+    resp = client.post(f"/upload/admin/images/{uid1}/delete")
+    assert resp.status_code == 200
+    resp = client.post(f"/upload/admin/images/{uid2}/delete")
+    assert resp.status_code == 200
+
+    trash_path1 = config.TRASH_DIR / f"{uid1}.png"
+    trash_path2 = config.TRASH_DIR / f"{uid2}.png"
+    assert trash_path1.exists()
+    assert trash_path2.exists()
+
+    resp = client.post("/upload/admin/images/trash/purge", json={"uuids": [uid1]})
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["deleted"] == 1
+    assert not trash_path1.exists()
+    with db.connect() as conn:
+        row1 = conn.execute("SELECT uuid FROM images WHERE uuid=?", (uid1,)).fetchone()
+        row2 = conn.execute("SELECT deleted_at FROM images WHERE uuid=?", (uid2,)).fetchone()
+    assert row1 is None
+    assert row2 and row2["deleted_at"]
+
+    resp = client.post("/upload/admin/images/trash/purge", json={})
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["deleted"] == 1
+    assert not trash_path2.exists()
+    with db.connect() as conn:
+        row2 = conn.execute("SELECT uuid FROM images WHERE uuid=?", (uid2,)).fetchone()
+    assert row2 is None
+
+
 def test_admin_login_requires_group(tmp_path):
     seed_test_root(tmp_path)
     modules = setup_env(tmp_path)
@@ -81,6 +142,49 @@ def test_admin_login_requires_group(tmp_path):
         json={"username": "viewer", "password": "secret"},
     )
     assert resp.status_code == 401
+
+
+def test_admin_invite_crud(tmp_path):
+    seed_test_root(tmp_path)
+    modules = setup_env(tmp_path)
+    config = modules["app.config"]
+    auth = modules["app.auth"]
+    upload_service = modules["app.upload_service"]
+
+    auth.create_user("boss", "secret", groups=[config.ADMIN_GROUP])
+    app = upload_service.create_app()
+    client = app.test_client()
+    resp = client.post(
+        "/upload/admin/login",
+        json={"username": "boss", "password": "secret"},
+    )
+    assert resp.status_code == 200
+
+    payload = {
+        "note": "内部测试",
+        "max_uses": 3,
+        "expires_at": "2030-01-01T00:00",
+    }
+    resp = client.post("/upload/admin/invites", json=payload)
+    assert resp.status_code == 201
+    data = resp.get_json()
+    assert data["code"]
+    invite = data["invite"]
+    assert invite["note"] == "内部测试"
+    assert invite["max_uses"] == 3
+
+    resp = client.get("/upload/admin/invites")
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["invites"]
+
+    invite_id = invite["id"]
+    resp = client.post(f"/upload/admin/invites/{invite_id}/disable")
+    assert resp.status_code == 200
+    resp = client.get("/upload/admin/invites")
+    data = resp.get_json()
+    disabled = next(item for item in data["invites"] if item["id"] == invite_id)
+    assert disabled["is_active"] is False
 
 
 def test_admin_upload_status_progress(tmp_path):

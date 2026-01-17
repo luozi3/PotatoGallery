@@ -65,6 +65,9 @@ def ensure_schema() -> None:
             CREATE TABLE IF NOT EXISTS user_favorites (
                 user_id INTEGER NOT NULL,
                 image_uuid TEXT NOT NULL,
+                rating INTEGER DEFAULT 0,
+                flag TEXT,
+                color_label TEXT,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 PRIMARY KEY (user_id, image_uuid),
                 FOREIGN KEY (user_id) REFERENCES auth_users(id) ON DELETE CASCADE,
@@ -72,6 +75,17 @@ def ensure_schema() -> None:
             )
             """
         )
+        favorite_cols = {
+            row["name"] for row in conn.execute("PRAGMA table_info(user_favorites)").fetchall()
+        }
+        favorite_additions = {
+            "rating": "rating INTEGER DEFAULT 0",
+            "flag": "flag TEXT",
+            "color_label": "color_label TEXT",
+        }
+        for name, ddl in favorite_additions.items():
+            if name not in favorite_cols:
+                conn.execute(f"ALTER TABLE user_favorites ADD COLUMN {ddl}")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_user_favorites_user ON user_favorites(user_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_user_favorites_image ON user_favorites(image_uuid)")
         conn.execute(

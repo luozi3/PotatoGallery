@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime
 import hashlib
 from dataclasses import dataclass
 from typing import Iterable, Optional
@@ -8,6 +9,9 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 from . import config
 from . import db
+
+_SCHEMA_READY = False
+_SCHEMA_READY_DB: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -18,6 +22,11 @@ class AuthUser:
 
 
 def ensure_schema(conn) -> None:
+    global _SCHEMA_READY
+    global _SCHEMA_READY_DB
+    db_path = str(db.DB_PATH)
+    if _SCHEMA_READY and _SCHEMA_READY_DB == db_path:
+        return
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS auth_users (
@@ -62,12 +71,16 @@ def ensure_schema(conn) -> None:
             max_uses INTEGER,
             used_count INTEGER NOT NULL DEFAULT 0,
             note TEXT,
+            expires_at DATETIME,
             is_active INTEGER NOT NULL DEFAULT 1,
             created_by TEXT,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
         """
     )
+    invite_cols = {row["name"] for row in conn.execute("PRAGMA table_info(auth_invites)").fetchall()}
+    if "expires_at" not in invite_cols:
+        conn.execute("ALTER TABLE auth_invites ADD COLUMN expires_at DATETIME")
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS auth_invite_usages (
@@ -84,6 +97,8 @@ def ensure_schema(conn) -> None:
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_auth_invite_usages_invite_id ON auth_invite_usages(invite_id)"
     )
+    _SCHEMA_READY = True
+    _SCHEMA_READY_DB = db_path
 
 
 def ensure_group(conn, name: str) -> int:
@@ -105,12 +120,45 @@ def _hash_invite(code: str) -> str:
     return hashlib.sha256(code.encode("utf-8")).hexdigest()
 
 
+def _parse_expires_at(value: object) -> Optional[datetime.datetime]:
+    if value is None:
+        return None
+    if isinstance(value, datetime.datetime):
+        return value
+    if isinstance(value, datetime.date):
+        return datetime.datetime.combine(value, datetime.time.min)
+    if isinstance(value, str):
+        raw = value.strip()
+        if not raw:
+            return None
+        normalized = raw.replace("Z", "+00:00")
+        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M"):
+            try:
+                return datetime.datetime.strptime(normalized, fmt)
+            except ValueError:
+                continue
+        try:
+            return datetime.datetime.fromisoformat(normalized)
+        except ValueError:
+            return None
+    return None
+
+
+def _format_expires_at(value: Optional[datetime.datetime]) -> Optional[str]:
+    if not value:
+        return None
+    if value.tzinfo is not None:
+        value = value.astimezone().replace(tzinfo=None)
+    return value.strftime("%Y-%m-%d %H:%M:%S")
+
+
 def create_invite(
     code: str,
     *,
     max_uses: Optional[int] = None,
     note: str = "",
     created_by: Optional[str] = None,
+    expires_at: Optional[datetime.datetime] = None,
     conn=None,
 ) -> int:
     if not code:
@@ -124,12 +172,13 @@ def create_invite(
         ensure_schema(conn)
         code_hash = _hash_invite(code)
         code_prefix = code[:6]
+        expires_value = _format_expires_at(_parse_expires_at(expires_at))
         conn.execute(
             """
-            INSERT INTO auth_invites (code_hash, code_prefix, max_uses, note, created_by)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO auth_invites (code_hash, code_prefix, max_uses, note, expires_at, created_by)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (code_hash, code_prefix, max_uses, note, created_by),
+            (code_hash, code_prefix, max_uses, note, expires_value, created_by),
         )
         row = conn.execute(
             "SELECT id FROM auth_invites WHERE code_hash=?",
@@ -155,7 +204,7 @@ def consume_invite(code: str, user_id: int, *, ip: Optional[str] = None, conn) -
     code_hash = _hash_invite(code)
     row = conn.execute(
         """
-        SELECT id, max_uses, used_count, is_active
+        SELECT id, max_uses, used_count, is_active, expires_at
         FROM auth_invites
         WHERE code_hash=?
         """,
@@ -163,6 +212,9 @@ def consume_invite(code: str, user_id: int, *, ip: Optional[str] = None, conn) -
     ).fetchone()
     if not row or not row["is_active"]:
         return "邀请码无效"
+    expires_at = _parse_expires_at(row["expires_at"])
+    if expires_at and expires_at <= datetime.datetime.now():
+        return "邀请码已过期"
     max_uses = row["max_uses"]
     invite_id = int(row["id"])
     if max_uses is not None:

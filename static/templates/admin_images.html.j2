@@ -20,7 +20,7 @@
       {% include "partials/sidebar_default.html.j2" %}
       <div class="home-main">
         <div class="admin-main">
-          <section class="admin-auth admin-surface" data-admin-login>
+          <section class="admin-auth admin-surface" data-admin-login hidden>
             <h1>管理员登录</h1>
             <p class="muted">请输入后台账号与密码。</p>
             <form class="admin-form" data-admin-login-form>
@@ -42,6 +42,9 @@
               <div class="admin-actions">
                 <button class="btn ghost" type="button" data-admin-refresh>刷新列表</button>
                 <button class="btn ghost" type="button" data-admin-toggle-trash>查看垃圾桶</button>
+                <button class="btn ghost danger" type="button" data-admin-trash-page hidden>删除本页垃圾</button>
+                <button class="btn ghost danger" type="button" data-admin-trash-all hidden>清空垃圾桶</button>
+                <span class="admin-trash-hint muted" data-admin-trash-hint hidden></span>
               </div>
             </div>
             <div class="admin-subnav" aria-label="管理快捷">
@@ -63,8 +66,19 @@
               </select>
             </section>
 
-            <section class="gallery admin-gallery" data-admin-grid data-masonry aria-live="polite"></section>
+            <section class="gallery admin-gallery" data-admin-grid aria-live="polite"></section>
             <div class="empty" data-admin-empty>当前暂无作品。</div>
+            <div class="admin-pagination" data-admin-pagination hidden>
+              <button class="btn ghost" type="button" data-admin-page-prev>上一页</button>
+              <div class="admin-page-list" data-admin-page-list></div>
+              <button class="btn ghost" type="button" data-admin-page-next>下一页</button>
+              <div class="admin-page-summary" data-admin-page-summary>共 1 页 / 共 0 张</div>
+              <label class="admin-page-jump">
+                <span>跳转</span>
+                <input class="admin-input" type="number" min="1" step="1" inputmode="numeric" data-admin-page-input>
+              </label>
+              <button class="btn ghost" type="button" data-admin-page-jump>确定</button>
+            </div>
           </section>
         </div>
       </div>

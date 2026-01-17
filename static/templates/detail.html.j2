@@ -135,6 +135,21 @@
       <section class="detail-media" data-detail-media data-image-mode="thumb">
         <div class="detail-media-actions">
           <a class="detail-action" href="/raw/{{ image.raw_filename }}" download>下载原图</a>
+          <button class="detail-action-toggle" type="button" data-fav-toggle data-image-uuid="{{ image.uuid }}">
+            <span class="fav-dot" data-fav-dot aria-hidden="true"></span>
+            <span data-fav-label>收藏</span>
+          </button>
+          <button class="detail-action-toggle detail-action-manage" type="button" data-fav-manage hidden>管理收藏</button>
+        </div>
+        <div class="detail-fav-panel" data-fav-panel hidden>
+          <div class="detail-fav-panel-head">
+            <span class="detail-fav-title">收藏夹</span>
+            <button class="btn ghost btn-mini" type="button" data-fav-panel-close>关闭</button>
+          </div>
+          <div class="detail-fav-list" data-fav-panel-list></div>
+          <div class="detail-fav-foot">
+            <a class="detail-action" href="/favorites/">前往收藏页管理</a>
+          </div>
         </div>
         <div class="frame detail-frame" style="aspect-ratio: {{ image.width }}/{{ image.height }};">
           <div class="detail-overlay">

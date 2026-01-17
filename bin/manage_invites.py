@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import datetime
 import os
 import secrets
 import sys
@@ -22,18 +23,57 @@ def _generate_code() -> str:
     return secrets.token_urlsafe(12)
 
 
+def _parse_expires_at(value: Optional[str]) -> Optional[datetime.datetime]:
+    if not value:
+        return None
+    raw = value.strip()
+    if not raw:
+        return None
+    normalized = raw.replace("Z", "+00:00")
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M"):
+        try:
+            return datetime.datetime.strptime(normalized, fmt)
+        except ValueError:
+            continue
+    try:
+        return datetime.datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+
+
+def _resolve_expires_at(args) -> Optional[datetime.datetime]:
+    expires_at = _parse_expires_at(args.expires_at)
+    if expires_at:
+        return expires_at
+    if args.expires_days:
+        return datetime.datetime.now() + datetime.timedelta(days=args.expires_days)
+    return None
+
+
 def cmd_create(args) -> int:
     _ensure_schema()
     code = args.code or _generate_code()
-    max_uses = args.max_uses if args.max_uses is not None else config.AUTH_INVITE_DEFAULT_USES
+    if args.unlimited:
+        max_uses = None
+    else:
+        max_uses = args.max_uses if args.max_uses is not None else config.AUTH_INVITE_DEFAULT_USES
     note = args.note or ""
+    expires_at = _resolve_expires_at(args)
     try:
-        auth.create_invite(code, max_uses=max_uses, note=note, created_by=args.created_by)
+        auth.create_invite(
+            code,
+            max_uses=max_uses,
+            note=note,
+            created_by=args.created_by,
+            expires_at=expires_at,
+        )
     except Exception as exc:  # noqa: BLE001
         print(f"创建失败: {exc}", file=sys.stderr)
         return 1
     print(f"邀请码: {code}")
-    print(f"最大可用次数: {max_uses}")
+    print(f"最大可用次数: {max_uses if max_uses is not None else '不限'}")
+    if expires_at:
+        print(f"过期时间: {expires_at.strftime('%Y-%m-%d %H:%M:%S')}")
     return 0
 
 
@@ -43,7 +83,7 @@ def cmd_list(args) -> int:
         auth.ensure_schema(conn)
         rows = conn.execute(
             """
-            SELECT id, code_prefix, max_uses, used_count, note, is_active, created_at
+            SELECT id, code_prefix, max_uses, used_count, note, is_active, created_at, expires_at
             FROM auth_invites
             ORDER BY created_at DESC
             """
@@ -51,7 +91,10 @@ def cmd_list(args) -> int:
     for row in rows:
         status = "启用" if row["is_active"] else "停用"
         max_uses = row["max_uses"] or "-"
-        print(f"{row['id']}\t{row['code_prefix']}****\t{row['used_count']}/{max_uses}\t{status}\t{row['note'] or ''}")
+        expires_at = row["expires_at"] or "-"
+        print(
+            f"{row['id']}\t{row['code_prefix']}****\t{row['used_count']}/{max_uses}\t{status}\t{expires_at}\t{row['note'] or ''}"
+        )
     return 0
 
 
@@ -71,6 +114,9 @@ def build_parser() -> argparse.ArgumentParser:
     create_cmd = sub.add_parser("create", help="创建邀请码")
     create_cmd.add_argument("--code", help="手动指定邀请码（不填则随机生成）")
     create_cmd.add_argument("--max-uses", type=int, default=None, help="最大使用次数（默认取配置）")
+    create_cmd.add_argument("--unlimited", action="store_true", help="不限制使用次数")
+    create_cmd.add_argument("--expires-at", help="过期时间（YYYY-MM-DD HH:MM 或 ISO）")
+    create_cmd.add_argument("--expires-days", type=int, default=0, help="有效天数（优先于默认）")
     create_cmd.add_argument("--note", help="邀请码来源备注")
     create_cmd.add_argument("--created-by", dest="created_by", help="创建人标记")
     create_cmd.set_defaults(func=cmd_create)

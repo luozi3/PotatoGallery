@@ -20,7 +20,7 @@
       {% include "partials/sidebar_default.html.j2" %}
       <div class="home-main">
         <div class="admin-main">
-          <section class="admin-auth admin-surface" data-admin-login>
+          <section class="admin-auth admin-surface" data-admin-login hidden>
             <h1>管理员登录</h1>
             <p class="muted">请输入后台账号与密码。</p>
             <form class="admin-form" data-admin-login-form>
@@ -62,6 +62,51 @@
                 <button class="btn primary" type="button" data-admin-auth-save>保存设置</button>
                 <p class="hint" data-admin-auth-hint></p>
               </div>
+            </section>
+
+            <section class="admin-invite-panel admin-surface" data-admin-invite-panel>
+              <div class="admin-toolbar">
+                <div>
+                  <h2>邀请码管理</h2>
+                  <p class="muted">创建后仅显示一次，请及时保存。</p>
+                </div>
+              </div>
+              <div class="admin-invite-created" data-admin-invite-created hidden>
+                <span>新邀请码</span>
+                <code data-admin-invite-code></code>
+              </div>
+              <div class="admin-fields-grid admin-invite-form">
+                <div class="admin-field">
+                  <label class="label">使用范围/备注</label>
+                  <input class="admin-input" type="text" placeholder="例如：内部测试或指定群组" data-admin-invite-note>
+                </div>
+                <div class="admin-field">
+                  <label class="label">过期时间</label>
+                  <input class="admin-input" type="datetime-local" data-admin-invite-expires-at>
+                  <p class="hint">留空表示不过期。</p>
+                </div>
+                <div class="admin-field">
+                  <label class="label">有效天数</label>
+                  <input class="admin-input" type="number" min="1" step="1" placeholder="例如 7" data-admin-invite-expires-days>
+                  <p class="hint">填写后自动换算过期时间。</p>
+                </div>
+                <div class="admin-field">
+                  <label class="label">使用次数</label>
+                  <div class="admin-actions-row">
+                    <label class="admin-switch">
+                      <input type="checkbox" data-admin-invite-limit checked>
+                      启用次数限制
+                    </label>
+                    <input class="admin-input" type="number" min="1" step="1" placeholder="例如 10" data-admin-invite-max-uses>
+                  </div>
+                </div>
+              </div>
+              <div class="admin-actions-row">
+                <button class="btn primary" type="button" data-admin-invite-create>生成邀请码</button>
+                <button class="btn ghost" type="button" data-admin-invite-refresh>刷新列表</button>
+                <p class="hint" data-admin-invite-hint></p>
+              </div>
+              <div class="admin-invite-list" data-admin-invite-list></div>
             </section>
           </section>
         </div>

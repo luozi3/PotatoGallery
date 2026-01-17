@@ -81,6 +81,20 @@ def test_auth_hint_css_hides_login_links():
     assert re.search(r"html\.auth-hint-logged-in\s*\[data-auth-register-link\]", css)
 
 
+def test_admin_login_section_hidden_by_default():
+    templates = [
+        "static/templates/admin.html.j2",
+        "static/templates/admin_auth.html.j2",
+        "static/templates/admin_collections.html.j2",
+        "static/templates/admin_images.html.j2",
+        "static/templates/admin_tags.html.j2",
+        "static/templates/admin_upload.html.j2",
+    ]
+    for template in templates:
+        html = read_text(template)
+        assert re.search(r"data-admin-login[^>]*\bhidden\b", html), template
+
+
 def test_html_sidebar_collapsed_support():
     css = read_text("static/styles/gallery.css")
     assert re.search(r"html\.sidebar-collapsed\s+body\s+\.left-sidebar", css)
@@ -123,6 +137,14 @@ def test_admin_stress_retry_abortable_requests():
     assert "REQUEST_TIMEOUT_MS" in js
 
 
+def test_admin_invite_panel_has_controls():
+    html = read_text("static/templates/admin_auth.html.j2")
+    assert "data-admin-invite-create" in html
+    assert "data-admin-invite-list" in html
+    assert "data-admin-invite-expires-at" in html
+    assert "data-admin-invite-max-uses" in html
+
+
 def test_controls_use_theme_panel_background():
     css = read_text("static/styles/gallery.css")
     assert re.search(
@@ -130,6 +152,36 @@ def test_controls_use_theme_panel_background():
         css,
         re.S,
     )
+
+
+def test_admin_gallery_auto_rows_override():
+    css = read_text("static/styles/gallery.css")
+    assert re.search(
+        r"\.page-admin\s+\.admin-gallery\s*\{[^}]*grid-auto-rows:\s*auto",
+        css,
+        re.S,
+    )
+
+
+def test_admin_trash_view_skips_editor():
+    js = read_text("static/js/admin.js")
+    assert "const showEditor = !showTrash;" in js
+    assert "const editorHtml = showEditor" in js
+    assert "if (!showTrash) {" in js
+
+
+def test_admin_trash_purge_buttons_present():
+    html = read_text("static/templates/admin_images.html.j2")
+    assert "data-admin-trash-page" in html
+    assert "data-admin-trash-all" in html
+    css = read_text("static/styles/gallery.css")
+    assert ".btn.danger" in css
+
+
+def test_admin_tags_filters_persisted():
+    js = read_text("static/js/admin.js")
+    assert "admin-tags-filters-v1" in js
+    assert "persistTagFilterPrefs" in js
 
 
 def test_system_font_stack_used():
@@ -141,6 +193,58 @@ def test_system_font_stack_used():
     assert "Zen Kaku" not in css
     assert "Noto Sans" not in css
     assert "Noto Serif" not in css
+
+
+def test_favorites_flag_icons_present():
+    html = read_text("static/templates/pages/favorites.html.j2")
+    assert 'data-fav-flag="pick"' in html
+    assert 'data-fav-flag="reject"' in html
+    assert "⚑" in html
+    assert "⚐" in html
+    js = read_text("static/js/favorites.js")
+    assert 'data-fav-flag="pick"' in js
+    assert 'data-fav-flag="reject"' in js
+    assert "⚑" in js
+    assert "⚐" in js
+
+
+def test_favorites_narrow_list_above_facets():
+    css = read_text("static/styles/gallery.css")
+    assert re.search(
+        r"\.favorites-layout\s*\{[^}]*grid-template-areas:\s*\"facets list\"",
+        css,
+        re.S,
+    )
+    assert re.search(
+        r"@media \(max-width: 980px\)[\s\S]*?\.favorites-layout\s*\{[^}]*grid-template-areas:\s*\"list\"\s*\"facets\"",
+        css,
+        re.S,
+    )
+
+
+def test_favorites_narrow_thumb_portrait():
+    css = read_text("static/styles/gallery.css")
+    assert re.search(
+        r"@media \(max-width: 980px\)[\s\S]*?\.favorites-row\s*\{[^}]*grid-template-columns:\s*minmax\(110px,\s*32%\)\s*minmax\(0,\s*1fr\)",
+        css,
+        re.S,
+    )
+    assert re.search(
+        r"@media \(max-width: 980px\)[\s\S]*?\.favorites-thumb\s*\{[^}]*aspect-ratio:\s*3\s*/\s*4",
+        css,
+        re.S,
+    )
+    js = read_text("static/js/favorites.js")
+    assert "favorites-summary" in js
+
+
+def test_favorites_narrow_hide_list_head():
+    css = read_text("static/styles/gallery.css")
+    assert re.search(
+        r"@media \(max-width: 980px\)[\s\S]*?\.favorites-list-head\s*\{[^}]*display:\s*none",
+        css,
+        re.S,
+    )
 
 
 def test_mobile_topbar_compact_layout():
@@ -292,6 +396,13 @@ def test_admin_dashboard_layout_present():
     html = read_text("static/templates/admin_images.html.j2")
     assert "page-admin-dashboard" in html
     assert "admin-controls-card" in html
+    assert "data-admin-pagination" in html
+    assert "data-admin-page-prev" in html
+    assert "data-admin-page-next" in html
+    assert "data-admin-page-summary" in html
+    assert "data-admin-page-input" in html
+    assert "data-admin-page-jump" in html
+    assert "data-admin-grid data-masonry" not in html
 
 
 def test_admin_image_cards_default_open():
@@ -299,10 +410,17 @@ def test_admin_image_cards_default_open():
     assert "admin-card-editor" in js
     assert "class=\"card-body\"" in js
     assert "class=\"meta\"" in js
+    assert "data-masonry-item" in js
     assert "class=\"tags\"" in js
     assert "admin-card-summary" not in js
     css = read_text("static/styles/gallery.css")
     assert ".admin-card-editor" in css
+
+
+def test_admin_images_pagination_jump_present():
+    js = read_text("static/js/admin.js")
+    assert "data-admin-page-input" in js
+    assert "jumpToPage" in js
 
 
 def test_admin_tag_editor_present():
@@ -422,10 +540,8 @@ def test_masonry_ready_class_applied_after_layout():
 
 def test_masonry_ready_set_for_dynamic_pages():
     search_js = read_text("static/js/search.js")
-    admin_js = read_text("static/js/admin.js")
     user_js = read_text("static/js/user.js")
     assert "masonry-ready" in search_js
-    assert "masonry-ready" in admin_js
     assert "masonry-ready" in user_js
 
 
@@ -615,6 +731,17 @@ def test_masonry_ready_waits_for_images_or_timeout():
     assert "img.complete" in js
     assert "addEventListener('error'" in js
     assert "MASONRY_READY_TIMEOUT" in js
+
+
+def test_detail_favorite_loading_state_present():
+    js = read_text("static/js/user.js")
+    assert "is-loading" in js
+    assert "加载中" in js
+
+
+def test_detail_favorite_loading_style():
+    css = read_text("static/styles/gallery.css")
+    assert re.search(r"\.detail-action-toggle\.is-loading\s*\{[^}]*cursor:\s*progress", css, re.S)
 
 
 def test_favorites_page_template_exists():
@@ -961,6 +1088,12 @@ def test_search_suggest_accepts_plain_tokens():
     assert "includeAlias: true" in js
 
 
+def test_detail_full_mode_clamps_to_available_width():
+    js = read_text("static/js/ui.js")
+    assert "fitWidth > availableWidth" in js
+    assert "fitWidth = availableWidth" in js
+
+
 def test_wall_page_removed_everywhere():
     templates = [
         "static/templates/index.html.j2",
@@ -999,9 +1132,23 @@ def test_error_pages_have_apology_and_figure():
     for template in templates:
         html = read_text(template)
         assert "error-figure" in html
-        assert "/static/images/error-figure.webp" in html
+        assert "/static/images/error-figure.jpg" in html
         assert "很抱歉" in html
         assert "提示" in html
+
+
+def test_error_figure_asset_exists():
+    assert (BASE_DIR / "static" / "images" / "error-figure.jpg").exists()
+
+
+def test_error_page_scale_excludes_sidebar_layout():
+    css = read_text("static/styles/gallery.css")
+    assert re.search(r"\.page-error\.with-sidebar\s*\{[^}]*--error-scale:\s*1", css, re.S)
+    assert re.search(
+        r"@media \(min-width: 1200px\)[\s\S]*\.page-error:not\(\.with-sidebar\)\s*\{",
+        css,
+        re.S,
+    )
 
 
 def test_404_page_has_retry_copy_and_stamp():

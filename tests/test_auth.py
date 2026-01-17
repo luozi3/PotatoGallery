@@ -1,3 +1,4 @@
+import datetime
 import json
 
 from test_pipeline import seed_test_root, setup_env
@@ -112,3 +113,41 @@ def test_open_register_requires_password_confirmation(tmp_path):
         headers={"X-Forwarded-Proto": "https"},
     )
     assert resp.status_code == 201
+
+
+def test_invite_expired_rejected(tmp_path):
+    seed_test_root(tmp_path)
+    _set_registration_mode(tmp_path, "invite")
+    modules = setup_env(tmp_path)
+    auth = modules["app.auth"]
+    upload_service = modules["app.upload_service"]
+
+    past = datetime.datetime.now() - datetime.timedelta(days=1)
+    auth.create_invite("invite-expired", max_uses=2, note="test", expires_at=past)
+
+    app = upload_service.create_app()
+    client = app.test_client()
+    resp = client.post(
+        "/auth/register",
+        json={
+            "username": "user1",
+            "password": "secret123",
+            "password_confirm": "secret123",
+            "invite_code": "invite-expired",
+        },
+        headers={"X-Forwarded-Proto": "https"},
+    )
+    assert resp.status_code == 400
+
+
+def test_auth_schema_cache_marks_db_path(tmp_path):
+    seed_test_root(tmp_path)
+    modules = setup_env(tmp_path)
+    auth = modules["app.auth"]
+    db = modules["app.db"]
+
+    with db.connect() as conn:
+        auth.ensure_schema(conn)
+
+    assert auth._SCHEMA_READY is True
+    assert auth._SCHEMA_READY_DB == str(db.DB_PATH)

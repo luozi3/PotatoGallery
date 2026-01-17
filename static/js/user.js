@@ -258,6 +258,132 @@
     initTagSuggest(document);
   }
 
+  async function initDetailFavorite() {
+    const button = document.querySelector("[data-fav-toggle]");
+    if (!button) return;
+    const uuid = button.dataset.imageUuid;
+    if (!uuid) return;
+    const label = button.querySelector("[data-fav-label]");
+    const manageBtn = document.querySelector("[data-fav-manage]");
+    const panel = document.querySelector("[data-fav-panel]");
+    const panelList = panel ? panel.querySelector("[data-fav-panel-list]") : null;
+    const panelClose = panel ? panel.querySelector("[data-fav-panel-close]") : null;
+    let panelGalleries = [];
+
+    function setState(isActive) {
+      button.classList.toggle("is-active", isActive);
+      button.dataset.favorited = isActive ? "1" : "0";
+      if (label) label.textContent = isActive ? "已收藏" : "收藏";
+      if (manageBtn) manageBtn.hidden = !isActive;
+      if (!isActive && panel) panel.hidden = true;
+    }
+
+    button.classList.add("is-loading");
+    button.disabled = true;
+    if (label) label.textContent = "加载中";
+
+    async function renderPanel() {
+      if (!panelList) return;
+      if (!panelGalleries.length) {
+        panelList.innerHTML = '<span class="muted">暂无收藏夹</span>';
+        return;
+      }
+      panelList.innerHTML = panelGalleries
+        .map((item) => {
+          const active = item.contains ? "active" : "";
+          return `
+            <button class="detail-fav-item ${active}" type="button" data-gallery-id="${escapeHtml(String(item.id))}">
+              <span>${escapeHtml(item.title || "")}</span>
+              <span class="muted">${item.count || 0}</span>
+            </button>
+          `;
+        })
+        .join("");
+      panelList.querySelectorAll("[data-gallery-id]").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          const galleryId = btn.dataset.galleryId;
+          const entry = panelGalleries.find((item) => String(item.id) === String(galleryId));
+          if (!entry) return;
+          const action = entry.contains ? "remove" : "add";
+          try {
+            await fetchJSON(`/api/galleries/${galleryId}/items`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ uuid, action }),
+            });
+            await loadPanel();
+          } catch (err) {
+            return;
+          }
+        });
+      });
+    }
+
+    async function loadPanel() {
+      if (!panel) return;
+      const data = await fetchJSON(`/api/galleries?uuid=${encodeURIComponent(uuid)}`, { cache: "no-store" });
+      panelGalleries = data.galleries || [];
+      renderPanel();
+    }
+
+    let isAuthorized = true;
+    let stateReady = true;
+    try {
+      const data = await fetchJSON(`/api/favorites/${uuid}`, { cache: "no-store" });
+      setState(Boolean(data.favorited));
+    } catch (err) {
+      if (err && err.message === "未授权") {
+        isAuthorized = false;
+        button.disabled = true;
+        if (label) label.textContent = "登录后收藏";
+      } else {
+        stateReady = false;
+        button.disabled = true;
+        if (label) label.textContent = "加载失败";
+      }
+    } finally {
+      button.classList.remove("is-loading");
+      if (isAuthorized && stateReady) {
+        button.disabled = false;
+      }
+    }
+    if (!isAuthorized || !stateReady) return;
+
+    if (manageBtn) {
+      manageBtn.addEventListener("click", async () => {
+        if (!panel) return;
+        panel.hidden = !panel.hidden;
+        if (!panel.hidden) {
+          await loadPanel();
+        }
+      });
+    }
+
+    if (panelClose) {
+      panelClose.addEventListener("click", () => {
+        if (panel) panel.hidden = true;
+      });
+    }
+
+    button.addEventListener("click", async () => {
+      if (button.dataset.loading === "1") return;
+      button.dataset.loading = "1";
+      try {
+        const data = await fetchJSON(`/api/favorites/${uuid}/toggle`, { method: "POST" });
+        setState(data.status === "added");
+      } catch (err) {
+        if (label) {
+          const prev = button.dataset.favorited === "1";
+          label.textContent = "操作失败";
+          window.setTimeout(() => setState(prev), 1200);
+        }
+      } finally {
+        button.dataset.loading = "";
+      }
+    });
+  }
+
   initMyPage();
   initDetailEditor();
+  initDetailFavorite();
 })();

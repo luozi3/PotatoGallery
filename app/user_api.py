@@ -201,6 +201,7 @@ def _build_image_item(
         "original_name": row_dict.get("original_name") or "",
         "raw_filename": f"{uuid}{row_dict.get('ext') or ''}",
         "thumb_filename": thumb_name,
+        "bytes": row_dict.get("bytes"),
         "bytes_human": static_site.human_bytes(int(row_dict.get("bytes") or 0)),
         "width": row_dict.get("width"),
         "height": row_dict.get("height"),
@@ -208,6 +209,9 @@ def _build_image_item(
         "thumb_height": row_dict.get("thumb_height"),
         "dominant_color": row_dict.get("dominant_color"),
         "created_at": row_dict.get("created_at"),
+        "rating": int(row_dict.get("rating") or 0),
+        "flag": row_dict.get("flag") or "",
+        "color_label": row_dict.get("color_label") or "",
     }
     if row_dict.get("favorited_at"):
         item["favorited_at"] = row_dict.get("favorited_at")
@@ -682,6 +686,7 @@ def list_favorites():
             SELECT i.id AS image_id,
                    f.image_uuid AS uuid,
                    f.created_at AS favorited_at,
+                   f.rating, f.flag, f.color_label,
                    i.original_name, i.ext, i.bytes, i.width, i.height,
                    i.thumb_width, i.thumb_height, i.dominant_color, i.created_at,
                    i.thumb_path, i.stored_path,
@@ -699,7 +704,48 @@ def list_favorites():
     for row in rows:
         item = _build_image_item(dict(row), collections_meta, default_collection)
         items.append(item)
-    return jsonify({"ok": True, "images": items, "total": len(items)})
+    resp = jsonify({"ok": True, "images": items, "total": len(items)})
+    resp.headers["Cache-Control"] = "no-store, max-age=0"
+    return resp
+
+
+@bp.get("/api/favorites/<uuid>")
+def favorite_status(uuid: str):
+    user, err = _require_user()
+    if err:
+        return err
+    db.ensure_schema()
+    with db.connect() as conn:
+        exists = conn.execute(
+            "SELECT 1 FROM user_favorites WHERE user_id=? AND image_uuid=?",
+            (user.id, uuid),
+        ).fetchone()
+        if exists:
+            resp = jsonify({"ok": True, "favorited": True})
+            resp.headers["Cache-Control"] = "no-store, max-age=0"
+            return resp
+        in_gallery = conn.execute(
+            """
+            SELECT 1
+            FROM user_gallery_images gi
+            JOIN user_galleries g ON g.id = gi.gallery_id
+            WHERE g.user_id=? AND gi.image_uuid=?
+            LIMIT 1
+            """,
+            (user.id, uuid),
+        ).fetchone()
+    if in_gallery:
+        with db.transaction() as conn:
+            conn.execute(
+                "INSERT OR IGNORE INTO user_favorites (user_id, image_uuid) VALUES (?, ?)",
+                (user.id, uuid),
+            )
+        resp = jsonify({"ok": True, "favorited": True})
+        resp.headers["Cache-Control"] = "no-store, max-age=0"
+        return resp
+    resp = jsonify({"ok": True, "favorited": False})
+    resp.headers["Cache-Control"] = "no-store, max-age=0"
+    return resp
 
 
 @bp.post("/api/favorites/<uuid>/toggle")
@@ -729,6 +775,15 @@ def toggle_favorite(uuid: str):
                 "DELETE FROM user_favorites WHERE user_id=? AND image_uuid=?",
                 (user.id, uuid),
             )
+            conn.execute(
+                """
+                DELETE FROM user_gallery_images
+                WHERE image_uuid=? AND gallery_id IN (
+                    SELECT id FROM user_galleries WHERE user_id=?
+                )
+                """,
+                (uuid, user.id),
+            )
             status = "removed"
         else:
             conn.execute(
@@ -736,6 +791,90 @@ def toggle_favorite(uuid: str):
                 (user.id, uuid),
             )
     return jsonify({"ok": True, "status": status})
+
+
+@bp.post("/api/favorites/<uuid>/meta")
+def update_favorite_meta(uuid: str):
+    user, err = _require_user()
+    if err:
+        return err
+    payload = request.get_json(silent=True) or {}
+    rating_value = payload.get("rating") if "rating" in payload else None
+    flag_value = payload.get("flag") if "flag" in payload else None
+    color_value = payload.get("color_label") if "color_label" in payload else None
+
+    rating = None
+    if rating_value is not None:
+        try:
+            rating = int(rating_value)
+        except (TypeError, ValueError):
+            return _json_error("评分不合法")
+        if rating < 0 or rating > 5:
+            return _json_error("评分不合法")
+
+    flag = None
+    if flag_value is not None:
+        flag = str(flag_value or "").strip().lower()
+        if flag and flag not in {"pick", "reject"}:
+            return _json_error("旗标不合法")
+
+    color_label = None
+    if color_value is not None:
+        color_label = str(color_value or "").strip().lower()
+        if color_label and color_label not in {"red", "yellow", "green", "blue", "purple"}:
+            return _json_error("颜色不合法")
+
+    db.ensure_schema()
+    with db.connect() as conn:
+        row = conn.execute(
+            "SELECT uuid, deleted_at FROM images WHERE uuid=?",
+            (uuid,),
+        ).fetchone()
+        if not row:
+            return _json_error("作品不存在", 404)
+        if row["deleted_at"]:
+            return _json_error("作品已删除", 409)
+
+    with db.transaction() as conn:
+        existing = conn.execute(
+            """
+            SELECT rating, flag, color_label
+            FROM user_favorites
+            WHERE user_id=? AND image_uuid=?
+            """,
+            (user.id, uuid),
+        ).fetchone()
+        current_rating = int(existing["rating"] or 0) if existing else 0
+        current_flag = existing["flag"] if existing else ""
+        current_color = existing["color_label"] if existing else ""
+        new_rating = current_rating if rating is None else rating
+        new_flag = current_flag if flag is None else flag
+        new_color = current_color if color_label is None else color_label
+        if existing:
+            conn.execute(
+                """
+                UPDATE user_favorites
+                SET rating=?, flag=?, color_label=?
+                WHERE user_id=? AND image_uuid=?
+                """,
+                (new_rating, new_flag or None, new_color or None, user.id, uuid),
+            )
+        else:
+            conn.execute(
+                """
+                INSERT INTO user_favorites (user_id, image_uuid, rating, flag, color_label)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (user.id, uuid, new_rating, new_flag or None, new_color or None),
+            )
+    return jsonify(
+        {
+            "ok": True,
+            "rating": new_rating,
+            "flag": new_flag or "",
+            "color_label": new_color or "",
+        }
+    )
 
 
 def _load_gallery(conn, gallery_id: int, user_id: int) -> Optional[dict]:
@@ -750,31 +889,87 @@ def _load_gallery(conn, gallery_id: int, user_id: int) -> Optional[dict]:
     return dict(row) if row else None
 
 
+def _can_use_cover(conn, user_id: int, uuid: str, gallery_id: Optional[int] = None) -> bool:
+    row = conn.execute(
+        "SELECT uuid, deleted_at FROM images WHERE uuid=?",
+        (uuid,),
+    ).fetchone()
+    if not row or row["deleted_at"]:
+        return False
+    exists = conn.execute(
+        "SELECT 1 FROM user_favorites WHERE user_id=? AND image_uuid=?",
+        (user_id, uuid),
+    ).fetchone()
+    if exists:
+        return True
+    if gallery_id is not None:
+        exists = conn.execute(
+            "SELECT 1 FROM user_gallery_images WHERE gallery_id=? AND image_uuid=?",
+            (gallery_id, uuid),
+        ).fetchone()
+        if exists:
+            return True
+    return False
+
+
 @bp.get("/api/galleries")
 def list_galleries():
     user, err = _require_user()
     if err:
         return err
     db.ensure_schema()
+    target_uuid = str(request.args.get("uuid") or "").strip()
     with db.connect() as conn:
         rows = conn.execute(
             """
             SELECT g.id, g.title, g.description, g.cover_uuid, g.created_at, g.updated_at,
-                   COUNT(gi.image_uuid) AS count
+                   COUNT(gi.image_uuid) AS count,
+                   SUM(CASE WHEN gi.image_uuid = ? THEN 1 ELSE 0 END) AS contains,
+                   COALESCE(
+                       g.cover_uuid,
+                       (
+                           SELECT gi2.image_uuid
+                           FROM user_gallery_images gi2
+                           WHERE gi2.gallery_id = g.id
+                           ORDER BY gi2.position DESC, gi2.created_at DESC
+                           LIMIT 1
+                       )
+                   ) AS resolved_cover_uuid,
+                   i.thumb_path AS cover_thumb_path,
+                   i.thumb_width AS cover_thumb_width,
+                   i.thumb_height AS cover_thumb_height,
+                   i.dominant_color AS cover_dominant_color
             FROM user_galleries g
             LEFT JOIN user_gallery_images gi ON g.id = gi.gallery_id
+            LEFT JOIN images i ON i.uuid = COALESCE(
+                g.cover_uuid,
+                (
+                    SELECT gi2.image_uuid
+                    FROM user_gallery_images gi2
+                    WHERE gi2.gallery_id = g.id
+                    ORDER BY gi2.position DESC, gi2.created_at DESC
+                    LIMIT 1
+                )
+            )
             WHERE g.user_id=?
             GROUP BY g.id
             ORDER BY g.updated_at DESC
             """,
-            (user.id,),
+            (target_uuid, user.id),
         ).fetchall()
     galleries = []
     for row in rows:
         item = dict(row)
         item["count"] = int(item.get("count") or 0)
+        item["contains"] = bool(item.get("contains"))
+        cover_thumb = item.get("cover_thumb_path")
+        item["cover_thumb_filename"] = Path(cover_thumb).name if cover_thumb else ""
+        item["cover_resolved_uuid"] = item.get("resolved_cover_uuid")
+        item["cover_is_manual"] = bool(item.get("cover_uuid"))
         galleries.append(item)
-    return jsonify({"ok": True, "galleries": galleries})
+    resp = jsonify({"ok": True, "galleries": galleries})
+    resp.headers["Cache-Control"] = "no-store, max-age=0"
+    return resp
 
 
 @bp.post("/api/galleries")
@@ -785,16 +980,19 @@ def create_gallery():
     payload = request.get_json(silent=True) or {}
     title = str(payload.get("title") or "").strip()
     description = str(payload.get("description") or "").strip()
+    cover_uuid = str(payload.get("cover_uuid") or "").strip()
     if not title:
         return _json_error("画廊名称不能为空")
     db.ensure_schema()
     with db.transaction() as conn:
+        if cover_uuid and not _can_use_cover(conn, user.id, cover_uuid, None):
+            return _json_error("封面无效", 400)
         conn.execute(
             """
-            INSERT INTO user_galleries (user_id, title, description)
-            VALUES (?, ?, ?)
+            INSERT INTO user_galleries (user_id, title, description, cover_uuid)
+            VALUES (?, ?, ?, ?)
             """,
-            (user.id, title, description or None),
+            (user.id, title, description or None, cover_uuid or None),
         )
         gallery_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
     return jsonify({"ok": True, "id": gallery_id})
@@ -808,6 +1006,7 @@ def update_gallery(gallery_id: int):
     payload = request.get_json(silent=True) or {}
     title = str(payload.get("title") or "").strip()
     description = str(payload.get("description") or "").strip()
+    cover_uuid = payload.get("cover_uuid") if "cover_uuid" in payload else None
     if not title:
         return _json_error("画廊名称不能为空")
     db.ensure_schema()
@@ -815,13 +1014,22 @@ def update_gallery(gallery_id: int):
         gallery = _load_gallery(conn, gallery_id, user.id)
         if not gallery:
             return _json_error("画廊不存在", 404)
+        cover_value = gallery.get("cover_uuid")
+        if cover_uuid is not None:
+            cover_uuid = str(cover_uuid or "").strip()
+            if cover_uuid:
+                if not _can_use_cover(conn, user.id, cover_uuid, gallery_id):
+                    return _json_error("封面无效", 400)
+                cover_value = cover_uuid
+            else:
+                cover_value = None
         conn.execute(
             """
             UPDATE user_galleries
-            SET title=?, description=?, updated_at=CURRENT_TIMESTAMP
+            SET title=?, description=?, cover_uuid=?, updated_at=CURRENT_TIMESTAMP
             WHERE id=? AND user_id=?
             """,
-            (title, description or None, gallery_id, user.id),
+            (title, description or None, cover_value, gallery_id, user.id),
         )
     return jsonify({"ok": True})
 
@@ -860,13 +1068,16 @@ def gallery_images(gallery_id: int):
                    i.thumb_width, i.thumb_height, i.dominant_color, i.created_at,
                    i.thumb_path, i.stored_path,
                    i.title_override, i.description, i.tags_json, i.collection_override,
-                   gi.created_at AS added_at
+                   gi.created_at AS added_at,
+                   f.created_at AS favorited_at,
+                   f.rating, f.flag, f.color_label
             FROM user_gallery_images gi
             JOIN images i ON i.uuid = gi.image_uuid
+            LEFT JOIN user_favorites f ON f.user_id=? AND f.image_uuid = i.uuid
             WHERE gi.gallery_id=? AND i.deleted_at IS NULL
             ORDER BY gi.position DESC, gi.created_at DESC
             """,
-            (gallery_id,),
+            (user.id, gallery_id),
         ).fetchall()
 
     collections_meta, default_collection, _ = static_site.load_collections_config()
@@ -874,7 +1085,12 @@ def gallery_images(gallery_id: int):
     for row in rows:
         item = _build_image_item(dict(row), collections_meta, default_collection)
         items.append(item)
-    return jsonify({"ok": True, "gallery": gallery, "images": items})
+    if gallery:
+        gallery["count"] = len(items)
+        gallery["cover_is_manual"] = bool(gallery.get("cover_uuid"))
+    resp = jsonify({"ok": True, "gallery": gallery, "images": items})
+    resp.headers["Cache-Control"] = "no-store, max-age=0"
+    return resp
 
 
 @bp.post("/api/galleries/<int:gallery_id>/items")
@@ -907,6 +1123,10 @@ def update_gallery_items(gallery_id: int):
                 "DELETE FROM user_gallery_images WHERE gallery_id=? AND image_uuid=?",
                 (gallery_id, uuid),
             )
+            conn.execute(
+                "UPDATE user_galleries SET updated_at=CURRENT_TIMESTAMP WHERE id=? AND user_id=?",
+                (gallery_id, user.id),
+            )
             status = "removed"
         else:
             conn.execute(
@@ -915,6 +1135,14 @@ def update_gallery_items(gallery_id: int):
                 VALUES (?, ?)
                 """,
                 (gallery_id, uuid),
+            )
+            conn.execute(
+                "INSERT OR IGNORE INTO user_favorites (user_id, image_uuid) VALUES (?, ?)",
+                (user.id, uuid),
+            )
+            conn.execute(
+                "UPDATE user_galleries SET updated_at=CURRENT_TIMESTAMP WHERE id=? AND user_id=?",
+                (gallery_id, user.id),
             )
             status = "added"
     return jsonify({"ok": True, "status": status})

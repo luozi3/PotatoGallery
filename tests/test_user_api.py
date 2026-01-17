@@ -293,15 +293,39 @@ def test_user_favorites_flow(tmp_path):
     payload = resp.get_json()
     assert payload["status"] == "added"
 
+    resp = client.get(f"/api/favorites/{uid}", headers=headers, base_url=base_url)
+    payload = resp.get_json()
+    assert payload["favorited"] is True
+    assert "no-store" in resp.headers.get("Cache-Control", "")
+
+    resp = client.post(
+        f"/api/favorites/{uid}/meta",
+        json={"rating": 4, "flag": "pick", "color_label": "red"},
+        headers=headers,
+        base_url=base_url,
+    )
+    assert resp.status_code == 200
+    payload = resp.get_json()
+    assert payload["rating"] == 4
+    assert payload["flag"] == "pick"
+    assert payload["color_label"] == "red"
+
     resp = client.get("/api/favorites", headers=headers, base_url=base_url)
     data = resp.get_json()
     assert data["total"] == 1
     assert data["images"][0]["uuid"] == uid
+    assert data["images"][0]["rating"] == 4
+    assert data["images"][0]["flag"] == "pick"
+    assert data["images"][0]["color_label"] == "red"
+    assert "no-store" in resp.headers.get("Cache-Control", "")
 
     resp = client.post(f"/api/favorites/{uid}/toggle", headers=headers, base_url=base_url)
     assert resp.status_code == 200
     payload = resp.get_json()
     assert payload["status"] == "removed"
+    resp = client.get(f"/api/favorites/{uid}", headers=headers, base_url=base_url)
+    payload = resp.get_json()
+    assert payload["favorited"] is False
     resp = client.get("/api/favorites", headers=headers, base_url=base_url)
     data = resp.get_json()
     assert data["total"] == 0
@@ -347,17 +371,37 @@ def test_user_gallery_flow(tmp_path):
     )
     assert resp.status_code == 200
 
+    resp = client.get(f"/api/favorites/{uid}", headers=headers, base_url=base_url)
+    payload = resp.get_json()
+    assert payload["favorited"] is True
+
+    resp = client.get("/api/favorites", headers=headers, base_url=base_url)
+    payload = resp.get_json()
+    assert payload["total"] == 1
+
     resp = client.get(f"/api/galleries/{gallery_id}/images", headers=headers, base_url=base_url)
     data = resp.get_json()
     assert data["images"][0]["uuid"] == uid
+    assert "no-store" in resp.headers.get("Cache-Control", "")
+
+    resp = client.get(f"/api/galleries?uuid={uid}", headers=headers, base_url=base_url)
+    data = resp.get_json()
+    assert data["galleries"][0]["contains"] is True
+    assert "no-store" in resp.headers.get("Cache-Control", "")
 
     resp = client.post(
         f"/api/galleries/{gallery_id}/update",
-        json={"title": "2025 壁纸精选", "description": ""},
+        json={"title": "2025 壁纸精选", "description": "", "cover_uuid": uid},
         headers=headers,
         base_url=base_url,
     )
     assert resp.status_code == 200
+
+    resp = client.get("/api/galleries", headers=headers, base_url=base_url)
+    data = resp.get_json()
+    assert data["galleries"][0]["cover_uuid"] == uid
+    assert data["galleries"][0]["cover_is_manual"] is True
+    assert "no-store" in resp.headers.get("Cache-Control", "")
 
     resp = client.post(
         f"/api/galleries/{gallery_id}/items",
@@ -369,3 +413,7 @@ def test_user_gallery_flow(tmp_path):
     resp = client.get(f"/api/galleries/{gallery_id}/images", headers=headers, base_url=base_url)
     data = resp.get_json()
     assert not data["images"]
+
+    resp = client.get(f"/api/galleries?uuid={uid}", headers=headers, base_url=base_url)
+    data = resp.get_json()
+    assert data["galleries"][0]["contains"] is False

@@ -17,16 +17,161 @@
     <div class="home-layout">
       {% include "partials/sidebar_default.html.j2" %}
       <div class="home-main">
-        <div class="admin-main">
-          <section class="card">
-            <h1>我的收藏</h1>
-            <p class="muted">功能开发中，稍后开放。</p>
+        <section class="favorites-shell" data-favorites-page>
+          <header class="favorites-header">
+            <div class="favorites-title">
+              {% if site.favorites_icon_url %}
+                <img class="favorites-icon" src="{{ site.favorites_icon_url }}" alt="">
+              {% else %}
+                <span class="favorites-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" role="img" aria-hidden="true">
+                    <path d="M12 20.4l-1.3-1.2C5.2 14.3 2 11.5 2 8.2 2 5.9 3.9 4 6.2 4c1.6 0 3.1.7 4 1.9C11 4.7 12.5 4 14.1 4 16.4 4 18.3 5.9 18.3 8.2c0 3.3-3.2 6.1-8.7 11z" fill="currentColor" />
+                  </svg>
+                </span>
+              {% endif %}
+              <div>
+                <h1>我的收藏</h1>
+                <p class="favorites-subtitle">按画师、角色、月份与标记快速定位。</p>
+              </div>
+            </div>
+            <div class="favorites-header-actions">
+              <label class="favorites-search">
+                <span class="favorites-search-label">搜索</span>
+                <input type="search" placeholder="tag:猫 artist:xxx -女孩" data-fav-search-input>
+              </label>
+              <div class="favorites-stats">
+                <span>当前 <strong data-fav-count>0</strong></span>
+                <span>总计 <strong data-fav-total>0</strong></span>
+              </div>
+            </div>
+          </header>
+
+          <section class="favorites-shelf" aria-label="收藏夹">
+            <div class="favorites-shelf-head">
+              <div class="favorites-shelf-title">收藏夹</div>
+              <div class="favorites-shelf-actions">
+                <button class="btn ghost btn-mini" type="button" data-fav-gallery-new>新建收藏夹</button>
+              </div>
+            </div>
+            <div class="favorites-shelf-list" data-fav-gallery-list></div>
+            <form class="favorites-shelf-form" data-fav-gallery-form hidden>
+              <div class="favorites-form-row">
+                <label>
+                  <span>名称</span>
+                  <input type="text" name="title" required data-fav-gallery-title>
+                </label>
+                <label>
+                  <span>描述</span>
+                  <input type="text" name="description" data-fav-gallery-desc>
+                </label>
+              </div>
+              <div class="favorites-form-actions">
+                <button class="btn primary btn-mini" type="submit" data-fav-gallery-submit>保存</button>
+                <button class="btn ghost btn-mini" type="button" data-fav-gallery-cancel>取消</button>
+              </div>
+            </form>
+            <div class="favorites-gallery-panel" data-fav-gallery-panel hidden>
+              <div>
+                <div class="favorites-gallery-title" data-fav-gallery-name>收藏夹</div>
+                <div class="favorites-gallery-desc" data-fav-gallery-desc-text></div>
+                <div class="favorites-gallery-meta">
+                  <span data-fav-gallery-count>0</span>
+                  <span data-fav-gallery-updated></span>
+                </div>
+              </div>
+              <div class="favorites-gallery-actions">
+                <button class="btn ghost btn-mini" type="button" data-fav-gallery-edit>编辑</button>
+                <button class="btn ghost btn-mini" type="button" data-fav-gallery-clear-cover>清除封面</button>
+                <button class="btn ghost btn-mini" type="button" data-fav-gallery-delete>删除</button>
+              </div>
+            </div>
           </section>
-        </div>
+
+          <section class="favorites-toolbar">
+            <div class="favorites-active" data-fav-active></div>
+            <div class="favorites-toolbar-right">
+              <div class="favorites-filter-group">
+                <span class="filter-label">评分</span>
+                <div class="filter-stars" data-fav-rating-filter>
+                  <button class="star-btn" type="button" data-fav-rating="5">★★★★★</button>
+                  <button class="star-btn" type="button" data-fav-rating="4">★★★★</button>
+                  <button class="star-btn" type="button" data-fav-rating="3">★★★</button>
+                  <button class="star-btn" type="button" data-fav-rating="2">★★</button>
+                  <button class="star-btn" type="button" data-fav-rating="1">★</button>
+                </div>
+              </div>
+              <div class="favorites-filter-group">
+                <span class="filter-label">旗标</span>
+                <button class="flag-btn" type="button" data-fav-flag="pick" aria-label="精选" title="精选">⚑</button>
+                <button class="flag-btn" type="button" data-fav-flag="reject" aria-label="淘汰" title="淘汰">⚐</button>
+              </div>
+              <div class="favorites-filter-group">
+                <span class="filter-label">颜色</span>
+                <button class="color-btn red" type="button" data-fav-color="red"></button>
+                <button class="color-btn yellow" type="button" data-fav-color="yellow"></button>
+                <button class="color-btn green" type="button" data-fav-color="green"></button>
+                <button class="color-btn blue" type="button" data-fav-color="blue"></button>
+                <button class="color-btn purple" type="button" data-fav-color="purple"></button>
+              </div>
+              <label class="favorites-sort">
+                <span class="filter-label">排序</span>
+                <select data-fav-sort>
+                  <option value="favorited_desc">收藏时间 ↓</option>
+                  <option value="favorited_asc">收藏时间 ↑</option>
+                  <option value="created_desc">作品时间 ↓</option>
+                  <option value="created_asc">作品时间 ↑</option>
+                  <option value="title_asc">标题 A-Z</option>
+                  <option value="title_desc">标题 Z-A</option>
+                  <option value="size_desc">体积大→小</option>
+                  <option value="size_asc">体积小→大</option>
+                </select>
+              </label>
+            </div>
+          </section>
+          <section class="favorites-assign" data-fav-assign hidden>
+            <div class="favorites-assign-head">
+              <div>
+                <div class="favorites-assign-title">归类收藏夹</div>
+                <div class="favorites-assign-meta" data-fav-assign-meta></div>
+              </div>
+              <button class="btn ghost btn-mini" type="button" data-fav-assign-close>关闭</button>
+            </div>
+            <div class="favorites-assign-list" data-fav-assign-list></div>
+          </section>
+
+          <section class="favorites-layout">
+            <aside class="favorites-facets">
+              <div class="facet-card">
+                <div class="facet-title">画师</div>
+                <div class="facet-list" data-fav-artist-list></div>
+              </div>
+              <div class="facet-card">
+                <div class="facet-title">角色</div>
+                <div class="facet-list" data-fav-character-list></div>
+              </div>
+              <div class="facet-card">
+                <div class="facet-title">月份</div>
+                <div class="facet-list" data-fav-month-list></div>
+              </div>
+            </aside>
+            <div class="favorites-list">
+              <div class="favorites-list-head">
+                <span>作品</span>
+                <span>信息</span>
+                <span>标记</span>
+                <span>操作</span>
+              </div>
+              <div class="favorites-list-body" data-fav-grid></div>
+              <div class="favorites-empty" data-fav-empty>暂无收藏</div>
+              <div class="favorites-login-hint" data-fav-login-hint hidden>请先登录</div>
+            </div>
+          </section>
+        </section>
       </div>
     </div>
   </main>
 
   <script src="/static/js/ui.js?v={{ static_version }}" defer></script>
+  <script src="/static/js/favorites.js?v={{ static_version }}" defer></script>
 </body>
 </html>

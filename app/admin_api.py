@@ -3,6 +3,7 @@ import io
 import json
 import random
 import re
+import secrets
 import threading
 import time
 import uuid
@@ -54,6 +55,29 @@ def _parse_positive_int(value: Any) -> Optional[int]:
     if parsed <= 0:
         return None
     return parsed
+
+
+def _parse_invite_expires_at(raw: Any) -> Tuple[Optional[datetime.datetime], Optional[str]]:
+    if raw is None:
+        return None, None
+    if isinstance(raw, str):
+        raw_value = raw.strip()
+        if not raw_value:
+            return None, None
+    else:
+        raw_value = str(raw).strip()
+        if not raw_value:
+            return None, None
+    normalized = raw_value.replace("Z", "+00:00")
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M"):
+        try:
+            return datetime.datetime.strptime(normalized, fmt), None
+        except ValueError:
+            continue
+    try:
+        return datetime.datetime.fromisoformat(normalized), None
+    except ValueError:
+        return None, "过期时间格式不正确"
 
 
 def _prune_stress_tasks(now_ts: Optional[float] = None) -> None:
@@ -648,6 +672,111 @@ def admin_update_auth_config():
     return jsonify({"ok": True, "registration_mode": config.AUTH_REGISTRATION_MODE})
 
 
+@bp.get("/upload/admin/invites")
+def admin_list_invites():
+    user = _require_admin()
+    if not user:
+        return _json_error("未授权", 401)
+    db.ensure_schema()
+    with db.connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT id, code_prefix, max_uses, used_count, note, is_active, created_by, created_at, expires_at
+            FROM auth_invites
+            ORDER BY created_at DESC
+            """
+        ).fetchall()
+    invites = []
+    for row in rows:
+        invites.append(
+            {
+                "id": row["id"],
+                "code_prefix": row["code_prefix"],
+                "max_uses": row["max_uses"],
+                "used_count": row["used_count"],
+                "note": row["note"] or "",
+                "is_active": bool(row["is_active"]),
+                "created_by": row["created_by"] or "",
+                "created_at": row["created_at"],
+                "expires_at": row["expires_at"],
+            }
+        )
+    return jsonify({"ok": True, "invites": invites})
+
+
+@bp.post("/upload/admin/invites")
+def admin_create_invite():
+    user = _require_admin()
+    if not user:
+        return _json_error("未授权", 401)
+    payload = request.get_json(silent=True) or {}
+    note = str(payload.get("note") or "").strip()
+    max_uses_raw = payload.get("max_uses", None)
+    max_uses = None
+    if max_uses_raw not in (None, ""):
+        max_uses = _parse_positive_int(max_uses_raw)
+        if not max_uses:
+            return _json_error("最大使用次数必须大于 0")
+    expires_at, err = _parse_invite_expires_at(payload.get("expires_at"))
+    if err:
+        return _json_error(err)
+    code = str(payload.get("code") or "").strip()
+    if not code:
+        code = secrets.token_urlsafe(12)
+    db.ensure_schema()
+    try:
+        with db.transaction() as conn:
+            invite_id = auth.create_invite(
+                code,
+                max_uses=max_uses,
+                note=note,
+                created_by=user,
+                expires_at=expires_at,
+                conn=conn,
+            )
+            row = conn.execute(
+                """
+                SELECT id, code_prefix, max_uses, used_count, note, is_active, created_by, created_at, expires_at
+                FROM auth_invites
+                WHERE id=?
+                """,
+                (invite_id,),
+            ).fetchone()
+    except ValueError as exc:
+        return _json_error(str(exc))
+    invite = {
+        "id": row["id"],
+        "code_prefix": row["code_prefix"],
+        "max_uses": row["max_uses"],
+        "used_count": row["used_count"],
+        "note": row["note"] or "",
+        "is_active": bool(row["is_active"]),
+        "created_by": row["created_by"] or "",
+        "created_at": row["created_at"],
+        "expires_at": row["expires_at"],
+    }
+    resp = jsonify({"ok": True, "code": code, "invite": invite})
+    resp.status_code = 201
+    return resp
+
+
+@bp.post("/upload/admin/invites/<int:invite_id>/disable")
+def admin_disable_invite(invite_id: int):
+    user = _require_admin()
+    if not user:
+        return _json_error("未授权", 401)
+    db.ensure_schema()
+    with db.transaction() as conn:
+        auth.ensure_schema(conn)
+        result = conn.execute(
+            "UPDATE auth_invites SET is_active=0 WHERE id=?",
+            (invite_id,),
+        )
+        if result.rowcount == 0:
+            return _json_error("邀请码不存在", 404)
+    return jsonify({"ok": True})
+
+
 @bp.post("/upload/admin/upload")
 def admin_upload():
     user = _require_admin()
@@ -940,6 +1069,13 @@ def admin_images():
         return _json_error("未授权", 401)
     db.ensure_schema()
     status = (request.args.get("status") or "active").lower()
+    query = (request.args.get("q") or "").strip()
+    collection_filter = (request.args.get("collection") or "all").strip()
+    try:
+        page = max(1, int(request.args.get("p") or request.args.get("page") or 1))
+    except (TypeError, ValueError):
+        page = 1
+    page_size = 40
     where = "deleted_at IS NULL" if status != "trash" else "deleted_at IS NOT NULL"
     with db.connect() as conn:
         rows = conn.execute(
@@ -994,13 +1130,42 @@ def admin_images():
             "trash_path": row_dict.get("trash_path"),
         }
         items.append(item)
+
+    def matches_filter(item: dict) -> bool:
+        if collection_filter and collection_filter != "all":
+            if item.get("collection") != collection_filter:
+                return False
+        if not query:
+            return True
+        term = query.lower()
+        if term.startswith("#"):
+            term = term[1:].strip()
+            if not term:
+                return True
+            return any(term in str(tag).lower() for tag in (item.get("tags") or []))
+        hay = f"{item.get('title') or ''} {item.get('description') or ''}".lower()
+        if term in hay:
+            return True
+        return any(term in str(tag).lower() for tag in (item.get("tags") or []))
+
+    filtered_items = [item for item in items if matches_filter(item)]
+    total = len(filtered_items)
+    pages = max(1, (total + page_size - 1) // page_size)
+    page = max(1, min(page, pages))
+    start = (page - 1) * page_size
+    end = start + page_size
+    paged_items = filtered_items[start:end]
     collections, default_collection = _load_collections_meta()
     return jsonify(
         {
             "ok": True,
-            "images": items,
+            "images": paged_items,
             "collections": collections,
             "default_collection": default_collection,
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "pages": pages,
         }
     )
 
@@ -1096,6 +1261,93 @@ def admin_delete_image(uuid: str):
     except Exception:
         pass
     return jsonify({"ok": True})
+
+
+def _safe_unlink(path: Optional[Path]) -> None:
+    if not path:
+        return
+    try:
+        path.unlink(missing_ok=True)
+    except Exception:
+        pass
+
+
+def _purge_trash_rows(conn, rows: List[Any]) -> int:
+    uuids: List[str] = []
+    for row in rows:
+        row_dict = dict(row)
+        uuid_value = row_dict.get("uuid")
+        if not uuid_value:
+            continue
+        uuids.append(str(uuid_value))
+        trash_path = row_dict.get("trash_path")
+        stored_path = row_dict.get("stored_path")
+        thumb_path = row_dict.get("thumb_path")
+        if trash_path:
+            _safe_unlink(config.STORAGE / trash_path)
+        if stored_path:
+            _safe_unlink(config.STORAGE / stored_path)
+        if thumb_path:
+            _safe_unlink(config.STORAGE / thumb_path)
+    if not uuids:
+        return 0
+    placeholders = ",".join(["?"] * len(uuids))
+    conn.execute(f"DELETE FROM jobs WHERE image_uuid IN ({placeholders})", uuids)
+    conn.execute(f"DELETE FROM images WHERE uuid IN ({placeholders})", uuids)
+    return len(uuids)
+
+
+def _purge_trash_by_uuids(conn, uuids: Optional[List[str]]) -> int:
+    if uuids is not None:
+        if not uuids:
+            return 0
+        placeholders = ",".join(["?"] * len(uuids))
+        rows = conn.execute(
+            f"""
+            SELECT uuid, stored_path, thumb_path, trash_path
+            FROM images
+            WHERE deleted_at IS NOT NULL AND uuid IN ({placeholders})
+            """,
+            uuids,
+        ).fetchall()
+        return _purge_trash_rows(conn, rows)
+
+    deleted = 0
+    cursor = conn.execute(
+        """
+        SELECT uuid, stored_path, thumb_path, trash_path
+        FROM images
+        WHERE deleted_at IS NOT NULL
+        """
+    )
+    while True:
+        batch = cursor.fetchmany(200)
+        if not batch:
+            break
+        deleted += _purge_trash_rows(conn, batch)
+    return deleted
+
+
+@bp.post("/upload/admin/images/trash/purge")
+def admin_purge_trash():
+    user = _require_admin()
+    if not user:
+        return _json_error("未授权", 401)
+    payload = request.get_json(silent=True) or {}
+    uuids_raw = payload.get("uuids")
+    uuids: Optional[List[str]] = None
+    if uuids_raw is not None:
+        if not isinstance(uuids_raw, list):
+            return _json_error("参数错误")
+        uuids = [str(item).strip() for item in uuids_raw if str(item).strip()]
+    db.ensure_schema()
+    with db.transaction() as conn:
+        deleted = _purge_trash_by_uuids(conn, uuids)
+    try:
+        db.insert_audit("admin_purge_trash", f"deleted={deleted}", user)
+    except Exception:
+        pass
+    return jsonify({"ok": True, "deleted": deleted})
 
 
 @bp.get("/upload/admin/tags")

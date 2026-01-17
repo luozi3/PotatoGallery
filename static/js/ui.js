@@ -1775,10 +1775,13 @@
       if (!Number.isFinite(availableWidth) || availableWidth <= 0) return;
       const mode = detailMedia.dataset.imageMode === 'full' ? 'full' : 'thumb';
       if (mode === 'full') {
-        let fitWidth = fullWidth || image.naturalWidth;
-        let fitHeight = fullHeight || image.naturalHeight;
-        if (!fitWidth || !fitHeight) {
-          const ratio = getRatio(fullWidth, fullHeight);
+        const ratio = getRatio(fullWidth, fullHeight);
+        let fitWidth = fullWidth || image.naturalWidth || availableWidth;
+        let fitHeight = fullHeight || image.naturalHeight || fitWidth / ratio;
+        if (!fullWidth || !fullHeight) {
+          fitHeight = fitWidth / ratio;
+        }
+        if (fitWidth > availableWidth) {
           fitWidth = availableWidth;
           fitHeight = fitWidth / ratio;
         }
