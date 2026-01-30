@@ -13,7 +13,7 @@ export PYTHONPATH="$GALLERY_ROOT"
 PYTHON="$GALLERY_ROOT/venv/bin/python"
 
 if [ -x "$PYTHON" ]; then
-  "$PYTHON" "$GALLERY_ROOT/bin/maintenance.py" --scan --clean --vacuum --backup
+  "$PYTHON" "$GALLERY_ROOT/bin/maintenance.py" --scan --clean --vacuum --backup --backup-storage
 else
-  python3 "$GALLERY_ROOT/bin/maintenance.py" --scan --clean --vacuum --backup
+  python3 "$GALLERY_ROOT/bin/maintenance.py" --scan --clean --vacuum --backup --backup-storage
 fi

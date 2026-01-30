@@ -186,6 +186,19 @@ def test_admin_invite_crud(tmp_path):
     disabled = next(item for item in data["invites"] if item["id"] == invite_id)
     assert disabled["is_active"] is False
 
+    resp = client.post(f"/upload/admin/invites/{invite_id}/enable")
+    assert resp.status_code == 200
+    resp = client.get("/upload/admin/invites")
+    data = resp.get_json()
+    enabled = next(item for item in data["invites"] if item["id"] == invite_id)
+    assert enabled["is_active"] is True
+
+    resp = client.post(f"/upload/admin/invites/{invite_id}/delete")
+    assert resp.status_code == 200
+    resp = client.get("/upload/admin/invites")
+    data = resp.get_json()
+    assert all(item["id"] != invite_id for item in data["invites"])
+
 
 def test_admin_upload_status_progress(tmp_path):
     seed_test_root(tmp_path)

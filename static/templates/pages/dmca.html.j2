@@ -3,7 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>版权与 DMCA ｜ {{ site_name }}</title>
+  {% set title_sep = site.seo.title_separator or "｜" %}
+  <title>版权与 DMCA {{ title_sep }} {{ site_name }}</title>
   <meta name="description" content="版权声明与侵权通知处理方式">
   <meta name="theme-color" content="{{ site.theme_color }}">
   {% include "partials/theme_init.html.j2" %}
@@ -43,7 +44,7 @@
             <article class="dmca-tile">
               <div class="dmca-tile-mark">03</div>
               <h2>指定作品</h2>
-              <p>提供本站单个作品链接（URL），每次仅提交一张作品。</p>
+              <p>提供本站单个作品链接（URL），每次仅受理一张作品，多张链接不予处理。</p>
             </article>
             <article class="dmca-tile">
               <div class="dmca-tile-mark">04</div>
@@ -57,47 +58,47 @@
               <div>
                 <p class="dmca-eyebrow">信息填写</p>
                 <h2>删除申请表</h2>
-                <p class="dmca-note">本表单为预留入口，后续将接入处理流程。</p>
+                <p class="dmca-note">本表单已接入处理流程，提交后会生成受理编号。</p>
               </div>
               <div class="dmca-form-meta">
-                <span>每次仅提交一张作品</span>
+                <span>每次仅受理一张作品，多张链接不予处理</span>
                 <span>请务必填写完整</span>
               </div>
             </header>
-            <form class="dmca-form" action="#" method="post">
+            <form class="dmca-form" action="/api/dmca" method="post" data-site-url="{{ site_url }}">
               <div class="dmca-form-grid">
                 <label class="dmca-cell" data-required-field>
                   <span>姓名 <span class="dmca-required">*</span></span>
-                  <input class="admin-input" type="text" name="full_name" required autocomplete="name">
+                  <input class="admin-input" type="text" name="full_name" required autocomplete="name" maxlength="80">
                 </label>
                 <label class="dmca-cell" data-required-field>
                   <span>有效邮箱 <span class="dmca-required">*</span></span>
-                  <input class="admin-input" type="email" name="email" required autocomplete="email">
+                  <input class="admin-input" type="email" name="email" required autocomplete="email" maxlength="120">
                 </label>
                 <label class="dmca-cell" data-required-field>
                   <span>国家/地区 <span class="dmca-required">*</span></span>
-                  <input class="admin-input" type="text" name="region" required placeholder="国家 / 地区">
+                  <input class="admin-input" type="text" name="region" required placeholder="国家 / 地区" maxlength="80">
                 </label>
                 <label class="dmca-cell">
                   <span>备用联系方式</span>
-                  <input class="admin-input" type="text" name="contact" placeholder="社交账号 / 电话（可选）">
+                  <input class="admin-input" type="text" name="contact" placeholder="社交账号 / 电话（可选）" maxlength="120">
                 </label>
                 <label class="dmca-cell dmca-cell-wide" data-required-field>
                   <span>作品链接（本站 URL）<span class="dmca-required">*</span></span>
-                  <input class="admin-input" type="url" name="work_url" required placeholder="https://luozi.de5.net/images/1/">
-                  <span class="dmca-hint">必须填写本站具体图片链接，不能提交模糊描述或批量删除要求。</span>
+                  <input class="admin-input" type="url" name="work_url" required placeholder="{{ site_url ~ '/images/1/' if site_url else 'https://example.com/images/1/' }}" maxlength="500">
+                  <span class="dmca-hint">仅受理单个作品链接，多张链接将不予处理。</span>
                 </label>
                 <label class="dmca-cell dmca-cell-wide" data-required-field>
                   <span>原始作品来源（URL）<span class="dmca-required">*</span></span>
-                  <input class="admin-input" type="url" name="source_url" required placeholder="原始发布页或个人主页">
+                  <input class="admin-input" type="url" name="source_url" required placeholder="原始发布页或个人主页" maxlength="500">
                 </label>
                 <label class="dmca-cell dmca-cell-wide" data-required-field>
                   <span>侵权说明 <span class="dmca-required">*</span></span>
-                  <textarea class="admin-textarea" name="claim" required placeholder="说明版权归属与侵权原因"></textarea>
+                  <textarea class="admin-textarea" name="claim" required placeholder="说明版权归属与侵权原因" maxlength="4000"></textarea>
                 </label>
                 <label class="dmca-cell dmca-cell-wide" data-required-field>
                   <span>证明材料 <span class="dmca-required">*</span></span>
-                  <textarea class="admin-textarea" name="evidence" required placeholder="填写授权说明、作品出处、证明链接"></textarea>
+                  <textarea class="admin-textarea" name="evidence" required placeholder="填写授权说明、作品出处、证明链接" maxlength="4000"></textarea>
                 </label>
               </div>
 
@@ -114,7 +115,7 @@
                   </label>
                   <label class="dmca-cell dmca-cell-wide">
                     <span>授权说明</span>
-                    <input class="admin-input" type="text" name="authority_note" placeholder="授权来源 / 授权说明（可选）">
+                    <input class="admin-input" type="text" name="authority_note" placeholder="授权来源 / 授权说明（可选）" maxlength="4000">
                   </label>
                 </div>
               </fieldset>
@@ -136,6 +137,7 @@
               <div class="dmca-actions">
                 <button class="btn primary" type="submit">提交申请</button>
                 <p class="dmca-hint">提交后请耐心等待处理。</p>
+                <p class="dmca-submit-status" data-dmca-status role="status" aria-live="polite"></p>
               </div>
             </form>
           </section>
@@ -154,15 +156,70 @@
 
       const requiredFields = Array.from(form.querySelectorAll("[data-required-field]"));
       const requiredGroups = Array.from(form.querySelectorAll("[data-required-group]"));
+      const workUrlInput = form.querySelector("input[name=\"work_url\"]");
+      const statusNode = form.querySelector("[data-dmca-status]");
+      const siteUrl = (form.dataset.siteUrl || "").trim().replace(/\\/$/, "");
+      let submitting = false;
 
       const markInvalid = (container, invalid) => {
         container.classList.toggle("dmca-field-invalid", invalid);
+      };
+
+      const setStatus = (message, variant) => {
+        if (!statusNode) {
+          return;
+        }
+        statusNode.textContent = message || "";
+        statusNode.dataset.variant = variant || "";
+      };
+
+      const validateWorkUrl = () => {
+        if (!workUrlInput) {
+          return;
+        }
+        const value = workUrlInput.value.trim();
+        if (!value) {
+          workUrlInput.setCustomValidity("");
+          return;
+        }
+        const protocolMatches = value.match(/https?:\/\//gi) || [];
+        if (/\s/.test(value) || protocolMatches.length > 1) {
+          workUrlInput.setCustomValidity("仅受理单个作品链接，多张链接不予处理");
+          return;
+        }
+        let parsed;
+        try {
+          parsed = new URL(value, siteUrl || window.location.origin);
+        } catch (err) {
+          workUrlInput.setCustomValidity("作品链接格式不正确");
+          return;
+        }
+        const pathOk = parsed.pathname.startsWith("/images/");
+        if (!pathOk) {
+          workUrlInput.setCustomValidity("作品链接必须指向本站图片详情页");
+          return;
+        }
+        if (siteUrl) {
+          try {
+            const siteHost = new URL(siteUrl).host;
+            if (parsed.host !== siteHost) {
+              workUrlInput.setCustomValidity("作品链接必须为本站链接");
+              return;
+            }
+          } catch (err) {
+            // ignore parsing errors
+          }
+        }
+        workUrlInput.setCustomValidity("");
       };
 
       const updateField = (label) => {
         const field = label.querySelector("input, textarea, select");
         if (!field) {
           return;
+        }
+        if (field === workUrlInput) {
+          validateWorkUrl();
         }
         markInvalid(label, !field.checkValidity());
       };
@@ -191,12 +248,38 @@
         requiredGroups.forEach(updateGroup);
       };
 
-      form.addEventListener("submit", (event) => {
+      form.addEventListener("submit", async (event) => {
         form.dataset.validated = "1";
         updateAll();
         if (!form.checkValidity()) {
           event.preventDefault();
           form.reportValidity();
+          return;
+        }
+        if (submitting) {
+          event.preventDefault();
+          return;
+        }
+        event.preventDefault();
+        submitting = true;
+        setStatus("提交中...", "pending");
+        try {
+          const resp = await fetch(form.action, {
+            method: "POST",
+            body: new FormData(form),
+            headers: { "Accept": "application/json" },
+          });
+          const data = await resp.json().catch(() => ({}));
+          if (!resp.ok || !data.ok) {
+            throw new Error(data.error || "提交失败，请稍后重试");
+          }
+          const ticket = data.ticket ? `编号：${data.ticket}` : "已提交";
+          setStatus(`提交成功，${ticket}。`, "success");
+          form.reset();
+        } catch (err) {
+          setStatus(err.message || "提交失败，请稍后重试", "error");
+        } finally {
+          submitting = false;
         }
       });
 

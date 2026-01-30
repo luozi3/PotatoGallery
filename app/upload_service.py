@@ -55,6 +55,7 @@ def create_app() -> Flask:
     db.ensure_schema()
     auth.bootstrap_admin_if_needed()
     access_logger, error_logger = _init_loggers()
+    storage.check_storage_devices(logger=error_logger)
     app = Flask(__name__)
     app.config["MAX_CONTENT_LENGTH"] = config.MAX_UPLOAD_BYTES
     app.register_blueprint(admin_api.bp)

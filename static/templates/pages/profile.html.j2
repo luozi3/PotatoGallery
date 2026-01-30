@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>个人主页 ｜ {{ site_name }}</title>
+  <meta name="description" content="{{ site_description }}">
+  <meta name="theme-color" content="{{ site.theme_color }}">
+  {% include "partials/theme_init.html.j2" %}
+  <link rel="stylesheet" href="/static/styles/gallery.css?v={{ static_version }}">
+</head>
+<body class="page-profile with-sidebar">
+  <a class="skip-link" href="#main-content">跳到主要内容</a>
+  {% include "partials/topbar.html.j2" %}
+
+  <main id="main-content" tabindex="-1">
+    <div class="home-layout">
+      {% include "partials/sidebar_default.html.j2" %}
+      <div class="home-main">
+        <section class="profile-shell" data-profile-page>
+          <div class="profile-board">
+            <header class="profile-header">
+              <div class="profile-header-main">
+                <div class="profile-header-meta">
+                  <div class="profile-avatar">
+                    <img src="{{ site.auth_avatar_url }}" alt="用户头像" width="56" height="56" loading="lazy" data-profile-avatar-img>
+                  </div>
+                  <div class="profile-identity">
+                    <div class="profile-name-row profile-name-line">
+                      <h1><span class="profile-display-name" data-profile-display>个人主页</span></h1>
+                      <div class="profile-account-line">
+                        <span class="profile-account-label">账号：</span>
+                        <strong class="profile-account-value" data-profile-username>未登录</strong>
+                        <div class="profile-header-groups" data-profile-groups></div>
+                      </div>
+                    </div>
+                    <p class="profile-header-intro muted" data-profile-intro>完善你的头像与简介，让主页更清晰。</p>
+                  </div>
+                </div>
+                <div class="profile-header-stats">
+                  <div class="profile-stat-row">
+                    <div class="profile-stat">
+                      <strong data-profile-works>0</strong>
+                      <span class="profile-stat-label">发布作品</span>
+                    </div>
+                    <div class="profile-stat">
+                      <strong data-profile-favorited>0</strong>
+                      <span class="profile-stat-label">被收藏</span>
+                    </div>
+                    <div class="profile-stat">
+                      <strong data-profile-group-count>0</strong>
+                      <span class="profile-stat-label">用户组</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </header>
+
+            <div class="profile-tabs" role="tablist">
+              <button class="profile-tab is-active" type="button" data-profile-tab="basic" role="tab" aria-selected="true">基本信息</button>
+              <button class="profile-tab" type="button" data-profile-tab="security" role="tab" aria-selected="false">账号安全</button>
+            </div>
+
+            <p class="profile-login-hint" data-profile-login-hint hidden>请先登录后管理个人主页。</p>
+
+            <div class="profile-panels">
+              <section class="profile-panel is-active" data-profile-panel="basic" role="tabpanel">
+                <div class="profile-flow">
+                  <section class="profile-section profile-section-overview">
+                    <div class="profile-section-head">
+                      <h2>基本信息</h2>
+                      <div class="profile-quick-actions">
+                        <button class="btn ghost btn-mini" type="button" data-profile-focus-name>改名</button>
+                        <button class="btn ghost btn-mini" type="button" data-profile-focus-avatar>上传头像</button>
+                      </div>
+                    </div>
+                    <div class="profile-kv">
+                      <div class="profile-kv-row">
+                        <span>昵称</span>
+                        <strong data-profile-display>未登录</strong>
+                      </div>
+                      <div class="profile-kv-row">
+                        <span>账号</span>
+                        <span data-profile-account>未登录</span>
+                      </div>
+                      <div class="profile-kv-row">
+                        <span>用户组</span>
+                        <div class="profile-kv-groups" data-profile-groups></div>
+                      </div>
+                      <div class="profile-kv-row">
+                        <span>加入时间</span>
+                        <span data-profile-created>--</span>
+                      </div>
+                    </div>
+                  </section>
+
+                  <section class="profile-section profile-section-avatar" data-profile-avatar-section>
+                    <div class="profile-section-head">
+                      <h2>头像</h2>
+                      <p class="muted">建议正方形。</p>
+                    </div>
+                    <div class="profile-avatar-editor">
+                      <div class="profile-cropper" data-avatar-cropper>
+                        <img src="{{ site.auth_avatar_url }}" alt="" data-avatar-preview>
+                      </div>
+                      <div class="profile-avatar-controls">
+                        <label class="btn ghost btn-mini profile-file-btn">
+                          选择图片
+                          <input class="profile-file-input" type="file" accept="image/*" data-avatar-input>
+                        </label>
+                        <label class="profile-range">
+                          <span>缩放</span>
+                          <input type="range" min="1" max="1" step="0.01" value="1" data-avatar-zoom disabled>
+                        </label>
+                        <div class="admin-actions-row">
+                          <button class="btn primary" type="button" data-avatar-upload disabled>保存头像</button>
+                          <button class="btn ghost" type="button" data-avatar-reset disabled>还原</button>
+                        </div>
+                        <p class="hint" data-avatar-hint>选择图片后可拖动裁切。</p>
+                      </div>
+                    </div>
+                  </section>
+
+                  <section class="profile-section profile-section-form">
+                    <div class="profile-section-head">
+                      <h2>资料编辑</h2>
+                      <p class="muted">支持昵称、简介、主页等。</p>
+                    </div>
+                    <form class="admin-form profile-form" data-profile-form>
+                      <div class="profile-field">
+                        <label>昵称</label>
+                        <input class="admin-input" type="text" name="display_name" placeholder="昵称或展示名" data-profile-name-input>
+                      </div>
+                      <div class="profile-field">
+                        <label>性别</label>
+                        <select class="admin-select" name="gender">
+                          <option value="">未设置</option>
+                          <option value="female">女</option>
+                          <option value="male">男</option>
+                          <option value="other">其他</option>
+                          <option value="secret">保密</option>
+                        </select>
+                      </div>
+                      <div class="profile-field profile-field-wide">
+                        <label>个人简介</label>
+                        <textarea class="admin-textarea" name="intro" placeholder="写点关于你的介绍"></textarea>
+                      </div>
+                      <div class="profile-field">
+                        <label>个人主页</label>
+                        <input class="admin-input" type="url" name="website" placeholder="https://">
+                      </div>
+                      <div class="profile-field">
+                        <label>所在地</label>
+                        <input class="admin-input" type="text" name="location" placeholder="城市 / 地区">
+                      </div>
+                      <div class="profile-form-actions">
+                        <button class="btn primary" type="submit">保存资料</button>
+                        <p class="hint" data-profile-hint></p>
+                      </div>
+                    </form>
+                  </section>
+                </div>
+              </section>
+
+              <section class="profile-panel" data-profile-panel="security" role="tabpanel" hidden>
+                <div class="profile-flow">
+                  <section class="profile-section profile-section-security">
+                    <div class="profile-section-head">
+                      <h2>账号安全</h2>
+                      <p class="muted">密码与登录会话设置。</p>
+                    </div>
+                    <div class="profile-kv">
+                      <div class="profile-kv-row">
+                        <span>账号</span>
+                        <span data-profile-account>未登录</span>
+                      </div>
+                      <div class="profile-kv-row">
+                        <span>注册时间</span>
+                        <span data-profile-created>--</span>
+                      </div>
+                      <div class="profile-kv-row">
+                        <span>状态</span>
+                        <span>当前版本暂未开放安全设置。</span>
+                      </div>
+                    </div>
+                  </section>
+                </div>
+              </section>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+  </main>
+
+  <script src="/static/js/ui.js?v={{ static_version }}" defer></script>
+  <script src="/static/js/profile.js?v={{ static_version }}" defer></script>
+</body>
+</html>

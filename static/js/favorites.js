@@ -34,6 +34,14 @@
   const assignList = page.querySelector("[data-fav-assign-list]");
   const assignMeta = page.querySelector("[data-fav-assign-meta]");
   const assignClose = page.querySelector("[data-fav-assign-close]");
+  const paginations = page.querySelectorAll("[data-fav-pagination]");
+  const pagePrevBtns = page.querySelectorAll("[data-fav-page-prev]");
+  const pageNextBtns = page.querySelectorAll("[data-fav-page-next]");
+  const pageLists = page.querySelectorAll("[data-fav-page-list]");
+  const pageSummaries = page.querySelectorAll("[data-fav-page-summary]");
+  const pageInputs = page.querySelectorAll("[data-fav-page-input]");
+  const pageJumpBtns = page.querySelectorAll("[data-fav-page-jump]");
+  const pageSize = 25;
 
   const state = {
     q: "",
@@ -57,6 +65,10 @@
   const galleryCache = new Map();
   let assignTarget = null;
   let assignGalleries = [];
+  let filteredImages = [];
+  let currentPage = 1;
+  let totalPages = 1;
+  let totalItems = 0;
 
   function escapeHtml(text) {
     return String(text)
@@ -523,7 +535,7 @@
           loadGallery("all");
           return;
         }
-        applyFilters();
+        applyFilters(true);
       });
     });
   }
@@ -551,7 +563,7 @@
         if (facetKey === "artist") state.artist = state.artist === value ? "" : value;
         if (facetKey === "character") state.character = state.character === value ? "" : value;
         if (facetKey === "month") state.month = state.month === value ? "" : value;
-        applyFilters();
+        applyFilters(true);
       });
     });
   }
@@ -631,7 +643,79 @@
     return sorted;
   }
 
-  function applyFilters() {
+  function buildPageItems(total, current) {
+    if (total <= 1) return [];
+    const pages = new Set([1, total, current, current - 1, current + 1, current - 2, current + 2]);
+    const list = Array.from(pages)
+      .filter((page) => page >= 1 && page <= total)
+      .sort((a, b) => a - b);
+    return list;
+  }
+
+  function renderPagination() {
+    if (!paginations.length || !pageLists.length || !pagePrevBtns.length || !pageNextBtns.length) {
+      return;
+    }
+    if (totalItems <= 0) {
+      paginations.forEach((node) => {
+        node.hidden = true;
+      });
+      return;
+    }
+    const safeTotal = Math.max(1, totalPages || 1);
+    paginations.forEach((node) => {
+      node.hidden = false;
+    });
+    pagePrevBtns.forEach((btn) => {
+      btn.disabled = currentPage <= 1;
+    });
+    pageNextBtns.forEach((btn) => {
+      btn.disabled = currentPage >= safeTotal;
+    });
+    pageSummaries.forEach((node) => {
+      node.textContent = `共 ${safeTotal} 页 / 共 ${totalItems} 张`;
+    });
+    pageInputs.forEach((input) => {
+      input.max = String(safeTotal);
+      input.value = String(currentPage);
+      input.disabled = safeTotal <= 1;
+    });
+    pageJumpBtns.forEach((btn) => {
+      btn.disabled = safeTotal <= 1;
+    });
+    const items = buildPageItems(safeTotal, currentPage);
+    let html = "";
+    let last = 0;
+    items.forEach((page) => {
+      if (last && page - last > 1) {
+        html += '<span class="page-ellipsis">…</span>';
+      }
+      const active = page === currentPage ? " is-active" : "";
+      html += `<button class="page-number${active}" type="button" data-page="${page}">${page}</button>`;
+      last = page;
+    });
+    pageLists.forEach((list) => {
+      list.innerHTML = html;
+    });
+  }
+
+  function renderPage() {
+    const start = (currentPage - 1) * pageSize;
+    const pageItems = filteredImages.slice(start, start + pageSize);
+    renderCards(pageItems);
+    if (empty) empty.classList.toggle("show", totalItems === 0);
+    renderPagination();
+  }
+
+  function setPage(page) {
+    const safeTotal = Math.max(1, totalPages || 1);
+    const next = Math.max(1, Math.min(safeTotal, page));
+    if (next === currentPage) return;
+    currentPage = next;
+    renderPage();
+  }
+
+  function applyFilters(resetPage = false) {
     const query = parseQuery(state.q);
     const filtered = images.filter((img) => {
       const tags = expandTags(img);
@@ -669,8 +753,12 @@
     });
 
     const sorted = sortImages(filtered);
-    renderCards(sorted);
-    if (empty) empty.classList.toggle("show", !sorted.length);
+    filteredImages = sorted;
+    totalItems = sorted.length;
+    totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+    if (resetPage) currentPage = 1;
+    if (currentPage > totalPages) currentPage = totalPages;
+    renderPage();
     if (countChip) countChip.textContent = String(sorted.length);
     renderActiveFilters();
     if (assignTarget && !images.some((img) => img.uuid === assignTarget.uuid)) {
@@ -742,7 +830,7 @@
       currentGallery = null;
       if (totalStat) totalStat.textContent = String(images.length);
       buildFacets();
-      applyFilters();
+      applyFilters(true);
       if (!skipShelf) renderGalleryShelf();
       updateGalleryPanel();
       return;
@@ -761,7 +849,7 @@
     currentGallery = cached.gallery || null;
     if (totalStat) totalStat.textContent = String(images.length);
     buildFacets();
-    applyFilters();
+    applyFilters(true);
     if (!skipShelf) renderGalleryShelf();
     updateGalleryPanel();
   }
@@ -861,7 +949,7 @@
           ratingFilterBox.querySelectorAll("[data-fav-rating]").forEach((item) => {
             item.classList.toggle("active", Number(item.dataset.favRating || 0) === state.rating);
           });
-          applyFilters();
+          applyFilters(true);
         });
       });
     }
@@ -873,7 +961,7 @@
         page.querySelectorAll(".favorites-filter-group [data-fav-flag]").forEach((item) => {
           item.classList.toggle("active", item.dataset.favFlag === state.flag);
         });
-        applyFilters();
+        applyFilters(true);
       });
     });
     page.querySelectorAll("[data-fav-color]").forEach((btn) => {
@@ -884,15 +972,55 @@
         page.querySelectorAll(".favorites-filter-group [data-fav-color]").forEach((item) => {
           item.classList.toggle("active", item.dataset.favColor === state.color);
         });
-        applyFilters();
+        applyFilters(true);
       });
     });
     if (sortSelect) {
       sortSelect.addEventListener("change", () => {
         state.sort = sortSelect.value || "favorited_desc";
-        applyFilters();
+        applyFilters(true);
       });
     }
+  }
+
+  function bindPagination() {
+    pagePrevBtns.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        setPage(currentPage - 1);
+      });
+    });
+    pageNextBtns.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        setPage(currentPage + 1);
+      });
+    });
+    pageLists.forEach((list) => {
+      list.addEventListener("click", (event) => {
+        const btn = event.target.closest("[data-page]");
+        if (!btn) return;
+        const target = parseInt(btn.dataset.page || "1", 10);
+        if (!Number.isFinite(target)) return;
+        setPage(target);
+      });
+    });
+    pageJumpBtns.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const wrap = btn.closest("[data-fav-pagination]");
+        const input = wrap ? wrap.querySelector("[data-fav-page-input]") : null;
+        const target = parseInt(input ? input.value || "1" : "1", 10);
+        if (!Number.isFinite(target)) return;
+        setPage(target);
+      });
+    });
+    pageInputs.forEach((input) => {
+      input.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter") return;
+        event.preventDefault();
+        const target = parseInt(input.value || "1", 10);
+        if (!Number.isFinite(target)) return;
+        setPage(target);
+      });
+    });
   }
 
   grid.addEventListener("click", (event) => {
@@ -963,13 +1091,9 @@
       state.q = urlQ;
       if (searchInput) searchInput.value = urlQ;
       if (sortSelect) state.sort = sortSelect.value || state.sort;
-      applyFilters();
+      applyFilters(true);
       updateGalleryPanel();
-      if (images.length) {
-        if (empty) empty.classList.remove("show");
-      } else if (empty) {
-        empty.classList.add("show");
-      }
+      if (empty) empty.classList.toggle("show", totalItems === 0);
     } catch (err) {
       if (empty) empty.classList.add("show");
     }
@@ -980,7 +1104,7 @@
     searchInput.addEventListener("input", () => {
       state.q = searchInput.value.trim();
       if (timer) window.clearTimeout(timer);
-      timer = window.setTimeout(() => applyFilters(), 120);
+      timer = window.setTimeout(() => applyFilters(true), 120);
     });
   }
 
@@ -1031,5 +1155,6 @@
   }
 
   bindFilters();
+  bindPagination();
   init();
 })();

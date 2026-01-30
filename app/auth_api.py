@@ -1,5 +1,7 @@
+import datetime
 import re
 import sqlite3
+import time
 from typing import Optional
 
 from flask import Blueprint, jsonify, request
@@ -12,6 +14,7 @@ from . import db
 bp = Blueprint("auth", __name__)
 
 _USERNAME_RE = re.compile(config.AUTH_USERNAME_PATTERN)
+_SESSION_DAYS_OPTIONS = {1, 7, 30, 60}
 
 
 def _serializer() -> URLSafeTimedSerializer:
@@ -48,14 +51,49 @@ def _client_ip() -> str:
     return request.headers.get("X-Real-IP") or request.remote_addr or "unknown"
 
 
-def _set_user_cookie(resp, token: str) -> None:
+def _max_session_age() -> int:
+    return max(config.USER_SESSION_MAX_AGE, max(_SESSION_DAYS_OPTIONS) * 86400)
+
+
+def _parse_session_days(value: object) -> Optional[int]:
+    if value is None:
+        return None
+    try:
+        days = int(value)
+    except (TypeError, ValueError):
+        return None
+    return days if days in _SESSION_DAYS_OPTIONS else None
+
+
+def _resolve_session_max_age(payload: dict) -> int:
+    days = _parse_session_days(payload.get("session_days"))
+    if days:
+        return days * 86400
+    return config.USER_SESSION_MAX_AGE
+
+
+def _to_epoch_seconds(value: object) -> int:
+    if isinstance(value, datetime.datetime):
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=datetime.timezone.utc)
+        return int(value.timestamp())
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _set_user_cookie(resp, token: str, *, max_age: Optional[int] = None) -> None:
+    cookie_age = int(max_age) if max_age is not None else config.USER_SESSION_MAX_AGE
+    if cookie_age <= 0:
+        cookie_age = config.USER_SESSION_MAX_AGE
     resp.set_cookie(
         config.USER_COOKIE_NAME,
         token,
         httponly=True,
         samesite="Lax",
         secure=config.USER_COOKIE_SECURE,
-        max_age=config.USER_SESSION_MAX_AGE,
+        max_age=cookie_age,
     )
 
 
@@ -76,9 +114,28 @@ def _load_user_from_cookie() -> Optional[auth.AuthUser]:
         return None
     serializer = _serializer()
     try:
-        data = serializer.loads(token, max_age=config.USER_SESSION_MAX_AGE)
+        data, issued_at = serializer.loads(token, max_age=_max_session_age(), return_timestamp=True)
     except (BadSignature, SignatureExpired):
         return None
+    issued_ts = _to_epoch_seconds(issued_at)
+    if issued_ts <= 0:
+        return None
+    now = int(time.time())
+    exp = data.get("exp")
+    if exp is not None:
+        try:
+            exp_ts = int(exp)
+        except (TypeError, ValueError):
+            return None
+        if exp_ts <= 0:
+            return None
+        if exp_ts - issued_ts > _max_session_age():
+            return None
+        if now > exp_ts:
+            return None
+    else:
+        if now - issued_ts > config.USER_SESSION_MAX_AGE:
+            return None
     user_id = data.get("id")
     if not user_id:
         return None
@@ -152,11 +209,8 @@ def register():
         return _json_error("注册失败", 500)
 
     groups = auth.get_user_groups(user.id)
-    serializer = _serializer()
-    token = serializer.dumps({"id": user.id, "u": user.username})
     resp = jsonify({"ok": True, "user": user.username, "groups": groups})
     resp.status_code = 201
-    _set_user_cookie(resp, token)
     return resp
 
 
@@ -178,10 +232,12 @@ def login():
     if not user:
         return _json_error("账号或密码错误", 401)
     groups = auth.get_user_groups(user.id)
+    max_age = _resolve_session_max_age(payload)
+    now = int(time.time())
     serializer = _serializer()
-    token = serializer.dumps({"id": user.id, "u": user.username})
+    token = serializer.dumps({"id": user.id, "u": user.username, "exp": now + max_age})
     resp = jsonify({"ok": True, "user": user.username, "groups": groups})
-    _set_user_cookie(resp, token)
+    _set_user_cookie(resp, token, max_age=max_age)
     return resp
 
 
@@ -203,5 +259,25 @@ def me():
     user = _load_user_from_cookie()
     if not user:
         return _json_error("未授权", 401)
+    db.ensure_schema()
+    with db.connect() as conn:
+        profile = conn.execute(
+            "SELECT display_name, avatar_path FROM user_profiles WHERE user_id=?",
+            (user.id,),
+        ).fetchone()
+    display_name = ""
+    avatar_path = ""
+    if profile:
+        display_name = str(profile["display_name"] or "").strip()
+        avatar_path = str(profile["avatar_path"] or "").lstrip("/")
+    avatar_url = f"/raw/{avatar_path}" if avatar_path else ""
     groups = auth.get_user_groups(user.id)
-    return jsonify({"ok": True, "user": user.username, "groups": groups})
+    return jsonify(
+        {
+            "ok": True,
+            "user": user.username,
+            "groups": groups,
+            "display_name": display_name,
+            "avatar_url": avatar_url,
+        }
+    )

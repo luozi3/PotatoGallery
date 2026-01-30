@@ -1,6 +1,8 @@
 import json
 import re
+import time
 import uuid
+from urllib.parse import urlparse
 from pathlib import Path
 from typing import Any, List, Optional, Tuple
 
@@ -20,6 +22,21 @@ HOME_DEFAULT_LIMIT = 40
 HOME_MAX_LIMIT = 80
 HOME_CHUNK_FACTOR = 3
 HOME_MAX_PAGES = 8
+PROFILE_MAX_NAME = 32
+PROFILE_MAX_INTRO = 240
+PROFILE_MAX_WEBSITE = 200
+PROFILE_MAX_LOCATION = 60
+PROFILE_ALLOWED_GENDERS = {"", "male", "female", "other", "secret"}
+AVATAR_MAX_BYTES = 2 * 1024 * 1024
+AVATAR_ALLOWED_EXTS = {".png", ".jpg", ".jpeg", ".webp"}
+DMCA_ALLOWED_AUTHORITY = {"owner", "authorized"}
+DMCA_ALLOWED_STATUS = {"pending", "approved", "rejected"}
+DMCA_MAX_NAME = 80
+DMCA_MAX_EMAIL = 120
+DMCA_MAX_REGION = 80
+DMCA_MAX_CONTACT = 120
+DMCA_MAX_URL = 500
+DMCA_MAX_TEXT = 4000
 
 
 def _serializer() -> URLSafeTimedSerializer:
@@ -51,25 +68,43 @@ def _require_https():
 
 def _load_user_from_cookie() -> Optional[auth.AuthUser]:
     token = request.cookies.get(config.USER_COOKIE_NAME, "")
+    if token:
+        serializer = _serializer()
+        try:
+            data = serializer.loads(token, max_age=config.USER_SESSION_MAX_AGE)
+        except (BadSignature, SignatureExpired):
+            data = None
+        if data:
+            user_id = data.get("id")
+            if user_id:
+                with db.connect() as conn:
+                    auth.ensure_schema(conn)
+                    row = conn.execute(
+                        "SELECT id, username, is_active FROM auth_users WHERE id=?",
+                        (user_id,),
+                    ).fetchone()
+                if row and row["is_active"]:
+                    return auth.AuthUser(
+                        id=int(row["id"]),
+                        username=str(row["username"]),
+                        is_active=bool(row["is_active"]),
+                    )
+    return _load_admin_from_cookie()
+
+
+def _load_admin_from_cookie() -> Optional[auth.AuthUser]:
+    token = request.cookies.get(config.ADMIN_COOKIE_NAME, "")
     if not token:
         return None
-    serializer = _serializer()
+    serializer = URLSafeTimedSerializer(config.ADMIN_SECRET, salt="gallery-admin")
     try:
-        data = serializer.loads(token, max_age=config.USER_SESSION_MAX_AGE)
+        data = serializer.loads(token, max_age=config.ADMIN_SESSION_MAX_AGE)
     except (BadSignature, SignatureExpired):
         return None
-    user_id = data.get("id")
-    if not user_id:
+    username = data.get("u")
+    if not username:
         return None
-    with db.connect() as conn:
-        auth.ensure_schema(conn)
-        row = conn.execute(
-            "SELECT id, username, is_active FROM auth_users WHERE id=?",
-            (user_id,),
-        ).fetchone()
-    if not row or not row["is_active"]:
-        return None
-    return auth.AuthUser(id=int(row["id"]), username=str(row["username"]), is_active=bool(row["is_active"]))
+    return auth.get_user_in_group(str(username), config.ADMIN_GROUP)
 
 
 _UPLOAD_UUID_RE = re.compile(r"^[0-9a-f]{32}$")
@@ -80,6 +115,87 @@ def _normalize_upload_uuid(value: str) -> Optional[str]:
     if not cleaned or not _UPLOAD_UUID_RE.fullmatch(cleaned):
         return None
     return cleaned
+
+
+def _client_ip() -> str:
+    forwarded = request.headers.get("X-Forwarded-For", "")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.remote_addr or ""
+
+
+def _clean_dmca_text(value: Any, *, max_len: int, required: bool, label: str) -> Tuple[Optional[str], Optional[str]]:
+    text = str(value or "").strip()
+    if required and not text:
+        return None, f"请填写{label}"
+    if text and len(text) > max_len:
+        return None, f"{label}长度不能超过 {max_len} 字符"
+    return text, None
+
+
+def _allowed_dmca_hosts(site_url: str) -> set[str]:
+    hosts: set[str] = set()
+    normalized_site = (site_url or "").strip()
+    if normalized_site:
+        parsed = urlparse(normalized_site if "://" in normalized_site else f"https://{normalized_site}")
+        if parsed.netloc:
+            hosts.add(parsed.netloc.lower())
+    if request.host:
+        hosts.add(request.host.lower())
+    return hosts
+
+
+def _normalize_dmca_work_url(raw: Any, *, site_url: str) -> Tuple[Optional[str], Optional[str]]:
+    value = str(raw or "").strip()
+    if not value:
+        return None, "请填写作品链接"
+    if re.search(r"\s", value) or len(re.findall(r"https?://", value, flags=re.I)) > 1:
+        return None, "仅受理单个作品链接，多张链接不予处理"
+    parsed = urlparse(value)
+    path = parsed.path or ""
+    if parsed.scheme and parsed.netloc:
+        if parsed.scheme.lower() not in {"http", "https"}:
+            return None, "作品链接格式不正确"
+        allowed_hosts = _allowed_dmca_hosts(site_url)
+        if parsed.netloc.lower() not in allowed_hosts:
+            return None, "作品链接必须为本站链接"
+    else:
+        if not value.startswith("/"):
+            return None, "作品链接格式不正确"
+        path = value
+    if not path.startswith("/images/"):
+        return None, "作品链接必须指向本站图片详情页"
+    if len(value) > DMCA_MAX_URL:
+        return None, f"作品链接长度不能超过 {DMCA_MAX_URL} 字符"
+    if parsed.scheme and parsed.netloc:
+        return value, None
+    base = site_url.strip() if site_url else ""
+    if not base and request.host:
+        base = f"https://{request.host}"
+    normalized = f"{base.rstrip('/')}{path}"
+    return normalized or value, None
+
+
+def _normalize_dmca_source_url(raw: Any) -> Tuple[Optional[str], Optional[str]]:
+    value = str(raw or "").strip()
+    if not value:
+        return None, "请填写原始作品来源链接"
+    if len(value) > DMCA_MAX_URL:
+        return None, f"原始作品来源链接长度不能超过 {DMCA_MAX_URL} 字符"
+    parsed = urlparse(value)
+    if not parsed.scheme or not parsed.netloc:
+        return None, "原始作品来源链接格式不正确"
+    if parsed.scheme.lower() not in {"http", "https"}:
+        return None, "原始作品来源链接格式不正确"
+    return value, None
+
+
+def _value_is_true(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _file_exists_with_uuid(directory: Path, uuid_value: str) -> bool:
@@ -159,6 +275,38 @@ def _load_tags_from_row(row: dict) -> List[str]:
 
 def _allowed_extension_from_mime(mime: str) -> Optional[str]:
     return config.ALLOWED_MIME.get(mime)
+
+
+def _normalize_profile_text(value: Any, max_len: int) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    return text[:max_len]
+
+
+def _normalize_gender(value: Any) -> Optional[str]:
+    gender = str(value or "").strip().lower()
+    if gender not in PROFILE_ALLOWED_GENDERS:
+        return None
+    return gender
+
+
+def _normalize_profile_url(value: Any) -> Tuple[str, Optional[str]]:
+    raw = str(value or "").strip()
+    if not raw:
+        return "", None
+    if len(raw) > PROFILE_MAX_WEBSITE:
+        return "", "个人主页过长"
+    if not (raw.startswith("http://") or raw.startswith("https://")):
+        return "", "个人主页需以 http:// 或 https:// 开头"
+    return raw, None
+
+
+def _avatar_url(avatar_path: str) -> str:
+    cleaned = (avatar_path or "").lstrip("/")
+    if not cleaned:
+        return ""
+    return f"/raw/{cleaned}"
 
 
 def _resolve_collection(
@@ -255,8 +403,9 @@ def _cursor_from_row(row: dict) -> Optional[str]:
     return f"{created_at}|{int(image_id)}"
 
 
-def _build_tag_maps() -> Tuple[dict, dict, dict]:
-    tags_meta, _ = tagging.load_tags_config()
+def _build_tag_maps(tags_meta: Optional[dict] = None) -> Tuple[dict, dict, dict]:
+    if tags_meta is None:
+        tags_meta, _ = tagging.load_tags_config()
     tag_types_meta, tag_types_order = tagging.load_tag_types_config()
     alias_map = tagging.build_alias_map(tags_meta)
     tag_slug_map = {
@@ -290,6 +439,33 @@ def _build_tag_maps() -> Tuple[dict, dict, dict]:
         style_info = tag_type_styles.get(type_id) or default_style
         tag_style_map[tag] = style_info.get("style", "")
     return alias_map, tag_slug_map, tag_style_map
+
+
+def _build_tag_slug_map(tags_meta: dict) -> dict:
+    slug_map: dict = {}
+    for tag, info in tags_meta.items():
+        slug = tagging.normalize_slug(info.get("slug") or "")
+        if not slug:
+            slug = tagging.safe_tag_slug(tag)
+        canonical = tagging.normalize_tag(info.get("alias_to") or "") or tag
+        if slug and slug not in slug_map:
+            slug_map[slug] = canonical
+    return slug_map
+
+
+def _collect_tag_descendants(tag: str, child_map: dict) -> List[str]:
+    collected: List[str] = []
+    stack = [tag]
+    seen = {tag}
+    while stack:
+        current = stack.pop()
+        for child in child_map.get(current, []):
+            if child in seen:
+                continue
+            seen.add(child)
+            collected.append(child)
+            stack.append(child)
+    return collected
 
 
 def _build_collection_lookup(collections_meta: dict) -> dict:
@@ -423,10 +599,10 @@ def user_upload():
 
     original_name = file.filename or "upload"
     file_mime = file.mimetype or ""
-    if file_mime and file_mime not in config.ALLOWED_MIME:
-        return _json_error("不支持的文件类型")
     ext_from_name = Path(original_name).suffix.lower()
-    if ext_from_name and ext_from_name not in config.ALLOWED_MIME.values():
+    if config.ENFORCE_MIME and file_mime and file_mime not in config.ALLOWED_MIME:
+        return _json_error("不支持的文件类型")
+    if config.ENFORCE_EXTENSION and ext_from_name and ext_from_name not in config.ALLOWED_MIME.values():
         return _json_error("不支持的文件扩展名")
 
     upload_uuid = uuid.uuid4().hex
@@ -443,9 +619,15 @@ def user_upload():
 
     mime = storage.detect_mime(tmp_path)
     ext = _allowed_extension_from_mime(mime or "")
-    if not ext:
+    if config.ENFORCE_MIME and not ext:
         storage.move_to_quarantine(tmp_path, f"mime_not_allowed: {mime}")
         return _json_error("不支持的文件类型")
+    if not ext:
+        if ext_from_name:
+            ext = ext_from_name
+        else:
+            storage.move_to_quarantine(tmp_path, f"ext_missing: {mime}")
+            return _json_error("无法识别文件类型")
 
     try:
         with db.transaction() as conn:
@@ -509,12 +691,117 @@ def user_upload_status():
     return resp
 
 
+@bp.post("/api/dmca")
+def dmca_submit():
+    db.ensure_schema()
+    payload = request.get_json(silent=True) if request.is_json else request.form.to_dict()
+    if not isinstance(payload, dict):
+        return _json_error("提交内容有误")
+
+    full_name, err = _clean_dmca_text(payload.get("full_name"), max_len=DMCA_MAX_NAME, required=True, label="姓名")
+    if err:
+        return _json_error(err)
+    email, err = _clean_dmca_text(payload.get("email"), max_len=DMCA_MAX_EMAIL, required=True, label="邮箱")
+    if err:
+        return _json_error(err)
+    if "@" not in email:
+        return _json_error("邮箱格式不正确")
+    region, err = _clean_dmca_text(payload.get("region"), max_len=DMCA_MAX_REGION, required=True, label="国家/地区")
+    if err:
+        return _json_error(err)
+    contact, err = _clean_dmca_text(payload.get("contact"), max_len=DMCA_MAX_CONTACT, required=False, label="联系方式")
+    if err:
+        return _json_error(err)
+
+    site = static_site.load_site_config()
+    work_url, err = _normalize_dmca_work_url(payload.get("work_url"), site_url=str(site.get("site_url") or ""))
+    if err:
+        return _json_error(err)
+    source_url, err = _normalize_dmca_source_url(payload.get("source_url"))
+    if err:
+        return _json_error(err)
+
+    claim, err = _clean_dmca_text(payload.get("claim"), max_len=DMCA_MAX_TEXT, required=True, label="侵权说明")
+    if err:
+        return _json_error(err)
+    evidence, err = _clean_dmca_text(payload.get("evidence"), max_len=DMCA_MAX_TEXT, required=True, label="证明材料")
+    if err:
+        return _json_error(err)
+
+    authority = str(payload.get("authority") or "").strip().lower()
+    if authority not in DMCA_ALLOWED_AUTHORITY:
+        return _json_error("请选择权利身份")
+    authority_note, err = _clean_dmca_text(
+        payload.get("authority_note"),
+        max_len=DMCA_MAX_TEXT,
+        required=False,
+        label="授权说明",
+    )
+    if err:
+        return _json_error(err)
+
+    if not _value_is_true(payload.get("single_work")):
+        return _json_error("请确认仅提交单个作品链接")
+    if not _value_is_true(payload.get("truthful")):
+        return _json_error("请确认信息真实准确")
+
+    ip = _client_ip()
+    user_agent = str(request.headers.get("User-Agent") or "").strip()
+
+    try:
+        with db.transaction() as conn:
+            cursor = conn.execute(
+                """
+                INSERT INTO dmca_requests
+                (status, full_name, email, region, contact, work_url, source_url, claim, evidence, authority, authority_note,
+                 status_note, processed_by, processed_at, ip, user_agent)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "pending",
+                    full_name,
+                    email,
+                    region,
+                    contact,
+                    work_url,
+                    source_url,
+                    claim,
+                    evidence,
+                    authority,
+                    authority_note,
+                    None,
+                    None,
+                    None,
+                    ip,
+                    user_agent,
+                ),
+            )
+            request_id = int(cursor.lastrowid)
+    except Exception:  # noqa: BLE001
+        return _json_error("提交失败，请稍后重试", 500)
+
+    try:
+        db.insert_audit("dmca_submit", str(request_id), email)
+    except Exception:
+        pass
+
+    ticket = f"DMCA-{request_id:06d}"
+    return jsonify({"ok": True, "id": request_id, "ticket": ticket}), 201
+
+
 @bp.get("/api/my/images")
 def my_images():
     user, err = _require_user()
     if err:
         return err
     db.ensure_schema()
+    query = (request.args.get("q") or "").strip()
+    collection_filter = (request.args.get("collection") or "all").strip()
+    try:
+        page = max(1, int(request.args.get("p") or request.args.get("page") or 1))
+    except (TypeError, ValueError):
+        page = 1
+    page_size = 40
     with db.connect() as conn:
         rows = conn.execute(
             """
@@ -534,15 +821,224 @@ def my_images():
         item = _build_image_item(dict(row), collections_meta, default_collection)
         items.append(item)
 
+    def matches_filter(item: dict) -> bool:
+        if collection_filter and collection_filter != "all":
+            if item.get("collection") != collection_filter:
+                return False
+        if not query:
+            return True
+        term = query.lower()
+        if term.startswith("#"):
+            term = term[1:].strip()
+            if not term:
+                return True
+            return any(term in str(tag).lower() for tag in (item.get("tags") or []))
+        hay = f"{item.get('title') or ''} {item.get('description') or ''}".lower()
+        if term in hay:
+            return True
+        return any(term in str(tag).lower() for tag in (item.get("tags") or []))
+
+    filtered_items = [item for item in items if matches_filter(item)]
+    total = len(filtered_items)
+    pages = max(1, (total + page_size - 1) // page_size)
+    page = max(1, min(page, pages))
+    start = (page - 1) * page_size
+    end = start + page_size
+    paged_items = filtered_items[start:end]
+
     collections, default_collection = _load_collections_list()
     return jsonify(
         {
             "ok": True,
-            "images": items,
+            "images": paged_items,
             "collections": collections,
             "default_collection": default_collection,
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "pages": pages,
         }
     )
+
+
+@bp.get("/api/user/profile")
+def user_profile():
+    user, err = _require_user()
+    if err:
+        return err
+    db.ensure_schema()
+    with db.connect() as conn:
+        account = conn.execute(
+            "SELECT username, created_at FROM auth_users WHERE id=?",
+            (user.id,),
+        ).fetchone()
+        profile = conn.execute(
+            """
+            SELECT display_name, gender, intro, website, location, avatar_path, updated_at
+            FROM user_profiles
+            WHERE user_id=?
+            """,
+            (user.id,),
+        ).fetchone()
+        works_row = conn.execute(
+            """
+            SELECT COUNT(*) AS c
+            FROM images
+            WHERE owner_user_id=? AND deleted_at IS NULL AND status='published'
+            """,
+            (user.id,),
+        ).fetchone()
+        favorited_row = conn.execute(
+            """
+            SELECT COUNT(*) AS c
+            FROM user_favorites f
+            JOIN images i ON i.uuid = f.image_uuid
+            WHERE i.owner_user_id=? AND i.deleted_at IS NULL AND i.status='published'
+            """,
+            (user.id,),
+        ).fetchone()
+    groups = auth.get_user_groups(user.id)
+    display_name = ""
+    gender = ""
+    intro = ""
+    website = ""
+    location = ""
+    avatar_path = ""
+    updated_at = ""
+    if profile:
+        display_name = str(profile["display_name"] or "").strip()
+        gender = str(profile["gender"] or "").strip()
+        intro = str(profile["intro"] or "").strip()
+        website = str(profile["website"] or "").strip()
+        location = str(profile["location"] or "").strip()
+        avatar_path = str(profile["avatar_path"] or "").strip()
+        updated_at = str(profile["updated_at"] or "").strip()
+    resp = jsonify(
+        {
+            "ok": True,
+            "user": account["username"] if account else user.username,
+            "groups": groups,
+            "profile": {
+                "display_name": display_name,
+                "gender": gender,
+                "intro": intro,
+                "website": website,
+                "location": location,
+                "avatar_url": _avatar_url(avatar_path),
+                "updated_at": updated_at,
+            },
+            "account": {
+                "created_at": str(account["created_at"] or "") if account else "",
+            },
+            "stats": {
+                "works": int(works_row["c"] or 0) if works_row else 0,
+                "favorited": int(favorited_row["c"] or 0) if favorited_row else 0,
+            },
+        }
+    )
+    resp.headers["Cache-Control"] = "no-store, max-age=0"
+    return resp
+
+
+@bp.post("/api/user/profile")
+def user_profile_update():
+    user, err = _require_user()
+    if err:
+        return err
+    payload = request.get_json(silent=True) or {}
+    display_name = _normalize_profile_text(payload.get("display_name"), PROFILE_MAX_NAME)
+    intro = _normalize_profile_text(payload.get("intro"), PROFILE_MAX_INTRO)
+    location = _normalize_profile_text(payload.get("location"), PROFILE_MAX_LOCATION)
+    gender = _normalize_gender(payload.get("gender"))
+    if gender is None:
+        return _json_error("性别参数错误")
+    website, err_msg = _normalize_profile_url(payload.get("website"))
+    if err_msg:
+        return _json_error(err_msg)
+    db.ensure_schema()
+    with db.transaction() as conn:
+        conn.execute(
+            """
+            INSERT INTO user_profiles (user_id, display_name, gender, intro, website, location, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(user_id) DO UPDATE SET
+                display_name=excluded.display_name,
+                gender=excluded.gender,
+                intro=excluded.intro,
+                website=excluded.website,
+                location=excluded.location,
+                updated_at=CURRENT_TIMESTAMP
+            """,
+            (user.id, display_name, gender, intro, website, location),
+        )
+    return jsonify(
+        {
+            "ok": True,
+            "profile": {
+                "display_name": display_name,
+                "gender": gender,
+                "intro": intro,
+                "website": website,
+                "location": location,
+            },
+        }
+    )
+
+
+@bp.post("/api/user/avatar")
+def user_avatar_update():
+    user, err = _require_user()
+    if err:
+        return err
+    file = request.files.get("avatar")
+    if not file or not file.filename:
+        return _json_error("请选择头像文件")
+    ext = Path(file.filename).suffix.lower()
+    if ext not in AVATAR_ALLOWED_EXTS:
+        return _json_error("头像仅支持 png/jpg/webp")
+    tmp_name = uuid.uuid4().hex
+    tmp_path = config.UPLOAD_TMP / "avatars" / f"{tmp_name}.part"
+    try:
+        bytes_written, _ = storage.write_stream_to_tmp(file.stream, tmp_path)
+    except ValueError as exc:
+        tmp_path.unlink(missing_ok=True)
+        return _json_error(str(exc))
+    if bytes_written > AVATAR_MAX_BYTES:
+        tmp_path.unlink(missing_ok=True)
+        return _json_error("头像文件过大")
+    dest_dir = config.RAW_DIR / "avatars"
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest_name = f"user_{user.id}_{int(time.time())}{ext}"
+    dest_path = dest_dir / dest_name
+    try:
+        storage.atomic_move(tmp_path, dest_path)
+    except Exception:
+        tmp_path.unlink(missing_ok=True)
+        return _json_error("头像保存失败", 500)
+    avatar_rel = f"avatars/{dest_name}"
+    old_avatar = ""
+    db.ensure_schema()
+    with db.transaction() as conn:
+        row = conn.execute(
+            "SELECT avatar_path FROM user_profiles WHERE user_id=?",
+            (user.id,),
+        ).fetchone()
+        if row:
+            old_avatar = str(row["avatar_path"] or "")
+        conn.execute(
+            """
+            INSERT INTO user_profiles (user_id, avatar_path, updated_at)
+            VALUES (?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(user_id) DO UPDATE SET
+                avatar_path=excluded.avatar_path,
+                updated_at=CURRENT_TIMESTAMP
+            """,
+            (user.id, avatar_rel),
+        )
+    if old_avatar and old_avatar != avatar_rel and old_avatar.startswith("avatars/"):
+        old_path = config.RAW_DIR / old_avatar
+        old_path.unlink(missing_ok=True)
+    return jsonify({"ok": True, "avatar_url": _avatar_url(avatar_rel)})
 
 
 def _load_collections_list() -> Tuple[List[dict], str]:
@@ -643,6 +1139,108 @@ def home_images():
                 row_dict["collection"] = collection
                 row_dict["orientation"] = orientation
                 row_dict["size_bucket"] = size_bucket
+                item = _build_home_item(
+                    row_dict,
+                    alias_map,
+                    tag_slug_map,
+                    tag_style_map,
+                    collection_lookup,
+                    default_collection,
+                    collections_meta,
+                )
+                items.append(item)
+                if len(items) >= limit:
+                    has_more = processed_in_batch < len(rows) or len(rows) == chunk_size
+                    next_cursor = _cursor_from_row(row_dict)
+                    stop = True
+                    break
+
+            if stop:
+                break
+            if len(rows) < chunk_size:
+                break
+            if not last_row:
+                break
+            current_cursor = (str(last_row.get("created_at") or ""), int(last_row.get("id") or 0))
+        else:
+            if last_row:
+                next_cursor = _cursor_from_row(last_row)
+                has_more = True
+
+    return jsonify({"ok": True, "items": items, "next_cursor": next_cursor, "has_more": has_more})
+
+
+@bp.get("/api/tags/<slug>/images")
+def tag_images(slug: str):
+    db.ensure_schema()
+    limit = _parse_limit(request.args.get("limit"), HOME_DEFAULT_LIMIT, 1, HOME_MAX_LIMIT)
+    cursor = _parse_home_cursor(request.args.get("cursor") or "")
+    if request.args.get("cursor") and not cursor:
+        return _json_error("参数错误", 400)
+
+    tags_meta, _ = tagging.load_tags_config()
+    slug_map = _build_tag_slug_map(tags_meta)
+    canonical = slug_map.get(tagging.normalize_slug(slug))
+    if not canonical:
+        return _json_error("标签不存在", 404)
+
+    alias_map, tag_slug_map, tag_style_map = _build_tag_maps(tags_meta)
+    parent_map = tagging.build_parent_map(tags_meta, alias_map)
+    child_map: dict = {}
+    for tag, parents in parent_map.items():
+        for parent in parents:
+            child_map.setdefault(parent, []).append(tag)
+    target_tags = {canonical}
+    target_tags.update(_collect_tag_descendants(canonical, child_map))
+
+    collections_meta, default_collection, _ = static_site.load_collections_config()
+    collection_lookup = _build_collection_lookup(collections_meta)
+
+    items: List[dict] = []
+    next_cursor: Optional[str] = None
+    has_more = False
+    chunk_size = min(limit * HOME_CHUNK_FACTOR, 200)
+    current_cursor = cursor
+    last_row: Optional[dict] = None
+
+    with db.connect() as conn:
+        for _ in range(HOME_MAX_PAGES):
+            params: List[object] = []
+            cursor_clause = ""
+            if current_cursor:
+                cursor_clause = "AND (created_at < ? OR (created_at = ? AND id < ?))"
+                params.extend([current_cursor[0], current_cursor[0], current_cursor[1]])
+            rows = conn.execute(
+                f"""
+                SELECT id, uuid, original_name, ext, bytes, width, height, thumb_width, thumb_height,
+                       dominant_color, created_at, thumb_path,
+                       title_override, description, tags_json, collection_override
+                FROM images
+                WHERE status IN ('processed','published')
+                  AND deleted_at IS NULL
+                  {cursor_clause}
+                ORDER BY created_at DESC, id DESC
+                LIMIT ?
+                """,
+                (*params, chunk_size),
+            ).fetchall()
+            if not rows:
+                break
+
+            processed_in_batch = 0
+            stop = False
+            for row in rows:
+                processed_in_batch += 1
+                row_dict = dict(row)
+                last_row = row_dict
+                tags = tagging.parse_tags_json(row_dict.get("tags_json"), alias_map, drop_unknown=True)
+                if not tags or not any(tag in target_tags for tag in tags):
+                    continue
+                row_dict["collection"] = _resolve_collection_cached(
+                    row_dict,
+                    collection_lookup,
+                    default_collection,
+                )
                 item = _build_home_item(
                     row_dict,
                     alias_map,
@@ -1173,9 +1771,10 @@ def image_meta(uuid: str):
     if not (is_admin or is_owner):
         return _json_error("无权限", 403)
 
+    row_dict = dict(row)
     collections_meta, default_collection, _ = static_site.load_collections_config()
-    tags = _load_tags_from_row(dict(row))
-    collection = _resolve_collection(dict(row), collections_meta, default_collection)
+    tags = _load_tags_from_row(row_dict)
+    collection = _resolve_collection(row_dict, collections_meta, default_collection)
     collections, default_collection = _load_collections_list()
 
     return jsonify(
@@ -1185,11 +1784,11 @@ def image_meta(uuid: str):
             "is_admin": is_admin,
             "is_owner": is_owner,
             "image": {
-                "uuid": row["uuid"],
-                "image_id": row.get("image_id"),
-                "detail_path": static_site.image_detail_path(row.get("image_id"), row["uuid"]),
-                "title": row["title_override"] or static_site.simple_title(row["original_name"] or ""),
-                "description": row["description"] or "",
+                "uuid": row_dict["uuid"],
+                "image_id": row_dict.get("image_id"),
+                "detail_path": static_site.image_detail_path(row_dict.get("image_id"), row_dict["uuid"]),
+                "title": row_dict["title_override"] or static_site.simple_title(row_dict["original_name"] or ""),
+                "description": row_dict["description"] or "",
                 "tags": tags,
                 "collection": collection,
             },

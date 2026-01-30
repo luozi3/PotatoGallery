@@ -15,7 +15,7 @@ from . import config
 from . import db
 from . import image_utils
 from . import static_site
-from .storage import detect_mime, ensure_dirs, fsync_path, move_to_quarantine
+from .storage import check_storage_devices, detect_mime, ensure_dirs, fsync_path, move_to_quarantine
 
 
 def parse_uuid_from_name(path: Path) -> Optional[str]:
@@ -76,7 +76,7 @@ def process_file(path: Path) -> bool:
         return False
 
     ext = path.suffix.lower()
-    if ext not in config.ALLOWED_MIME.values():
+    if config.ENFORCE_EXTENSION and ext not in config.ALLOWED_MIME.values():
         move_to_quarantine(path, f"ext_not_allowed:{ext}")
         db.insert_audit("quarantine", path.name, f"ext_not_allowed:{ext}")
         return False
@@ -583,6 +583,8 @@ def loop(interval: int = 5) -> None:
 
 
 def main():
+    ensure_dirs()
+    check_storage_devices()
     loop()
 
 

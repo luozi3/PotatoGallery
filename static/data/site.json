@@ -6,6 +6,11 @@
   "locale": "zh_CN",
   "brand_name": "PotatoGallery",
   "brand_tagline": "Illustration Gallery",
+  "seo": {
+    "title_separator": "｜",
+    "twitter_card": "summary_large_image",
+    "default_og_image": ""
+  },
   "copyright_year": 2025,
   "copyright_holder": "PotatoGallery",
   "live2d": {

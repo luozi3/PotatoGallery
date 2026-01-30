@@ -1,6 +1,5 @@
 {% set topbar_class = topbar_class | default('topbar topbar-home') %}
 {% set show_search = show_search | default(true) %}
-{% set show_admin_logout = show_admin_logout | default(false) %}
 <header class="{{ topbar_class }}">
   <div class="topbar-left">
     <button class="icon-button sidebar-toggle" type="button" data-left-toggle aria-label="展开侧栏" aria-expanded="true" aria-controls="left-sidebar">
@@ -37,13 +36,20 @@
         <span class="avatar-caret" aria-hidden="true"></span>
       </button>
       <div class="avatar-dropdown" data-avatar-dropdown hidden>
+        <a class="dropdown-item" href="/profile/" data-auth-user-link hidden>个人主页</a>
+        <a class="dropdown-item" href="/upload/" data-auth-user-link hidden>上传作品</a>
         <a class="dropdown-item" href="/my/" data-auth-user-link hidden>我的作品</a>
         <a class="dropdown-item" href="/favorites/" data-auth-user-link hidden>我的收藏</a>
+        <button class="dropdown-item dropdown-logout" type="button" data-user-logout data-auth-user-link hidden>
+          退出账号
+          <svg class="dropdown-icon" viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+            <path d="M4 4h7v12H4z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"></path>
+            <path d="M11 10h6" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"></path>
+            <path d="M14 7l3 3-3 3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"></path>
+          </svg>
+        </button>
       </div>
     </div>
-    {% if show_admin_logout %}
-    <button class="icon-button" type="button" data-admin-logout>退出</button>
-    {% endif %}
   </div>
 </header>
 {% if show_search %}

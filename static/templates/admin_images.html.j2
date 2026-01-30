@@ -3,7 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>作品管理 ｜ {{ site_name }}</title>
+  {% set title_sep = site.seo.title_separator or "｜" %}
+  <title>作品管理 {{ title_sep }} {{ site_name }}</title>
   <meta name="description" content="{{ site_description }}">
   <meta name="theme-color" content="{{ site.theme_color }}">
   {% include "partials/theme_init.html.j2" %}
@@ -53,6 +54,7 @@
               <a class="admin-subnav-link" href="/admin/collections/">分区管理</a>
               <a class="admin-subnav-link" href="/admin/auth/">注册开关</a>
               <a class="admin-subnav-link" href="/admin/tags/">标签管理</a>
+              <a class="admin-subnav-link" href="/admin/dmca/">DMCA 处理</a>
               <a class="admin-subnav-link admin-status-link" href="/status/">系统状态</a>
             </div>
 
@@ -65,6 +67,18 @@
                 {% endfor %}
               </select>
             </section>
+
+            <div class="admin-pagination admin-pagination-top" data-admin-pagination-top hidden>
+              <button class="btn ghost" type="button" data-admin-page-prev>上一页</button>
+              <div class="admin-page-list" data-admin-page-list></div>
+              <button class="btn ghost" type="button" data-admin-page-next>下一页</button>
+              <div class="admin-page-summary" data-admin-page-summary>共 1 页 / 共 0 张</div>
+              <label class="admin-page-jump">
+                <span>跳转</span>
+                <input class="admin-input" type="number" min="1" step="1" inputmode="numeric" data-admin-page-input>
+              </label>
+              <button class="btn ghost" type="button" data-admin-page-jump>确定</button>
+            </div>
 
             <section class="gallery admin-gallery" data-admin-grid aria-live="polite"></section>
             <div class="empty" data-admin-empty>当前暂无作品。</div>

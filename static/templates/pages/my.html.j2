@@ -3,7 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>我的作品 ｜ {{ site_name }}</title>
+  {% set title_sep = site.seo.title_separator or "｜" %}
+  <title>我的作品 {{ title_sep }} {{ site_name }}</title>
   <meta name="description" content="{{ site_description }}">
   <meta name="theme-color" content="{{ site.theme_color }}">
   {% include "partials/theme_init.html.j2" %}
@@ -18,40 +19,46 @@
       {% include "partials/sidebar_default.html.j2" %}
       <div class="home-main">
         <div class="admin-main">
-          <section class="card upload-card">
-            <div class="section-header">
-              <h1>上传作品</h1>
-              <p class="muted">登录后可上传并管理自己的作品。</p>
-            </div>
-            <form class="admin-form" data-user-upload-form>
-              <label>选择图片</label>
-              <input type="file" name="file" accept="image/*" required>
-              <label>标题</label>
-              <input class="admin-input" type="text" name="title" placeholder="可留空">
-              <label>正文说明</label>
-              <textarea class="admin-textarea" name="description" placeholder="描述/注释"></textarea>
-              <label>标签</label>
-              <input class="admin-tag-input" type="text" name="tags" placeholder="#tag1 #tag2" data-tag-input data-tag-require-hash="1">
-              <p class="hint">发布作品需使用 # 标签，选择子标签后会提示补全父标签。</p>
-              <label>分区</label>
-              <select class="admin-select" name="collection" data-user-upload-collection>
-                <option value="">自动</option>
-              </select>
-              <div class="admin-actions-row">
-                <button class="btn primary" type="submit">开始上传</button>
-                <p class="hint" data-user-upload-hint></p>
-              </div>
-            </form>
-          </section>
-
           <section class="admin-toolbar">
             <div>
               <h2>我的作品列表</h2>
               <p class="muted" data-user-login-hint>未登录时无法加载。</p>
             </div>
           </section>
+          <section class="admin-controls admin-controls-card">
+            <input class="admin-search" type="search" placeholder="搜索标题 / 描述 / 标签" data-user-query data-search-input>
+            <select class="select" data-user-collection-filter>
+              <option value="all">全部分区</option>
+              {% for collection in collections_list %}
+              <option value="{{ collection.slug }}">{{ collection.title }}</option>
+              {% endfor %}
+            </select>
+          </section>
+
+          <div class="admin-pagination admin-pagination-top" data-user-pagination-top hidden>
+            <button class="btn ghost" type="button" data-user-page-prev>上一页</button>
+            <div class="admin-page-list" data-user-page-list></div>
+            <button class="btn ghost" type="button" data-user-page-next>下一页</button>
+            <div class="admin-page-summary" data-user-page-summary>共 1 页 / 共 0 张</div>
+            <label class="admin-page-jump">
+              <span>跳转</span>
+              <input class="admin-input" type="number" min="1" step="1" inputmode="numeric" data-user-page-input>
+            </label>
+            <button class="btn ghost" type="button" data-user-page-jump>确定</button>
+          </div>
           <section class="gallery user-gallery" data-user-gallery data-masonry aria-live="polite"></section>
-          <div class="empty" data-user-empty>暂无作品，先上传一张吧。</div>
+          <div class="empty" data-user-empty>暂无作品，去上传页面添加吧。</div>
+          <div class="admin-pagination" data-user-pagination hidden>
+            <button class="btn ghost" type="button" data-user-page-prev>上一页</button>
+            <div class="admin-page-list" data-user-page-list></div>
+            <button class="btn ghost" type="button" data-user-page-next>下一页</button>
+            <div class="admin-page-summary" data-user-page-summary>共 1 页 / 共 0 张</div>
+            <label class="admin-page-jump">
+              <span>跳转</span>
+              <input class="admin-input" type="number" min="1" step="1" inputmode="numeric" data-user-page-input>
+            </label>
+            <button class="btn ghost" type="button" data-user-page-jump>确定</button>
+          </div>
         </div>
       </div>
     </div>

@@ -3,7 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>法律与版权 ｜ {{ site_name }}</title>
+  {% set title_sep = site.seo.title_separator or "｜" %}
+  <title>法律与版权 {{ title_sep }} {{ site_name }}</title>
   <meta name="description" content="版权说明与使用条款。">
   <meta name="theme-color" content="{{ site.theme_color }}">
   {% include "partials/theme_init.html.j2" %}

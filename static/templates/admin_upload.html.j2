@@ -3,7 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>上传作品 ｜ {{ site_name }}</title>
+  {% set title_sep = site.seo.title_separator or "｜" %}
+  <title>上传作品 {{ title_sep }} {{ site_name }}</title>
   <meta name="description" content="{{ site_description }}">
   <meta name="theme-color" content="{{ site.theme_color }}">
   {% include "partials/theme_init.html.j2" %}
@@ -46,6 +47,7 @@
               <a class="admin-subnav-link" href="/admin/collections/">分区管理</a>
               <a class="admin-subnav-link" href="/admin/auth/">注册开关</a>
               <a class="admin-subnav-link" href="/admin/tags/">标签管理</a>
+              <a class="admin-subnav-link" href="/admin/dmca/">DMCA 处理</a>
               <a class="admin-subnav-link admin-status-link" href="/status/">系统状态</a>
             </div>
 
@@ -87,6 +89,33 @@
                 <p class="hint" data-admin-upload-hint></p>
               </div>
             </form>
+
+            <section class="admin-surface admin-tag-quick-panel" data-admin-tag-quick>
+              <div class="admin-toolbar">
+                <div>
+                  <h2>快速新增标签</h2>
+                  <p class="muted">沿用标签管理的新增流程，保存后可立即用于上传。</p>
+                </div>
+                <div class="admin-actions">
+                  <button class="btn ghost" type="button" data-admin-tag-add>新增标签</button>
+                </div>
+              </div>
+              <div class="tag-admin-guide tag-admin-guide-compact">
+                <span>标签名无需 #；别名/父标签支持逗号、竖线或换行。</span>
+              </div>
+              <div class="tag-admin-shell tag-admin-shell-compact" data-admin-tag-shell>
+                <section class="tag-admin-editor tag-admin-editor-compact" data-admin-editor hidden>
+                  <div class="tag-admin-editor-head">
+                    <div class="tag-admin-editor-title" data-admin-editor-title>新增标签</div>
+                    <button class="btn ghost" type="button" data-admin-editor-back>收起</button>
+                  </div>
+                  <div class="tag-admin-editor-body">
+                    <div class="tag-admin-editor-panel" data-admin-editor-panel="tag" data-editor-mode="compact"></div>
+                  </div>
+                </section>
+              </div>
+              <p class="hint" data-admin-tags-hint></p>
+            </section>
 
             <section class="admin-surface admin-stress-panel" data-admin-stress-panel>
               <div class="admin-toolbar">

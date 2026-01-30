@@ -1,6 +1,7 @@
 import datetime
 import os
 import shutil
+import subprocess
 from pathlib import Path
 from typing import Dict, List, Tuple
 
@@ -178,6 +179,48 @@ def backup_db(target_dir: Path = config.CLEANUP_BACKUP_DIR) -> Path:
     except PermissionError:
         pass
     return dst
+
+
+def _rsync_available() -> bool:
+    return shutil.which("rsync") is not None
+
+
+def _rsync_mirror(src: Path, dest: Path) -> None:
+    dest.mkdir(parents=True, exist_ok=True)
+    subprocess.run(
+        ["rsync", "-a", "--delete", f"{src}/", f"{dest}/"],
+        check=True,
+    )
+
+
+def _copytree_mirror(src: Path, dest: Path) -> None:
+    tmp_dir = dest.with_name(f"{dest.name}.tmp")
+    if tmp_dir.exists():
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+    shutil.copytree(src, tmp_dir, dirs_exist_ok=True)
+    if dest.exists():
+        shutil.rmtree(dest, ignore_errors=True)
+    shutil.move(str(tmp_dir), str(dest))
+
+
+def backup_storage(target_dir: Path = config.CLEANUP_BACKUP_DIR) -> Dict[str, str]:
+    target_dir.mkdir(parents=True, exist_ok=True)
+    use_rsync = _rsync_available()
+    report = {"method": "rsync" if use_rsync else "copy"}
+    for label, src in (("raw", config.RAW_DIR), ("www", config.WWW_DIR)):
+        if not src.exists():
+            report[label] = "missing"
+            continue
+        dest = target_dir / f"{label}_mirror"
+        try:
+            if use_rsync:
+                _rsync_mirror(src, dest)
+            else:
+                _copytree_mirror(src, dest)
+            report[label] = str(dest)
+        except Exception as exc:  # noqa: BLE001
+            report[label] = f"error:{exc}"
+    return report
 
 
 def run_maintenance() -> Dict[str, List[str]]:

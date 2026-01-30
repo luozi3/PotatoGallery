@@ -92,6 +92,32 @@ CREATE TABLE IF NOT EXISTS audit_log (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
+-- DMCA/侵权删除申请
+CREATE TABLE IF NOT EXISTS dmca_requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected')),
+    full_name TEXT NOT NULL,
+    email TEXT NOT NULL,
+    region TEXT NOT NULL,
+    contact TEXT,
+    work_url TEXT NOT NULL,
+    source_url TEXT NOT NULL,
+    claim TEXT NOT NULL,
+    evidence TEXT NOT NULL,
+    authority TEXT NOT NULL,
+    authority_note TEXT,
+    status_note TEXT,
+    processed_by TEXT,
+    processed_at DATETIME,
+    ip TEXT,
+    user_agent TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_dmca_status ON dmca_requests(status);
+CREATE INDEX IF NOT EXISTS idx_dmca_created_at ON dmca_requests(created_at);
+
 -- 管理后台用户与分组
 CREATE TABLE IF NOT EXISTS auth_users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -199,3 +225,17 @@ CREATE TABLE IF NOT EXISTS user_gallery_images (
 );
 
 CREATE INDEX IF NOT EXISTS idx_user_gallery_images_gallery ON user_gallery_images(gallery_id);
+
+-- 用户个人资料
+CREATE TABLE IF NOT EXISTS user_profiles (
+    user_id INTEGER PRIMARY KEY,
+    display_name TEXT,
+    gender TEXT,
+    intro TEXT,
+    website TEXT,
+    location TEXT,
+    avatar_path TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES auth_users(id) ON DELETE CASCADE
+);

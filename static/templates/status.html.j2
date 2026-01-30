@@ -3,12 +3,29 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Status ｜ {{ site_name }}</title>
+  {% set title_sep = site.seo.title_separator or "｜" %}
+  {% set twitter_card = site.seo.twitter_card or "summary_large_image" %}
+  {% set og_image_value = og_image or (site.seo.default_og_image or "") %}
+  <title>Status {{ title_sep }} {{ site_name }}</title>
   <meta name="description" content="{{ site_description }}">
   <meta name="theme-color" content="{{ site.theme_color }}">
   {% include "partials/theme_init.html.j2" %}
   {% if site_url %}
   <link rel="canonical" href="{{ site_url }}/status/">
+  {% endif %}
+  <meta property="og:title" content="Status {{ title_sep }} {{ site_name }}">
+  <meta property="og:description" content="{{ site_description }}">
+  <meta property="og:type" content="website">
+  <meta property="og:locale" content="{{ site.locale }}">
+  {% if site_url %}
+  <meta property="og:url" content="{{ site_url }}/status/">
+  {% endif %}
+  {% if og_image_value %}
+  <meta property="og:image" content="{{ og_image_value }}">
+  {% endif %}
+  <meta name="twitter:card" content="{{ twitter_card }}">
+  {% if json_ld %}
+  <script type="application/ld+json">{{ json_ld | safe }}</script>
   {% endif %}
   <link rel="stylesheet" href="/static/styles/gallery.css?v={{ static_version }}">
   <style>

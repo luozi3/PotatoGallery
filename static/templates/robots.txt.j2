@@ -1,5 +1,9 @@
 User-agent: *
 Allow: /
+Disallow: /admin/
+Disallow: /auth/
+Disallow: /upload/
+Disallow: /api/
 {% if site_url %}
 Sitemap: {{ site_url }}/sitemap.xml
 {% else %}

@@ -3,14 +3,12 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>用户登录 ｜ {{ site_name }}</title>
+  {% set title_sep = site.seo.title_separator or "｜" %}
+  <title>用户登录 {{ title_sep }} {{ site_name }}</title>
   <meta name="description" content="{{ site_description }}">
   <meta name="theme-color" content="{{ site.theme_color }}">
   {% include "partials/theme_init.html.j2" %}
   <link rel="stylesheet" href="/static/styles/gallery.css?v={{ static_version }}">
-  {% if site.live2d.enabled %}
-  <link rel="stylesheet" href="{{ site.live2d.base_url }}/live2d/css/live2d.css">
-  {% endif %}
 </head>
 <body class="page-auth with-sidebar" data-auth-mode="{{ auth.registration_mode }}" data-auth-require-https="{{ 1 if auth.require_https else 0 }}">
   <a class="skip-link" href="#main-content">跳到主要内容</a>
@@ -25,11 +23,20 @@
           <section class="card auth-card">
             <h1>用户登录</h1>
             <p class="muted">账号与密码仅用于访问用户功能。</p>
+            {% set session_days = auth.session_days | int %}
+            {% set remember_days = session_days if session_days in [1, 7, 30, 60] else 7 %}
             <form class="admin-form" data-auth-login-form>
               <label>账号</label>
               <input type="text" name="username" autocomplete="username" required>
               <label>密码</label>
               <input type="password" name="password" autocomplete="current-password" required>
+              <label for="session-days">记住我</label>
+              <select id="session-days" name="session_days">
+                <option value="1" {% if remember_days == 1 %}selected{% endif %}>1 天</option>
+                <option value="7" {% if remember_days == 7 %}selected{% endif %}>7 天</option>
+                <option value="30" {% if remember_days == 30 %}selected{% endif %}>30 天</option>
+                <option value="60" {% if remember_days == 60 %}selected{% endif %}>60 天</option>
+              </select>
               <button class="btn primary" type="submit">登录</button>
               <p class="hint" data-auth-login-error></p>
             </form>

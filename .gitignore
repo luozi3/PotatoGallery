@@ -18,3 +18,5 @@ static/js/live2d.js
 *.bak
 *.tmp
 static/data/site.local.json
+config/upload.json
+config/upload.local.json

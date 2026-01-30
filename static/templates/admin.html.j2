@@ -3,7 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>管理中心 ｜ {{ site_name }}</title>
+  {% set title_sep = site.seo.title_separator or "｜" %}
+  <title>管理中心 {{ title_sep }} {{ site_name }}</title>
   <meta name="description" content="{{ site_description }}">
   <meta name="theme-color" content="{{ site.theme_color }}">
   {% include "partials/theme_init.html.j2" %}
@@ -34,61 +35,155 @@
           </section>
 
           <section class="admin-panel admin-surface admin-home-panel" data-admin-panel hidden>
-            <div class="admin-toolbar admin-hero">
-              <div>
+            <div class="admin-toolbar admin-hero admin-home-hero">
+              <div class="admin-hero-main">
                 <h1>管理总览</h1>
-                <p class="muted">按功能分区归类入口，减少混杂与信息密度。</p>
+              </div>
+              <div class="admin-hero-meta admin-hero-meta-inline">
+                <div class="admin-hero-item">
+                  <span class="label">当前账号</span>
+                  <span class="value" data-admin-user>—</span>
+                </div>
+                <div class="admin-hero-item">
+                  <span class="label">静态发布</span>
+                  <span class="value" data-admin-status="last_build.id">—</span>
+                </div>
               </div>
             </div>
-            <div class="admin-home-sections">
-              <section class="admin-home-section">
-                <header class="admin-home-header">
-                  <h2>内容管理</h2>
-                  <p class="muted">处理作品、标签与上传入口。</p>
-                </header>
-                <div class="admin-home-grid">
-                  <a class="admin-nav-card" href="/admin/images/">
-                    <div class="admin-nav-title">作品管理</div>
-                    <p>管理作品列表，编辑标题/描述/标签，处理删除与垃圾桶。</p>
-                  </a>
-                  <a class="admin-nav-card" href="/admin/upload/">
-                    <div class="admin-nav-title">上传作品</div>
-                    <p>上传新作品并填写标题、标签、分区与正文说明。</p>
-                  </a>
-                  <a class="admin-nav-card" href="/admin/tags/">
-                    <div class="admin-nav-title">标签管理</div>
-                    <p>维护标签/别名/父标签与类型，更新标签体系。</p>
-                  </a>
+            <div class="admin-status-strip" data-admin-status-bar aria-live="polite">
+              <div class="admin-status-item admin-status-flag" data-admin-status-flag="write">
+                <span class="admin-status-label">写入</span>
+                <span class="admin-status-value" data-admin-status-flag-value>—</span>
+              </div>
+              <div class="admin-status-item">
+                <span class="admin-status-label">内存</span>
+                <span class="admin-status-value" data-admin-status="memory" data-admin-status-format="memory">-</span>
+              </div>
+              <div class="admin-status-item status-hide-xs">
+                <span class="admin-status-label">磁盘</span>
+                <span class="admin-status-value" data-admin-status="disk" data-admin-status-format="disk">-</span>
+              </div>
+              <div class="admin-status-item status-hide-sm">
+                <span class="admin-status-label">上次发布</span>
+                <span class="admin-status-value" data-admin-status="last_build.published_at" data-admin-status-format="datetime">-</span>
+              </div>
+              <div class="admin-status-item status-hide-md">
+                <span class="admin-status-label">作品</span>
+                <span class="admin-status-value" data-admin-status="images.total" data-admin-status-format="number">-</span>
+              </div>
+              <div class="admin-status-item status-hide-lg">
+                <span class="admin-status-label">API</span>
+                <span class="admin-status-value" data-admin-status="request_counts.api" data-admin-status-format="number">-</span>
+              </div>
+              <div class="admin-status-item status-hide-xl">
+                <span class="admin-status-label">页面</span>
+                <span class="admin-status-value" data-admin-status="request_counts.pages" data-admin-status-format="number">-</span>
+              </div>
+              <div class="admin-status-item status-hide-xxl">
+                <span class="admin-status-label">负载</span>
+                <span class="admin-status-value" data-admin-status="load.avg" data-admin-status-format="load">-</span>
+              </div>
+            </div>
+            <div class="admin-home-layout">
+              <div class="admin-home-content">
+                <div class="admin-home-sections">
+                  <section class="admin-home-section">
+                    <header class="admin-home-header">
+                      <h2>内容管理</h2>
+                      <p class="muted">处理作品、标签与上传入口。</p>
+                    </header>
+                    <div class="admin-home-grid">
+                      <a class="admin-nav-card" href="/admin/images/">
+                        <div class="admin-nav-title">作品管理</div>
+                        <p>管理作品列表，编辑标题/描述/标签，处理删除与垃圾桶。</p>
+                      </a>
+                      <a class="admin-nav-card" href="/admin/upload/">
+                        <div class="admin-nav-title">上传作品</div>
+                        <p>上传新作品并填写标题、标签、分区与正文说明。</p>
+                      </a>
+                      <a class="admin-nav-card" href="/admin/tags/">
+                        <div class="admin-nav-title">标签管理</div>
+                        <p>维护标签/别名/父标签与类型，更新标签体系。</p>
+                      </a>
+                      <a class="admin-nav-card" href="/admin/dmca/">
+                        <div class="admin-nav-title">DMCA 处理</div>
+                        <p>查看侵权删除申请并记录审批结果。</p>
+                      </a>
+                    </div>
+                  </section>
+                  <section class="admin-home-section">
+                    <header class="admin-home-header">
+                      <h2>站点设置</h2>
+                      <p class="muted">站点结构与注册策略的基础配置。</p>
+                    </header>
+                    <div class="admin-home-grid">
+                      <a class="admin-nav-card" href="/admin/collections/">
+                        <div class="admin-nav-title">分区管理</div>
+                        <p>维护分区与描述，设置默认分区并同步发布。</p>
+                      </a>
+                      <a class="admin-nav-card" href="/admin/auth/">
+                        <div class="admin-nav-title">注册开关</div>
+                        <p>切换开放/关闭/邀请码注册模式并保存生效。</p>
+                      </a>
+                    </div>
+                  </section>
+                  <section class="admin-home-section">
+                    <header class="admin-home-header">
+                      <h2>系统状态</h2>
+                      <p class="muted">查看运行信息与资源占用。</p>
+                    </header>
+                    <div class="admin-home-grid">
+                      <a class="admin-nav-card admin-status-card" href="/status/">
+                        <div class="admin-nav-title">系统状态</div>
+                        <p>查看站点运行数据、资源占用与发布信息。</p>
+                      </a>
+                    </div>
+                  </section>
                 </div>
-              </section>
-              <section class="admin-home-section">
-                <header class="admin-home-header">
-                  <h2>站点设置</h2>
-                  <p class="muted">站点结构与注册策略的基础配置。</p>
-                </header>
-                <div class="admin-home-grid">
-                  <a class="admin-nav-card" href="/admin/collections/">
-                    <div class="admin-nav-title">分区管理</div>
-                    <p>维护分区与描述，设置默认分区并同步发布。</p>
-                  </a>
-                  <a class="admin-nav-card" href="/admin/auth/">
-                    <div class="admin-nav-title">注册开关</div>
-                    <p>切换开放/关闭/邀请码注册模式并保存生效。</p>
-                  </a>
-                </div>
-              </section>
-              <section class="admin-home-section">
-                <header class="admin-home-header">
-                  <h2>系统状态</h2>
-                  <p class="muted">查看运行信息与资源占用。</p>
-                </header>
-                <div class="admin-home-grid">
-                  <a class="admin-nav-card admin-status-card" href="/status/">
-                    <div class="admin-nav-title">系统状态</div>
-                    <p>查看站点运行数据、资源占用与发布信息。</p>
-                  </a>
-                </div>
-              </section>
+              </div>
+              <aside class="admin-home-side">
+                <section class="admin-surface admin-side-panel" data-admin-status-side>
+                  <header class="admin-side-header">
+                    <h2>速览</h2>
+                    <a class="admin-side-link" href="/status/">完整状态 →</a>
+                  </header>
+                  <dl class="admin-side-list">
+                    <div class="admin-side-row">
+                      <dt>上次发布</dt>
+                      <dd data-admin-status="last_build.published_at_local" data-admin-status-format="datetime">-</dd>
+                    </div>
+                    <div class="admin-side-row">
+                      <dt>请求累计</dt>
+                      <dd data-admin-status="request_counts.total" data-admin-status-format="number">-</dd>
+                    </div>
+                    <div class="admin-side-row">
+                      <dt>站点运行</dt>
+                      <dd data-admin-status="uptime.days" data-admin-status-format="days">-</dd>
+                    </div>
+                    <div class="admin-side-row">
+                      <dt>磁盘剩余</dt>
+                      <dd data-admin-status="disk.free" data-admin-status-format="bytes">-</dd>
+                    </div>
+                    <div class="admin-side-row">
+                      <dt>DMCA INFO</dt>
+                      <dd data-admin-dmca-pending>待处理 -</dd>
+                    </div>
+                  </dl>
+                </section>
+                <section class="admin-surface admin-side-panel admin-side-panel-compact">
+                  <header class="admin-side-header">
+                    <h2>快捷入口</h2>
+                  </header>
+                  <div class="admin-side-links">
+                    <a href="/admin/upload/">上传作品</a>
+                    <a href="/admin/images/">作品管理</a>
+                    <a href="/admin/tags/">标签管理</a>
+                    <a href="/admin/collections/">分区管理</a>
+                    <a href="/admin/auth/">注册开关</a>
+                    <a href="/admin/dmca/">DMCA 处理</a>
+                  </div>
+                </section>
+              </aside>
             </div>
           </section>
         </div>

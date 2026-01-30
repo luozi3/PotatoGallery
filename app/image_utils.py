@@ -6,7 +6,7 @@ from PIL import Image, ImageStat
 
 from . import config
 
-Image.MAX_IMAGE_PIXELS = config.MAX_PIXELS
+Image.MAX_IMAGE_PIXELS = config.MAX_PIXELS if config.ENFORCE_PIXEL_LIMIT else None
 
 
 def compute_sha256(path: Path) -> str:
@@ -23,7 +23,7 @@ def read_dimensions(path: Path) -> Tuple[int, int]:
     # 重新打开以便后续操作
     with Image.open(path) as img:
         width, height = img.size
-    if width * height > config.MAX_PIXELS:
+    if config.ENFORCE_PIXEL_LIMIT and width * height > config.MAX_PIXELS:
         raise ValueError("像素数超限")
     return width, height
 

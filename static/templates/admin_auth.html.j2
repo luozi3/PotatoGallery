@@ -3,7 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>注册开关 ｜ {{ site_name }}</title>
+  {% set title_sep = site.seo.title_separator or "｜" %}
+  <title>注册开关 {{ title_sep }} {{ site_name }}</title>
   <meta name="description" content="{{ site_description }}">
   <meta name="theme-color" content="{{ site.theme_color }}">
   {% include "partials/theme_init.html.j2" %}
@@ -46,6 +47,7 @@
               <a class="admin-subnav-link" href="/admin/upload/">上传作品</a>
               <a class="admin-subnav-link" href="/admin/collections/">分区管理</a>
               <a class="admin-subnav-link" href="/admin/tags/">标签管理</a>
+              <a class="admin-subnav-link" href="/admin/dmca/">DMCA 处理</a>
               <a class="admin-subnav-link admin-status-link" href="/status/">系统状态</a>
             </div>
 
@@ -81,9 +83,9 @@
                   <input class="admin-input" type="text" placeholder="例如：内部测试或指定群组" data-admin-invite-note>
                 </div>
                 <div class="admin-field">
-                  <label class="label">过期时间</label>
-                  <input class="admin-input" type="datetime-local" data-admin-invite-expires-at>
-                  <p class="hint">留空表示不过期。</p>
+                  <label class="label">过期日期</label>
+                  <input class="admin-input" type="date" data-admin-invite-expires-at>
+                  <p class="hint">默认 0 点，留空表示不过期。</p>
                 </div>
                 <div class="admin-field">
                   <label class="label">有效天数</label>
@@ -107,12 +109,35 @@
                 <p class="hint" data-admin-invite-hint></p>
               </div>
               <div class="admin-invite-list" data-admin-invite-list></div>
+              <div class="admin-invite-archive" data-admin-invite-archive>
+                <button class="tag-section-toggle" type="button" data-admin-invite-archive-toggle aria-expanded="false">
+                  <span>已停用邀请码</span>
+                  <span class="tag-section-meta" data-admin-invite-archive-count></span>
+                </button>
+                <div class="admin-invite-list admin-invite-archived" data-admin-invite-archive-list hidden></div>
+              </div>
             </section>
           </section>
         </div>
       </div>
     </div>
   </main>
+
+  <div class="admin-dialog" data-admin-invite-dialog aria-hidden="true">
+    <div class="admin-dialog-backdrop" data-admin-invite-dialog-close></div>
+    <div class="admin-dialog-panel" role="dialog" aria-modal="true" aria-labelledby="invite-dialog-title">
+      <div class="admin-dialog-head">
+        <h3 id="invite-dialog-title" class="admin-dialog-title">处理邀请码</h3>
+        <button class="icon-button admin-dialog-close" type="button" data-admin-invite-dialog-close aria-label="关闭弹窗">x</button>
+      </div>
+      <p class="muted admin-dialog-desc" data-admin-invite-dialog-desc>请选择对该邀请码的操作。</p>
+      <div class="admin-dialog-actions">
+        <button class="btn primary" type="button" data-admin-invite-dialog-disable>停用</button>
+        <button class="btn danger" type="button" data-admin-invite-dialog-delete>删除</button>
+        <button class="btn ghost" type="button" data-admin-invite-dialog-cancel>取消</button>
+      </div>
+    </div>
+  </div>
 
   <script src="/static/js/ui.js?v={{ static_version }}" defer></script>
   <script src="/static/js/admin.js?v={{ static_version }}" defer></script>

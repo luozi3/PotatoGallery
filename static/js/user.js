@@ -78,6 +78,53 @@
     select.innerHTML = options.join("");
   }
 
+  function setFormDisabled(form, disabled) {
+    if (!form || !form.elements) return;
+    Array.from(form.elements).forEach((el) => {
+      el.disabled = disabled;
+    });
+  }
+
+  function bindUserUploadForm(form, options) {
+    if (!form) return;
+    const hint = options && options.hint;
+    const currentUser = options && options.currentUser ? options.currentUser : "";
+    const onSuccess = options && options.onSuccess;
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (hint) hint.textContent = "上传中...";
+      const formData = new FormData(form);
+      const fileInput = form.querySelector("input[type='file']");
+      const file = fileInput && fileInput.files ? fileInput.files[0] : null;
+      const progress = window.GalleryUploadProgress;
+      const submitBtn = form.querySelector("button[type='submit']");
+      if (submitBtn) submitBtn.disabled = true;
+      if (progress && file && currentUser) {
+        progress.start("user", currentUser, file);
+      }
+      try {
+        const data = await uploadWithProgress("/api/upload", formData, (loaded, total) => {
+          if (progress && currentUser) {
+            progress.updateUpload("user", currentUser, loaded, total);
+          }
+        });
+        if (hint) hint.textContent = "上传成功，等待处理";
+        if (progress && currentUser) {
+          progress.finishUpload("user", currentUser, data.uuid);
+        }
+        form.reset();
+        if (onSuccess) onSuccess(data);
+      } catch (err) {
+        if (hint) hint.textContent = err.message;
+        if (progress && currentUser) {
+          progress.fail("user", currentUser, err.message);
+        }
+      } finally {
+        if (submitBtn) submitBtn.disabled = false;
+      }
+    });
+  }
+
   async function initMyPage() {
     const page = document.querySelector("[data-user-page]");
     if (!page) return;
@@ -87,7 +134,38 @@
     const loginHint = document.querySelector("[data-user-login-hint]");
     const gallery = document.querySelector("[data-user-gallery]");
     const empty = document.querySelector("[data-user-empty]");
+    const queryInput = document.querySelector("[data-user-query]");
+    const collectionFilter = document.querySelector("[data-user-collection-filter]");
+    const paginations = document.querySelectorAll(
+      "[data-user-pagination], [data-user-pagination-top]"
+    );
+    const pagePrevBtns = document.querySelectorAll("[data-user-page-prev]");
+    const pageNextBtns = document.querySelectorAll("[data-user-page-next]");
+    const pageLists = document.querySelectorAll("[data-user-page-list]");
+    const pageSummaries = document.querySelectorAll("[data-user-page-summary]");
+    const pageInputs = document.querySelectorAll("[data-user-page-input]");
+    const pageJumpBtns = document.querySelectorAll("[data-user-page-jump]");
     const masonry = window.GalleryMasonry ? window.GalleryMasonry.init(gallery) : null;
+
+    let images = [];
+    let currentPage = 1;
+    let totalPages = 1;
+    let totalItems = 0;
+    const filterState = {
+      query: "",
+      collection: "all",
+    };
+
+    const initialParams = new URLSearchParams(window.location.search);
+    filterState.query = initialParams.get("q") || "";
+    filterState.collection = initialParams.get("collection") || "all";
+    const pageParam = initialParams.get("p") || initialParams.get("page") || "";
+    const parsedPage = parseInt(pageParam, 10);
+    if (Number.isFinite(parsedPage) && parsedPage > 0) {
+      currentPage = parsedPage;
+    }
+    if (queryInput) queryInput.value = filterState.query;
+    if (collectionFilter) collectionFilter.value = filterState.collection;
 
     let me = null;
     let currentUser = "";
@@ -96,22 +174,116 @@
       currentUser = me.user || "";
     } catch (err) {
       if (loginHint) loginHint.textContent = "请先登录后再管理作品。";
-      if (form) {
-        Array.from(form.elements).forEach((el) => {
-          el.disabled = true;
-        });
-      }
+      setFormDisabled(form, true);
       return;
     }
 
     if (loginHint) loginHint.textContent = `已登录：${me.user}`;
 
-    async function loadImages() {
-      const data = await fetchJSON("/api/my/images");
-      const images = data.images || [];
-      renderCollectionOptions(collectionSelect, data.collections || [], true);
+    function renderCollectionFilter(collections) {
+      if (!collectionFilter) return;
+      const selected = filterState.collection || "all";
+      const options = ['<option value="all">全部分区</option>'];
+      (collections || []).forEach((item) => {
+        options.push(
+          `<option value="${escapeHtml(item.slug)}">${escapeHtml(item.title)}</option>`
+        );
+      });
+      collectionFilter.innerHTML = options.join("");
+      collectionFilter.value = selected;
+      if (collectionFilter.value !== selected) {
+        filterState.collection = "all";
+        collectionFilter.value = "all";
+      }
+    }
+
+    function buildQueryParams(page) {
+      const params = new URLSearchParams();
+      if (filterState.query) {
+        params.set("q", filterState.query);
+      }
+      if (filterState.collection && filterState.collection !== "all") {
+        params.set("collection", filterState.collection);
+      }
+      params.set("p", page);
+      return params;
+    }
+
+    function syncUrl(page) {
+      const params = buildQueryParams(page);
+      const next = `${window.location.pathname}?${params.toString()}`;
+      window.history.replaceState(null, "", next);
+    }
+
+    function buildPageItems(total, current) {
+      if (total <= 1) return [];
+      const pages = new Set([1, total, current, current - 1, current + 1, current - 2, current + 2]);
+      const list = Array.from(pages)
+        .filter((page) => page >= 1 && page <= total)
+        .sort((a, b) => a - b);
+      return list;
+    }
+
+    function renderPagination() {
+      if (!paginations.length || !pageLists.length || !pagePrevBtns.length || !pageNextBtns.length) {
+        return;
+      }
+      if (totalItems <= 0) {
+        paginations.forEach((node) => {
+          node.hidden = true;
+        });
+        return;
+      }
+      const safeTotal = Math.max(1, totalPages || 1);
+      paginations.forEach((node) => {
+        node.hidden = false;
+      });
+      pagePrevBtns.forEach((btn) => {
+        btn.disabled = currentPage <= 1;
+      });
+      pageNextBtns.forEach((btn) => {
+        btn.disabled = currentPage >= safeTotal;
+      });
+      pageSummaries.forEach((node) => {
+        node.textContent = `共 ${safeTotal} 页 / 共 ${totalItems} 张`;
+      });
+      pageInputs.forEach((input) => {
+        input.max = String(safeTotal);
+        input.value = String(currentPage);
+        input.disabled = safeTotal <= 1;
+      });
+      pageJumpBtns.forEach((btn) => {
+        btn.disabled = safeTotal <= 1;
+      });
+      const items = buildPageItems(safeTotal, currentPage);
+      let html = "";
+      let last = 0;
+      items.forEach((page) => {
+        if (last && page - last > 1) {
+          html += '<span class="page-ellipsis">…</span>';
+        }
+        const active = page === currentPage ? " is-active" : "";
+        html += `<button class="page-number${active}" type="button" data-page="${page}">${page}</button>`;
+        last = page;
+      });
+      pageLists.forEach((list) => {
+        list.innerHTML = html;
+      });
+    }
+
+    function jumpToPage(rawValue) {
+      if (!totalPages) return;
+      const target = parseInt(rawValue || "0", 10);
+      if (!Number.isFinite(target)) return;
+      const safeTotal = Math.max(1, totalPages || 1);
+      const clamped = Math.max(1, Math.min(safeTotal, target));
+      if (clamped === currentPage) return;
+      loadImages(clamped);
+    }
+
+    function renderImages(list) {
       if (!gallery) return;
-      if (!images.length) {
+      if (!list.length) {
         gallery.innerHTML = "";
         if (empty) empty.classList.add("show");
         if (masonry) {
@@ -122,7 +294,7 @@
         return;
       }
       if (empty) empty.classList.remove("show");
-      gallery.innerHTML = images
+      gallery.innerHTML = list
         .map((img) => {
           const tags = (img.tags || []).map((t) => `#${escapeHtml(t)}`).join(" ");
           const detailPath = escapeHtml(resolveDetailPath(img));
@@ -165,49 +337,131 @@
       gallery.classList.add("masonry-ready");
     }
 
-    if (form) {
-      form.addEventListener("submit", async (event) => {
-        event.preventDefault();
-        if (hint) hint.textContent = "上传中...";
-        const formData = new FormData(form);
-        const fileInput = form.querySelector("input[type='file']");
-        const file = fileInput && fileInput.files ? fileInput.files[0] : null;
-        const progress = window.GalleryUploadProgress;
-        const submitBtn = form.querySelector("button[type='submit']");
-        if (submitBtn) submitBtn.disabled = true;
-        if (progress && file && currentUser) {
-          progress.start("user", currentUser, file);
-        }
-        try {
-          const data = await uploadWithProgress("/api/upload", formData, (loaded, total) => {
-            if (progress && currentUser) {
-              progress.updateUpload("user", currentUser, loaded, total);
-            }
-          });
-          if (hint) hint.textContent = "上传成功，等待处理";
-          if (progress && currentUser) {
-            progress.finishUpload("user", currentUser, data.uuid);
-          }
-          form.reset();
-          loadImages();
-        } catch (err) {
-          if (hint) hint.textContent = err.message;
-          if (progress && currentUser) {
-            progress.fail("user", currentUser, err.message);
-          }
-        } finally {
-          if (submitBtn) submitBtn.disabled = false;
-        }
+    function applyFilters() {
+      filterState.query = (queryInput && queryInput.value.trim()) || "";
+      filterState.collection = collectionFilter ? collectionFilter.value : "all";
+      loadImages(1);
+    }
+
+    async function loadImages(page) {
+      const targetPage = page || currentPage || 1;
+      const params = buildQueryParams(targetPage);
+      const data = await fetchJSON(`/api/my/images?${params.toString()}`);
+      images = data.images || [];
+      currentPage = Number(data.page || targetPage) || 1;
+      totalPages = Number(data.pages || 1) || 1;
+      totalItems = Number(data.total || images.length) || 0;
+      renderCollectionOptions(collectionSelect, data.collections || [], true);
+      renderCollectionFilter(data.collections || []);
+      renderImages(images);
+      renderPagination();
+      syncUrl(currentPage);
+    }
+
+    bindUserUploadForm(form, {
+      hint,
+      currentUser,
+      onSuccess: () => loadImages(1),
+    });
+
+    initTagSuggest(document);
+    if (queryInput) {
+      let searchTimer = null;
+      queryInput.addEventListener("input", () => {
+        if (searchTimer) window.clearTimeout(searchTimer);
+        searchTimer = window.setTimeout(() => {
+          searchTimer = null;
+          applyFilters();
+        }, 300);
       });
     }
 
-    initTagSuggest(document);
-    loadImages();
+    if (collectionFilter) {
+      collectionFilter.addEventListener("change", applyFilters);
+    }
+
+    pagePrevBtns.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        if (currentPage <= 1) return;
+        loadImages(currentPage - 1);
+      });
+    });
+
+    pageNextBtns.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        if (currentPage >= totalPages) return;
+        loadImages(currentPage + 1);
+      });
+    });
+
+    pageLists.forEach((list) => {
+      list.addEventListener("click", (event) => {
+        const btn = event.target.closest("[data-page]");
+        if (!btn) return;
+        const target = parseInt(btn.dataset.page || "1", 10);
+        if (!Number.isFinite(target) || target === currentPage) return;
+        loadImages(target);
+      });
+    });
+
+    pageInputs.forEach((input) => {
+      input.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter") return;
+        event.preventDefault();
+        jumpToPage(input.value);
+      });
+    });
+
+    pageJumpBtns.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const wrap = btn.closest("[data-user-pagination], [data-user-pagination-top]");
+        const input = wrap ? wrap.querySelector("[data-user-page-input]") : null;
+        if (!input) return;
+        jumpToPage(input.value);
+      });
+    });
+
+    loadImages(currentPage);
+  }
+
+  async function initUploadPage() {
+    const page = document.querySelector("[data-user-upload-page]");
+    if (!page) return;
+    const form = page.querySelector("[data-user-upload-form]");
+    const collectionSelect = page.querySelector("[data-user-upload-collection]");
+    const hint = page.querySelector("[data-user-upload-hint]");
+    const loginHint = page.querySelector("[data-user-login-hint]");
+
+    let currentUser = "";
+    try {
+      const me = await fetchJSON("/auth/me");
+      currentUser = me.user || "";
+      if (loginHint) loginHint.textContent = `已登录：${me.user || ""}`;
+    } catch (err) {
+      if (loginHint) loginHint.textContent = "请先登录后上传作品。";
+      setFormDisabled(form, true);
+      return;
+    }
+
+    if (collectionSelect && collectionSelect.options.length <= 1) {
+      try {
+        const data = await fetchJSON("/api/my/images?p=1");
+        renderCollectionOptions(collectionSelect, data.collections || [], true);
+      } catch (err) {
+        // ignore collection fetch errors
+      }
+    }
+
+    bindUserUploadForm(form, { hint, currentUser });
+    initTagSuggest(page);
   }
 
   async function initDetailEditor() {
     const editor = document.querySelector("[data-image-editor]");
     if (!editor) return;
+    const toggleBtn = document.querySelector("[data-image-edit-toggle]");
+    const closeBtn = editor.querySelector("[data-image-edit-close]");
+    const form = editor.querySelector("[data-image-edit-form]");
     const uuid = editor.dataset.imageUuid;
     const titleInput = editor.querySelector("[data-image-field='title']");
     const descInput = editor.querySelector("[data-image-field='description']");
@@ -216,10 +470,19 @@
     const saveBtn = editor.querySelector("[data-image-save]");
     const status = editor.querySelector("[data-image-status]");
 
+    function setEditorVisible(visible) {
+      editor.hidden = !visible;
+      if (toggleBtn) {
+        toggleBtn.hidden = false;
+        toggleBtn.setAttribute("aria-expanded", visible ? "true" : "false");
+        toggleBtn.textContent = visible ? "收起编辑" : "编辑作品";
+      }
+    }
+
     try {
       const data = await fetchJSON(`/api/images/${uuid}`);
       if (!data || !data.can_edit) return;
-      editor.hidden = false;
+      setEditorVisible(false);
       renderCollectionOptions(collectionSelect, data.collections || [], true);
       if (collectionSelect) {
         collectionSelect.value = data.image.collection || "";
@@ -231,6 +494,28 @@
       }
     } catch (err) {
       return;
+    }
+
+    if (toggleBtn) {
+      toggleBtn.addEventListener("click", () => {
+        const shouldOpen = editor.hidden;
+        setEditorVisible(shouldOpen);
+        if (shouldOpen) {
+          editor.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+      });
+    }
+
+    if (closeBtn) {
+      closeBtn.addEventListener("click", () => {
+        setEditorVisible(false);
+      });
+    }
+
+    if (form) {
+      form.addEventListener("submit", (event) => {
+        event.preventDefault();
+      });
     }
 
     if (saveBtn) {
@@ -384,6 +669,7 @@
   }
 
   initMyPage();
+  initUploadPage();
   initDetailEditor();
   initDetailFavorite();
 })();

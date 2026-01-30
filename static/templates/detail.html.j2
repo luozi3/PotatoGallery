@@ -3,7 +3,10 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{ image.title }} ｜ {{ site_name }}</title>
+  {% set title_sep = site.seo.title_separator or "｜" %}
+  {% set twitter_card = site.seo.twitter_card or "summary_large_image" %}
+  {% set og_image_value = image_url or (site.seo.default_og_image or "") %}
+  <title>{{ image.title }} {{ title_sep }} {{ site_name }}</title>
   <meta name="description" content="{{ image.description or image.original_name }}">
   <meta name="theme-color" content="{{ site.theme_color }}">
   {% include "partials/theme_init.html.j2" %}
@@ -17,14 +20,11 @@
   {% if canonical_url %}
   <meta property="og:url" content="{{ canonical_url }}">
   {% endif %}
-  {% if image_url %}
-  <meta property="og:image" content="{{ image_url }}">
+  {% if og_image_value %}
+  <meta property="og:image" content="{{ og_image_value }}">
   {% endif %}
-  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:card" content="{{ twitter_card }}">
   <link rel="stylesheet" href="/static/styles/gallery.css?v={{ static_version }}">
-  {% if site.live2d.enabled %}
-  <link rel="stylesheet" href="{{ site.live2d.base_url }}/live2d/css/live2d.css">
-  {% endif %}
   {% if json_ld %}
   <script type="application/ld+json">{{ json_ld | safe }}</script>
   {% endif %}
@@ -135,6 +135,7 @@
       <section class="detail-media" data-detail-media data-image-mode="thumb">
         <div class="detail-media-actions">
           <a class="detail-action" href="/raw/{{ image.raw_filename }}" download>下载原图</a>
+          <button class="detail-action-toggle detail-edit-toggle" type="button" data-image-edit-toggle hidden aria-expanded="false" aria-controls="image-editor-panel">编辑作品</button>
           <button class="detail-action-toggle" type="button" data-fav-toggle data-image-uuid="{{ image.uuid }}">
             <span class="fav-dot" data-fav-dot aria-hidden="true"></span>
             <span data-fav-label>收藏</span>
@@ -173,23 +174,41 @@
                onerror="this.onerror=null;this.src='{{ full_src }}';">
         </div>
       </section>
-      <section class="panel edit-panel" data-image-editor data-image-uuid="{{ image.uuid }}" hidden>
-        <h2>作品管理</h2>
-        <div class="admin-fields">
-          <label class="label">标题</label>
-          <input class="admin-input" type="text" data-image-field="title">
-          <label class="label">正文说明</label>
-          <textarea class="admin-textarea" data-image-field="description"></textarea>
-          <label class="label">标签</label>
-          <input class="admin-tag-input" type="text" data-image-field="tags" placeholder="tag1 tag2" data-tag-input>
-          <p class="hint">编辑标签无需 #，用空格分隔即可。</p>
-          <label class="label">分区</label>
-          <select class="admin-select" data-image-field="collection"></select>
+      <section class="admin-surface edit-panel detail-edit-panel" id="image-editor-panel" data-image-editor data-image-uuid="{{ image.uuid }}" hidden>
+        <div class="admin-toolbar admin-hero detail-edit-toolbar">
+          <div>
+            <h2>编辑作品</h2>
+            <p class="muted">仅对你可见，保存后等待刷新发布。</p>
+          </div>
+          <div class="admin-actions">
+            <button class="btn ghost btn-mini detail-edit-close" type="button" data-image-edit-close>收起</button>
+          </div>
+        </div>
+        <form class="admin-form" data-image-edit-form>
+          <div class="admin-form-grid">
+            <div class="admin-field">
+              <label class="label">标题</label>
+              <input class="admin-input" type="text" data-image-field="title">
+            </div>
+            <div class="admin-field">
+              <label class="label">分区</label>
+              <select class="admin-select" data-image-field="collection"></select>
+            </div>
+            <div class="admin-field admin-field-wide">
+              <label class="label">正文说明</label>
+              <textarea class="admin-textarea" data-image-field="description"></textarea>
+            </div>
+            <div class="admin-field admin-field-wide">
+              <label class="label">标签</label>
+              <textarea class="admin-tag-input" rows="3" data-image-field="tags" placeholder="tag1 tag2" data-tag-input></textarea>
+              <p class="hint">编辑标签无需 #，用空格分隔即可。</p>
+            </div>
+          </div>
           <div class="admin-actions-row">
             <button class="btn primary" type="button" data-image-save>保存</button>
             <p class="hint" data-image-status></p>
           </div>
-        </div>
+        </form>
       </section>
     </section>
   </main>
@@ -198,30 +217,6 @@
   <div class="counter">
     <img src="{{ site.counter.img_url }}" alt="访问统计" loading="lazy" referrerpolicy="no-referrer">
   </div>
-  {% endif %}
-
-  {% if site.live2d.enabled %}
-  {% set live2d_width = site.live2d.width or 300 %}
-  {% set live2d_height = site.live2d.height or 336 %}
-  <div id="landlord" class="live2d-root" aria-hidden="true" style="--live2d-width: {{ live2d_width }}px; --live2d-height: {{ live2d_height }}px;">
-    <div class="message" style="opacity:0"></div>
-    <canvas id="{{ site.live2d.canvas_id }}" width="{{ live2d_width }}" height="{{ live2d_height }}" class="live2d"></canvas>
-  </div>
-  <script src="{{ site.live2d.base_url }}/live2d/js/Setting.js" defer onerror="var r=document.getElementById('landlord');if(r){r.style.display='none';}"></script>
-  <script src="{{ site.live2d.base_url }}/jquery.min.js" defer onerror="var r=document.getElementById('landlord');if(r){r.style.display='none';}"></script>
-  <script src="{{ site.live2d.base_url }}/live2d/js/message.js" defer onerror="var r=document.getElementById('landlord');if(r){r.style.display='none';}"></script>
-  <script src="{{ site.live2d.base_url }}/bundle.js" defer onerror="var r=document.getElementById('landlord');if(r){r.style.display='none';}"></script>
-  <script>
-    window.addEventListener('load', function () {
-      if (!window.loadlive2d) return;
-      try {
-        loadlive2d("{{ site.live2d.canvas_id }}", "{{ site.live2d.model }}");
-      } catch (e) {
-        const root = document.getElementById('landlord');
-        if (root) root.style.display = 'none';
-      }
-    });
-  </script>
   {% endif %}
 
   <script src="/static/js/ui.js?v={{ static_version }}" defer></script>

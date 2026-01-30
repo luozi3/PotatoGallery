@@ -10,6 +10,9 @@
   const closeBtn = document.querySelector('[data-wiki-close]');
   const saveBtn = document.querySelector('[data-wiki-save]');
   const toggleBtn = document.querySelector('[data-wiki-toggle]');
+  const tocToggle = document.querySelector('[data-wiki-toc-toggle]');
+  const tocCloses = Array.from(document.querySelectorAll('[data-wiki-toc-close]'));
+  const tocAside = document.querySelector('[data-wiki-aside]');
   const body = document.body;
 
   let markdownSource = '';
@@ -247,6 +250,40 @@
     });
   }
 
+  function setTocOpen(open) {
+    if (!body) return;
+    body.classList.toggle('wiki-toc-open', open);
+    if (tocToggle) {
+      tocToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    }
+  }
+
+  function initMobileToc() {
+    if (!tocToggle || !tocAside) return;
+    tocToggle.addEventListener('click', () => {
+      const open = !body.classList.contains('wiki-toc-open');
+      setTocOpen(open);
+    });
+    tocCloses.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        setTocOpen(false);
+      });
+    });
+    tocAside.addEventListener('click', (event) => {
+      const link = event.target.closest('a');
+      if (!link) return;
+      if (body.classList.contains('wiki-toc-open')) {
+        setTocOpen(false);
+      }
+    });
+    document.addEventListener('keydown', (event) => {
+      if (event.key !== 'Escape') return;
+      if (body.classList.contains('wiki-toc-open')) {
+        setTocOpen(false);
+      }
+    });
+  }
+
   function initEditor() {
     if (!editBtn || !editor || !textarea || !preview) return;
     editBtn.addEventListener('click', () => {
@@ -302,6 +339,7 @@
   }
 
   initNavToggle();
+  initMobileToc();
   initEditor();
   checkAdmin();
 

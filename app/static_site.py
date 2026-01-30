@@ -10,7 +10,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from . import config
 from . import tagging
-from .storage import fsync_path
+from .storage import fsync_path, replace_path
 
 TEMPLATE_DIR = config.STATIC / "templates"
 ASSET_DIR = config.STATIC
@@ -50,6 +50,7 @@ DEFAULT_COLLECTION_META = {
     },
 }
 HOME_PAGE_LIMIT = 40
+TAG_PAGE_LIMIT = 40
 DEFAULT_SITE_CONFIG = {
     "site_name": "PotatoGallery 插画馆",
     "site_description": "静态插画展示站点，包含原创与精选收藏。",
@@ -58,6 +59,11 @@ DEFAULT_SITE_CONFIG = {
     "locale": "zh_CN",
     "brand_name": "",
     "brand_tagline": "Illustration Gallery",
+    "seo": {
+        "title_separator": "｜",
+        "twitter_card": "summary_large_image",
+        "default_og_image": "",
+    },
     "copyright_year": None,
     "copyright_holder": "",
     "live2d": {
@@ -171,6 +177,24 @@ def load_site_config() -> dict:
             site = _merge_dict(site, raw)
     site_url = str(site.get("site_url") or "").rstrip("/")
     site["site_url"] = site_url
+    seo = site.get("seo")
+    if not isinstance(seo, dict):
+        seo = {}
+    title_separator = str(
+        seo.get("title_separator")
+        or DEFAULT_SITE_CONFIG.get("seo", {}).get("title_separator", "｜")
+    )
+    twitter_card = str(
+        seo.get("twitter_card")
+        or DEFAULT_SITE_CONFIG.get("seo", {}).get("twitter_card", "summary_large_image")
+    )
+    default_og_image = str(seo.get("default_og_image") or "")
+    if default_og_image.startswith("/") and site_url:
+        default_og_image = f"{site_url}{default_og_image}"
+    seo["title_separator"] = title_separator
+    seo["twitter_card"] = twitter_card
+    seo["default_og_image"] = default_og_image
+    site["seo"] = seo
     if not site.get("brand_name"):
         site["brand_name"] = site.get("site_name") or ""
     if not site.get("copyright_holder"):
@@ -533,6 +557,7 @@ def build_site(
     changed_uuids: Optional[Iterable[str]] = None,
     full_rebuild: bool = True,
 ) -> Path:
+    config.reload_auth_config()
     build_id = f"build_{int(time.time())}"
     staging_dir = config.WWW_STAGING / build_id
     reuse_existing = False
@@ -555,6 +580,11 @@ def build_site(
     site_name = site.get("site_name", DEFAULT_SITE_CONFIG.get("site_name", "PotatoGallery 插画馆"))
     site_description = site.get("site_description", "")
     site_url = site.get("site_url", "")
+    default_og_image = ""
+    title_separator = "｜"
+    if isinstance(site.get("seo"), dict):
+        default_og_image = site["seo"].get("default_og_image") or ""
+        title_separator = site["seo"].get("title_separator") or title_separator
 
     collections_meta, default_collection, collection_order = load_collections_config()
     tags_meta, tag_order = tagging.load_tags_config()
@@ -792,6 +822,8 @@ def build_site(
         thumb_name = images_ctx[0].get("thumb_filename") or ""
         if thumb_name:
             og_image = f"{site_url}/thumb/{thumb_name}" if site_url else f"/thumb/{thumb_name}"
+    if not og_image and default_og_image:
+        og_image = default_og_image
 
     index_json_ld = json.dumps(
         {
@@ -800,6 +832,36 @@ def build_site(
             "name": site_name,
             "description": site_description,
             "url": f"{site_url}/" if site_url else "/",
+        },
+        ensure_ascii=False,
+    )
+    search_json_ld = json.dumps(
+        {
+            "@context": "https://schema.org",
+            "@type": "SearchResultsPage",
+            "name": f"搜索 {title_separator} {site_name}",
+            "description": site_description,
+            "url": f"{site_url}/search/" if site_url else "/search/",
+        },
+        ensure_ascii=False,
+    )
+    tags_json_ld = json.dumps(
+        {
+            "@context": "https://schema.org",
+            "@type": "CollectionPage",
+            "name": f"标签 {title_separator} {site_name}",
+            "description": site_description,
+            "url": f"{site_url}/tags/" if site_url else "/tags/",
+        },
+        ensure_ascii=False,
+    )
+    status_json_ld = json.dumps(
+        {
+            "@context": "https://schema.org",
+            "@type": "WebPage",
+            "name": f"Status {title_separator} {site_name}",
+            "description": site_description,
+            "url": f"{site_url}/status/" if site_url else "/status/",
         },
         ensure_ascii=False,
     )
@@ -929,6 +991,8 @@ def build_site(
         site_name=site_name,
         site_description=site_description,
         site_url=site_url,
+        og_image=og_image,
+        json_ld=search_json_ld,
         collections_list=collections_list,
         tags=tags_list,
         tag_slug_map=tag_slug_map,
@@ -945,6 +1009,8 @@ def build_site(
         site_name=site_name,
         site_description=site_description,
         site_url=site_url,
+        og_image=og_image,
+        json_ld=tags_json_ld,
         tags=tags_list,
         tag_slug_map=tag_slug_map,
         tag_style_map=tag_style_map,
@@ -970,19 +1036,48 @@ def build_site(
                 tag_type_styles,
                 default_tag_type,
             )
+            tag_items = tag_images.get(tag["tag"], [])
+            tag_description = tag.get("intro") or f"标签 #{tag.get('tag')} 的作品列表"
+            tag_path = f"/tags/{tag.get('slug')}/"
+            tag_url = f"{site_url}{tag_path}" if site_url else tag_path
+            tag_json_ld = json.dumps(
+                {
+                    "@context": "https://schema.org",
+                    "@type": "CollectionPage",
+                    "name": f"#{tag.get('tag')} {title_separator} {site_name}",
+                    "description": tag_description,
+                    "url": tag_url,
+                },
+                ensure_ascii=False,
+            )
+            tag_og_image = ""
+            if tag_items:
+                thumb_name = tag_items[0].get("thumb_filename") or ""
+                raw_name = tag_items[0].get("raw_filename") or ""
+                if thumb_name:
+                    tag_og_image = (
+                        f"{site_url}/thumb/{thumb_name}" if site_url else f"/thumb/{thumb_name}"
+                    )
+                elif raw_name:
+                    tag_og_image = f"{site_url}/raw/{raw_name}" if site_url else f"/raw/{raw_name}"
+            if not tag_og_image and default_og_image:
+                tag_og_image = default_og_image
             tag_html = tag_tpl.render(
                 site=site,
                 auth=auth_config,
                 site_name=site_name,
                 site_description=site_description,
                 site_url=site_url,
+                og_image=tag_og_image,
+                json_ld=tag_json_ld,
                 tag=tag,
                 tag_tree=tag_tree,
-                images=tag_images.get(tag["tag"], []),
+                images=tag_items[:TAG_PAGE_LIMIT],
                 collections=collections_ctx,
                 collections_list=collections_list,
                 tag_slug_map=tag_slug_map,
                 tag_style_map=tag_style_map,
+                tag_page_limit=TAG_PAGE_LIMIT,
                 static_version=static_version,
             )
             _atomic_write_text(tag_dir / "index.html", tag_html)
@@ -1003,19 +1098,48 @@ def build_site(
                 tag_type_styles,
                 default_tag_type,
             )
+            tag_items = tag_images.get(alias["alias_of"], [])
+            tag_description = alias.get("intro") or f"标签 #{alias.get('tag')} 的作品列表"
+            tag_path = f"/tags/{alias.get('slug')}/"
+            tag_url = f"{site_url}{tag_path}" if site_url else tag_path
+            tag_json_ld = json.dumps(
+                {
+                    "@context": "https://schema.org",
+                    "@type": "CollectionPage",
+                    "name": f"#{alias.get('tag')} {title_separator} {site_name}",
+                    "description": tag_description,
+                    "url": tag_url,
+                },
+                ensure_ascii=False,
+            )
+            tag_og_image = ""
+            if tag_items:
+                thumb_name = tag_items[0].get("thumb_filename") or ""
+                raw_name = tag_items[0].get("raw_filename") or ""
+                if thumb_name:
+                    tag_og_image = (
+                        f"{site_url}/thumb/{thumb_name}" if site_url else f"/thumb/{thumb_name}"
+                    )
+                elif raw_name:
+                    tag_og_image = f"{site_url}/raw/{raw_name}" if site_url else f"/raw/{raw_name}"
+            if not tag_og_image and default_og_image:
+                tag_og_image = default_og_image
             tag_html = tag_tpl.render(
                 site=site,
                 auth=auth_config,
                 site_name=site_name,
                 site_description=site_description,
                 site_url=site_url,
+                og_image=tag_og_image,
+                json_ld=tag_json_ld,
                 tag=alias,
                 tag_tree=tag_tree,
-                images=tag_images.get(alias["alias_of"], []),
+                images=tag_items[:TAG_PAGE_LIMIT],
                 collections=collections_ctx,
                 collections_list=collections_list,
                 tag_slug_map=tag_slug_map,
                 tag_style_map=tag_style_map,
+                tag_page_limit=TAG_PAGE_LIMIT,
                 static_version=static_version,
             )
             _atomic_write_text(tag_dir / "index.html", tag_html)
@@ -1095,6 +1219,19 @@ def build_site(
         site_url=site_url,
         static_version=static_version,
     )
+    _atomic_write_text(admin_tags_dir / "index.html", admin_tags_html)
+
+    admin_dmca_dir = admin_dir / "dmca"
+    admin_dmca_dir.mkdir(parents=True, exist_ok=True)
+    admin_dmca_html = env.get_template("admin_dmca.html.j2").render(
+        site=site,
+        auth=auth_config,
+        site_name=site_name,
+        site_description=site_description,
+        site_url=site_url,
+        static_version=static_version,
+    )
+    _atomic_write_text(admin_dmca_dir / "index.html", admin_dmca_html)
 
     auth_dir = staging_dir / "auth"
     auth_dir.mkdir(parents=True, exist_ok=True)
@@ -1121,7 +1258,6 @@ def build_site(
         static_version=static_version,
     )
     _atomic_write_text(register_dir / "index.html", register_html)
-    _atomic_write_text(admin_tags_dir / "index.html", admin_tags_html)
 
     detail_tpl = env.get_template("detail.html.j2")
     images_dir = staging_dir / "images"
@@ -1176,6 +1312,8 @@ def build_site(
         site_name=site_name,
         site_description=site_description,
         site_url=site_url,
+        og_image=og_image,
+        json_ld=status_json_ld,
         static_version=static_version,
     )
     status_path = staging_dir / "status.html"
@@ -1302,7 +1440,7 @@ def publish(staging_dir: Path) -> None:
     _set_world_readable(staging_dir)
     if target.exists():
         os.replace(target, tmp_old)
-    os.replace(staging_dir, target)
+    replace_path(staging_dir, target)
     _set_world_readable(target)
     fsync_path(target.parent)
     if tmp_old.exists():

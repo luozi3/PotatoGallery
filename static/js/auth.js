@@ -44,6 +44,10 @@
         username: form.get("username"),
         password: form.get("password"),
       };
+      const sessionDays = Number.parseInt(form.get("session_days"), 10);
+      if (Number.isFinite(sessionDays)) {
+        payload.session_days = sessionDays;
+      }
       try {
         await fetchJSON("/auth/login", {
           method: "POST",
@@ -84,8 +88,8 @@
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
         });
-        markLoggedIn();
-        location.assign(next);
+        const loginNext = `?next=${encodeURIComponent(next)}`;
+        location.assign(`/auth/login/${loginNext}`);
       } catch (err) {
         setError(registerError, err.message);
       }

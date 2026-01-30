@@ -4,13 +4,13 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   {% set title_sep = site.seo.title_separator or "｜" %}
-  <title>分区管理 {{ title_sep }} {{ site_name }}</title>
+  <title>DMCA 处理 {{ title_sep }} {{ site_name }}</title>
   <meta name="description" content="{{ site_description }}">
   <meta name="theme-color" content="{{ site.theme_color }}">
   {% include "partials/theme_init.html.j2" %}
   <link rel="stylesheet" href="/static/styles/gallery.css?v={{ static_version }}">
 </head>
-<body class="page-admin page-admin-collections with-sidebar">
+<body class="page-admin page-admin-dmca with-sidebar">
   <a class="skip-link" href="#main-content">跳到主要内容</a>
   {% set show_search = false %}
   {% set show_admin_logout = true %}
@@ -34,37 +34,50 @@
             </form>
           </section>
 
-          <section class="admin-panel admin-surface admin-collections-panel" data-admin-panel hidden>
+          <section class="admin-panel admin-surface admin-dmca-panel" data-admin-panel hidden>
             <div class="admin-toolbar admin-hero">
               <div>
-                <h1>分区管理</h1>
-                <p class="muted">新增/调整分区信息，保存后会同步到站点展示。</p>
+                <h1>DMCA 处理</h1>
+                <p class="muted">审批处理仅记录结果，不会自动删除作品。</p>
               </div>
               <div class="admin-actions">
-                <button class="btn ghost" type="button" data-admin-add-collection>新增分区</button>
+                <button class="btn ghost" type="button" data-admin-dmca-refresh>刷新列表</button>
               </div>
             </div>
             <div class="admin-subnav" aria-label="管理快捷">
               <a class="admin-subnav-link" href="/admin/">管理首页</a>
               <a class="admin-subnav-link" href="/admin/images/">作品管理</a>
               <a class="admin-subnav-link" href="/admin/upload/">上传作品</a>
+              <a class="admin-subnav-link" href="/admin/collections/">分区管理</a>
               <a class="admin-subnav-link" href="/admin/auth/">注册开关</a>
               <a class="admin-subnav-link" href="/admin/tags/">标签管理</a>
               <a class="admin-subnav-link" href="/admin/dmca/">DMCA 处理</a>
               <a class="admin-subnav-link admin-status-link" href="/status/">系统状态</a>
             </div>
 
-            <section class="admin-collections" data-admin-collections>
-              <div class="filter-group">
-                <span class="label">默认分区</span>
-                <select class="select" data-admin-default-collection></select>
-              </div>
-              <div class="collection-list" data-admin-collection-list></div>
-              <div class="collection-actions">
-                <button class="btn primary" type="button" data-admin-save-collections>保存分区</button>
-                <p class="hint" data-admin-collections-hint></p>
+            <section class="admin-controls admin-controls-card admin-dmca-controls">
+              <label class="admin-field">
+                <span class="muted">状态筛选</span>
+                <select class="select" data-admin-dmca-filter>
+                  <option value="pending">待处理</option>
+                  <option value="approved">已通过</option>
+                  <option value="rejected">已拒绝</option>
+                  <option value="all">全部</option>
+                </select>
+              </label>
+              <div class="admin-field">
+                <span class="muted">处理提示</span>
+                <p class="hint" data-admin-dmca-hint>最新数据来自后台实时查询。</p>
               </div>
             </section>
+
+            <div class="admin-dmca-list" data-admin-dmca-list aria-live="polite"></div>
+            <div class="empty" data-admin-dmca-empty>暂无 DMCA 申请。</div>
+            <div class="admin-pagination" data-admin-dmca-pagination hidden>
+              <button class="btn ghost" type="button" data-admin-dmca-page-prev>上一页</button>
+              <div class="admin-page-summary" data-admin-dmca-page-info>共 1 页 / 共 0 条</div>
+              <button class="btn ghost" type="button" data-admin-dmca-page-next>下一页</button>
+            </div>
           </section>
         </div>
       </div>

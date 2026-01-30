@@ -1,0 +1,48 @@
+{% if site.live2d.enabled %}
+{% set live2d_width = site.live2d.width or 300 %}
+{% set live2d_height = site.live2d.height or 336 %}
+<div id="landlord" class="live2d-root" aria-hidden="true" style="--live2d-width: {{ live2d_width }}px; --live2d-height: {{ live2d_height }}px;">
+  <div class="message" style="opacity:0"></div>
+  <canvas id="{{ site.live2d.canvas_id }}" width="{{ live2d_width }}" height="{{ live2d_height }}" class="live2d"></canvas>
+</div>
+<script src="{{ site.live2d.base_url }}/live2d/js/Setting.js" defer onerror="var r=document.getElementById('landlord');if(r){r.style.display='none';}"></script>
+<script src="{{ site.live2d.base_url }}/jquery.min.js" defer onerror="var r=document.getElementById('landlord');if(r){r.style.display='none';}"></script>
+<script src="{{ site.live2d.base_url }}/live2d/js/message.js" defer onerror="var r=document.getElementById('landlord');if(r){r.style.display='none';}"></script>
+<script src="{{ site.live2d.base_url }}/bundle.js" defer onerror="var r=document.getElementById('landlord');if(r){r.style.display='none';}"></script>
+<script>
+  window.addEventListener('load', function () {
+    if (!window.loadlive2d) return;
+    var live2dMedia = window.matchMedia ? window.matchMedia('(max-width: 640px)') : null;
+    var live2dLoaded = false;
+    function tryLoadLive2d() {
+      if (live2dLoaded) return;
+      if (live2dMedia && live2dMedia.matches) return;
+      live2dLoaded = true;
+      try {
+        loadlive2d("{{ site.live2d.canvas_id }}", "{{ site.live2d.model }}");
+      } catch (e) {
+        var root = document.getElementById('landlord');
+        if (root) root.style.display = 'none';
+      }
+    }
+    if (live2dMedia) {
+      var handleLive2dMedia = function (event) {
+        if (!event.matches) {
+          tryLoadLive2d();
+        }
+      };
+      if (live2dMedia.addEventListener) {
+        live2dMedia.addEventListener('change', handleLive2dMedia);
+      } else if (live2dMedia.addListener) {
+        live2dMedia.addListener(handleLive2dMedia);
+      }
+    }
+    try {
+      tryLoadLive2d();
+    } catch (e) {
+      var root = document.getElementById('landlord');
+      if (root) root.style.display = 'none';
+    }
+  });
+</script>
+{% endif %}

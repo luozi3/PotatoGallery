@@ -1,6 +1,7 @@
 import datetime
 import io
 import json
+import math
 import random
 import re
 import secrets
@@ -29,6 +30,10 @@ STRESS_DESCRIPTION = "压测工具自动生成"
 _STRESS_TASK_TTL = 30 * 60
 _STRESS_TASKS: Dict[str, Dict[str, Any]] = {}
 _STRESS_TASK_LOCK = threading.Lock()
+DMCA_ALLOWED_STATUS = {"pending", "approved", "rejected"}
+DMCA_DEFAULT_PAGE_SIZE = 20
+DMCA_MAX_PAGE_SIZE = 100
+DMCA_MAX_NOTE = 4000
 
 
 def _format_stress_title(index: Optional[int], total: Optional[int]) -> str:
@@ -55,6 +60,15 @@ def _parse_positive_int(value: Any) -> Optional[int]:
     if parsed <= 0:
         return None
     return parsed
+
+
+def _parse_dmca_status(raw: Any, *, allow_all: bool = False) -> Optional[str]:
+    value = str(raw or "").strip().lower()
+    if allow_all and value in {"", "all"}:
+        return "all"
+    if value in DMCA_ALLOWED_STATUS:
+        return value
+    return None
 
 
 def _parse_invite_expires_at(raw: Any) -> Tuple[Optional[datetime.datetime], Optional[str]]:
@@ -667,7 +681,10 @@ def admin_update_auth_config():
     mode = _normalize_registration_mode(str(payload.get("registration_mode") or ""))
     if not mode:
         return _json_error("注册模式不正确")
-    config.update_auth_config({"registration_mode": mode})
+    try:
+        config.update_auth_config({"registration_mode": mode})
+    except Exception as exc:  # noqa: BLE001
+        return _json_error(str(exc) or "保存失败", 500)
     _touch_rebuild_flag("auth_config_updated")
     return jsonify({"ok": True, "registration_mode": config.AUTH_REGISTRATION_MODE})
 
@@ -777,6 +794,37 @@ def admin_disable_invite(invite_id: int):
     return jsonify({"ok": True})
 
 
+@bp.post("/upload/admin/invites/<int:invite_id>/enable")
+def admin_enable_invite(invite_id: int):
+    user = _require_admin()
+    if not user:
+        return _json_error("未授权", 401)
+    db.ensure_schema()
+    with db.transaction() as conn:
+        auth.ensure_schema(conn)
+        result = conn.execute(
+            "UPDATE auth_invites SET is_active=1 WHERE id=?",
+            (invite_id,),
+        )
+        if result.rowcount == 0:
+            return _json_error("邀请码不存在", 404)
+    return jsonify({"ok": True})
+
+
+@bp.post("/upload/admin/invites/<int:invite_id>/delete")
+def admin_delete_invite(invite_id: int):
+    user = _require_admin()
+    if not user:
+        return _json_error("未授权", 401)
+    db.ensure_schema()
+    with db.transaction() as conn:
+        auth.ensure_schema(conn)
+        result = conn.execute("DELETE FROM auth_invites WHERE id=?", (invite_id,))
+        if result.rowcount == 0:
+            return _json_error("邀请码不存在", 404)
+    return jsonify({"ok": True})
+
+
 @bp.post("/upload/admin/upload")
 def admin_upload():
     user = _require_admin()
@@ -797,10 +845,10 @@ def admin_upload():
 
     original_name = file.filename or "upload"
     file_mime = file.mimetype or ""
-    if file_mime and file_mime not in config.ALLOWED_MIME:
-        return _json_error("不支持的文件类型")
     ext_from_name = Path(original_name).suffix.lower()
-    if ext_from_name and ext_from_name not in config.ALLOWED_MIME.values():
+    if config.ENFORCE_MIME and file_mime and file_mime not in config.ALLOWED_MIME:
+        return _json_error("不支持的文件类型")
+    if config.ENFORCE_EXTENSION and ext_from_name and ext_from_name not in config.ALLOWED_MIME.values():
         return _json_error("不支持的文件扩展名")
 
     owner_id = _get_user_id(user)
@@ -821,9 +869,15 @@ def admin_upload():
 
     mime = storage.detect_mime(tmp_path)
     ext = _allowed_extension_from_mime(mime or "")
-    if not ext:
+    if config.ENFORCE_MIME and not ext:
         storage.move_to_quarantine(tmp_path, f"mime_not_allowed: {mime}")
         return _json_error("不支持的文件类型")
+    if not ext:
+        if ext_from_name:
+            ext = ext_from_name
+        else:
+            storage.move_to_quarantine(tmp_path, f"ext_missing: {mime}")
+            return _json_error("无法识别文件类型")
 
     try:
         with db.transaction() as conn:
@@ -926,7 +980,7 @@ def admin_stress_generate():
 
     mime = "image/png"
     ext = _allowed_extension_from_mime(mime) or ".png"
-    if ext not in config.ALLOWED_MIME.values():
+    if config.ENFORCE_EXTENSION and ext not in config.ALLOWED_MIME.values():
         storage.move_to_quarantine(tmp_path, "stress_ext_not_allowed")
         return _json_error("不支持的文件类型")
 
@@ -1684,3 +1738,139 @@ def admin_tags_delete():
     if updated:
         _touch_rebuild_flag("tags_deleted")
     return jsonify({"ok": True, "updated": updated})
+
+
+def _dmca_row_to_dict(row: Any) -> Dict[str, Any]:
+    return {
+        "id": int(row["id"]),
+        "status": row["status"],
+        "full_name": row["full_name"],
+        "email": row["email"],
+        "region": row["region"],
+        "contact": row["contact"],
+        "work_url": row["work_url"],
+        "source_url": row["source_url"],
+        "claim": row["claim"],
+        "evidence": row["evidence"],
+        "authority": row["authority"],
+        "authority_note": row["authority_note"],
+        "status_note": row["status_note"],
+        "processed_by": row["processed_by"],
+        "processed_at": row["processed_at"],
+        "ip": row["ip"],
+        "user_agent": row["user_agent"],
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }
+
+
+@bp.get("/upload/admin/dmca/summary")
+def admin_dmca_summary():
+    user = _require_admin()
+    if not user:
+        return _json_error("未授权", 401)
+    db.ensure_schema()
+    with db.connect() as conn:
+        pending = conn.execute(
+            "SELECT COUNT(*) AS cnt FROM dmca_requests WHERE status='pending'"
+        ).fetchone()["cnt"]
+        today = conn.execute(
+            "SELECT COUNT(*) AS cnt FROM dmca_requests WHERE date(created_at)=date('now')"
+        ).fetchone()["cnt"]
+        latest = conn.execute("SELECT MAX(updated_at) AS latest FROM dmca_requests").fetchone()[
+            "latest"
+        ]
+        total = conn.execute("SELECT COUNT(*) AS cnt FROM dmca_requests").fetchone()["cnt"]
+    return jsonify(
+        {
+            "ok": True,
+            "pending": int(pending or 0),
+            "today": int(today or 0),
+            "total": int(total or 0),
+            "latest": latest or "",
+        }
+    )
+
+
+@bp.get("/upload/admin/dmca")
+def admin_dmca_list():
+    user = _require_admin()
+    if not user:
+        return _json_error("未授权", 401)
+    status = _parse_dmca_status(request.args.get("status"), allow_all=True)
+    if not status:
+        return _json_error("状态参数错误")
+    page = _parse_positive_int(request.args.get("page")) or 1
+    page_size = _parse_positive_int(request.args.get("page_size")) or DMCA_DEFAULT_PAGE_SIZE
+    page_size = max(1, min(page_size, DMCA_MAX_PAGE_SIZE))
+    db.ensure_schema()
+    params: List[Any] = []
+    where_clause = ""
+    if status != "all":
+        where_clause = "WHERE status=?"
+        params.append(status)
+    with db.connect() as conn:
+        total = conn.execute(
+            f"SELECT COUNT(*) AS cnt FROM dmca_requests {where_clause}", params
+        ).fetchone()["cnt"]
+        pages = max(1, math.ceil((total or 0) / page_size))
+        page = min(max(page, 1), pages)
+        offset = (page - 1) * page_size
+        rows = conn.execute(
+            f"""
+            SELECT *
+            FROM dmca_requests
+            {where_clause}
+            ORDER BY created_at DESC
+            LIMIT ? OFFSET ?
+            """,
+            [*params, page_size, offset],
+        ).fetchall()
+    items = [_dmca_row_to_dict(row) for row in rows]
+    return jsonify(
+        {
+            "ok": True,
+            "items": items,
+            "page": page,
+            "pages": pages,
+            "total": int(total or 0),
+            "page_size": page_size,
+        }
+    )
+
+
+@bp.post("/upload/admin/dmca/<int:request_id>/status")
+def admin_dmca_update_status(request_id: int):
+    user = _require_admin()
+    if not user:
+        return _json_error("未授权", 401)
+    payload = request.get_json(silent=True) or {}
+    status = _parse_dmca_status(payload.get("status"))
+    if not status:
+        return _json_error("状态参数错误")
+    if status == "pending":
+        return _json_error("状态不允许回退")
+    note = str(payload.get("note") or "").strip()
+    if len(note) > DMCA_MAX_NOTE:
+        return _json_error(f"备注长度不能超过 {DMCA_MAX_NOTE} 字符")
+    db.ensure_schema()
+    with db.transaction() as conn:
+        row = conn.execute(
+            "SELECT status FROM dmca_requests WHERE id=?",
+            (request_id,),
+        ).fetchone()
+        if not row:
+            return _json_error("记录不存在", 404)
+        conn.execute(
+            """
+            UPDATE dmca_requests
+            SET status=?, status_note=?, processed_by=?, processed_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP
+            WHERE id=?
+            """,
+            (status, note or None, user, request_id),
+        )
+    try:
+        db.insert_audit("dmca_status_update", str(request_id), f"{status}:{user}")
+    except Exception:
+        pass
+    return jsonify({"ok": True, "status": status})

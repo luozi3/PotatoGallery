@@ -4,17 +4,25 @@
   const loginForm = document.querySelector("[data-admin-login-form]");
   const loginError = document.querySelector("[data-admin-login-error]");
   const logoutBtn = document.querySelector("[data-admin-logout]");
+  const adminAvatarMenu = document.querySelector("[data-user-avatar]");
+  const statusBar = document.querySelector("[data-admin-status-bar]");
+  const statusFields = document.querySelectorAll("[data-admin-status]");
+  const statusFlags = document.querySelectorAll("[data-admin-status-flag]");
+  const adminUserLabel = document.querySelector("[data-admin-user]");
 
   function showLogin(message) {
     if (panel) panel.hidden = true;
     if (loginSection) loginSection.hidden = false;
     if (loginError) loginError.textContent = message || "";
+    if (logoutBtn) logoutBtn.hidden = true;
   }
 
   function showPanel() {
     if (loginSection) loginSection.hidden = true;
     if (panel) panel.hidden = false;
     if (loginError) loginError.textContent = "";
+    if (logoutBtn) logoutBtn.hidden = false;
+    if (adminAvatarMenu) adminAvatarMenu.hidden = false;
   }
 
   async function fetchJSON(url, options) {
@@ -61,6 +69,7 @@
     try {
       const data = await fetchJSON("/upload/admin/me");
       currentAdminUser = data.user || "";
+      if (adminUserLabel) adminUserLabel.textContent = currentAdminUser || "—";
       showPanel();
       return true;
     } catch (err) {
@@ -112,13 +121,15 @@
   const trashHint = document.querySelector("[data-admin-trash-hint]");
   const queryInput = document.querySelector("[data-admin-query]");
   const collectionFilter = document.querySelector("[data-admin-collection-filter]");
-  const pagination = document.querySelector("[data-admin-pagination]");
-  const pagePrevBtn = document.querySelector("[data-admin-page-prev]");
-  const pageNextBtn = document.querySelector("[data-admin-page-next]");
-  const pageList = document.querySelector("[data-admin-page-list]");
-  const pageSummary = document.querySelector("[data-admin-page-summary]");
-  const pageInput = document.querySelector("[data-admin-page-input]");
-  const pageJumpBtn = document.querySelector("[data-admin-page-jump]");
+  const paginations = document.querySelectorAll(
+    "[data-admin-pagination], [data-admin-pagination-top]"
+  );
+  const pagePrevBtns = document.querySelectorAll("[data-admin-page-prev]");
+  const pageNextBtns = document.querySelectorAll("[data-admin-page-next]");
+  const pageLists = document.querySelectorAll("[data-admin-page-list]");
+  const pageSummaries = document.querySelectorAll("[data-admin-page-summary]");
+  const pageInputs = document.querySelectorAll("[data-admin-page-input]");
+  const pageJumpBtns = document.querySelectorAll("[data-admin-page-jump]");
   const collectionList = document.querySelector("[data-admin-collection-list]");
   const addCollectionBtn = document.querySelector("[data-admin-add-collection]");
   const saveCollectionsBtn = document.querySelector("[data-admin-save-collections]");
@@ -138,6 +149,16 @@
   const inviteRefreshBtn = document.querySelector("[data-admin-invite-refresh]");
   const inviteCreatedWrap = document.querySelector("[data-admin-invite-created]");
   const inviteCreatedCode = document.querySelector("[data-admin-invite-code]");
+  const inviteArchive = document.querySelector("[data-admin-invite-archive]");
+  const inviteArchiveToggle = document.querySelector("[data-admin-invite-archive-toggle]");
+  const inviteArchiveList = document.querySelector("[data-admin-invite-archive-list]");
+  const inviteArchiveCount = document.querySelector("[data-admin-invite-archive-count]");
+  const inviteDialog = document.querySelector("[data-admin-invite-dialog]");
+  const inviteDialogDisable = document.querySelector("[data-admin-invite-dialog-disable]");
+  const inviteDialogDelete = document.querySelector("[data-admin-invite-dialog-delete]");
+  const inviteDialogCancel = document.querySelector("[data-admin-invite-dialog-cancel]");
+  const inviteDialogDesc = document.querySelector("[data-admin-invite-dialog-desc]");
+  const inviteDialogCloseBtns = document.querySelectorAll("[data-admin-invite-dialog-close]");
   const uploadForm = document.querySelector("[data-admin-upload-form]");
   const uploadCollection = document.querySelector("[data-admin-upload-collection]");
   const uploadHint = document.querySelector("[data-admin-upload-hint]");
@@ -173,6 +194,16 @@
   const typeSaveBtn = document.querySelector("[data-admin-type-save]");
   const typeList = document.querySelector("[data-admin-type-list]");
   const typeHint = document.querySelector("[data-admin-type-hint]");
+  const dmcaList = document.querySelector("[data-admin-dmca-list]");
+  const dmcaEmpty = document.querySelector("[data-admin-dmca-empty]");
+  const dmcaHint = document.querySelector("[data-admin-dmca-hint]");
+  const dmcaRefreshBtn = document.querySelector("[data-admin-dmca-refresh]");
+  const dmcaFilter = document.querySelector("[data-admin-dmca-filter]");
+  const dmcaPagination = document.querySelector("[data-admin-dmca-pagination]");
+  const dmcaPagePrevBtn = document.querySelector("[data-admin-dmca-page-prev]");
+  const dmcaPageNextBtn = document.querySelector("[data-admin-dmca-page-next]");
+  const dmcaPageInfo = document.querySelector("[data-admin-dmca-page-info]");
+  const dmcaPendingNode = document.querySelector("[data-admin-dmca-pending]");
   const masonry =
     grid && grid.hasAttribute("data-masonry") && window.GalleryMasonry
       ? window.GalleryMasonry.init(grid)
@@ -192,6 +223,16 @@
     collection: "all",
   };
   let currentAdminUser = "";
+  let inviteArchiveOpen = false;
+  let inviteArchiveCountValue = 0;
+  let inviteDialogInviteId = null;
+  let inviteDialogMode = "choice";
+  let dmcaPage = 1;
+  let dmcaPages = 1;
+  let dmcaTotal = 0;
+  const DMCA_PAGE_SIZE = 20;
+  let dmcaSummaryTimer = null;
+  let dmcaListTimer = null;
 
   function escapeHtml(text) {
     return String(text)
@@ -210,6 +251,290 @@
       return `/images/${shortId}/index.html`;
     }
     return `/images/${img.uuid || ""}/index.html`;
+  }
+
+  function getStatusValue(status, path) {
+    if (!status || !path) return null;
+    return path.split(".").reduce((acc, key) => (acc && key in acc ? acc[key] : null), status);
+  }
+
+  function formatNumber(value) {
+    if (!Number.isFinite(value)) return "-";
+    return new Intl.NumberFormat("zh-CN").format(value);
+  }
+
+  function formatBytes(value) {
+    if (!Number.isFinite(value)) return "-";
+    const units = ["B", "KB", "MB", "GB", "TB"];
+    let size = value;
+    let unitIndex = 0;
+    while (size >= 1024 && unitIndex < units.length - 1) {
+      size /= 1024;
+      unitIndex += 1;
+    }
+    const digits = unitIndex === 0 ? 0 : 1;
+    return `${size.toFixed(digits)}${units[unitIndex]}`;
+  }
+
+  function formatDatetime(value) {
+    if (!value) return "-";
+    const text = String(value).trim();
+    if (!text) return "-";
+    if (text.includes("T")) {
+      return text.replace("T", " ").replace(/\+\d{2}:\d{2}$/, "");
+    }
+    return text;
+  }
+
+  function formatDisk(disk) {
+    if (!disk || !Number.isFinite(disk.total) || disk.total === 0) return "-";
+    let free = Number.isFinite(disk.free) ? disk.free : null;
+    if (free === null && Number.isFinite(disk.used)) {
+      free = Math.max(disk.total - disk.used, 0);
+    }
+    if (!Number.isFinite(free)) return "-";
+    const pct = Math.round((free / disk.total) * 100);
+    return `剩余 ${formatBytes(free)} / ${formatBytes(disk.total)} (${pct}%)`;
+  }
+
+  function formatMemory(memory) {
+    if (!memory || !Number.isFinite(memory.total) || memory.total === 0) return "-";
+    const available = Number.isFinite(memory.available) ? memory.available : null;
+    let used = Number.isFinite(memory.used) ? memory.used : null;
+    if (used === null && available !== null) {
+      used = Math.max(memory.total - available, 0);
+    }
+    if (!Number.isFinite(used)) return "-";
+    const pct = Math.round((used / memory.total) * 100);
+    return `已用 ${formatBytes(used)} / ${formatBytes(memory.total)} (${pct}%)`;
+  }
+
+  function formatLoad(load) {
+    if (!Array.isArray(load)) return "-";
+    return load.map((item) => Number(item).toFixed(2)).join(" / ");
+  }
+
+  function formatDays(value) {
+    if (!Number.isFinite(value)) return "-";
+    return `${value.toFixed(1)} 天`;
+  }
+
+  function formatDmcaStatus(status) {
+    const value = String(status || "pending").toLowerCase();
+    if (value === "approved") return { label: "已通过", className: "is-approved" };
+    if (value === "rejected") return { label: "已拒绝", className: "is-rejected" };
+    return { label: "待处理", className: "is-pending" };
+  }
+
+  function formatDmcaTicket(id) {
+    const num = Number(id);
+    if (!Number.isFinite(num)) return "DMCA";
+    return `DMCA-${String(num).padStart(6, "0")}`;
+  }
+
+  function formatDmcaSummary(summary) {
+    if (!summary) return "待处理 -";
+    const pending = Number(summary.pending || 0);
+    const today = Number(summary.today || 0);
+    if (Number.isFinite(today) && today > 0) {
+      return `待处理 ${pending} · 今日 ${today}`;
+    }
+    return `待处理 ${pending}`;
+  }
+
+  function applyStatusData(status) {
+    statusFields.forEach((node) => {
+      const key = node.dataset.adminStatus || "";
+      const format = node.dataset.adminStatusFormat || "auto";
+      let value = getStatusValue(status, key);
+      let text = "-";
+      if (format === "number") {
+        text = formatNumber(Number(value));
+      } else if (format === "bytes") {
+        text = formatBytes(Number(value));
+      } else if (format === "disk") {
+        text = formatDisk(value);
+      } else if (format === "memory") {
+        text = formatMemory(value);
+      } else if (format === "load") {
+        text = formatLoad(value);
+      } else if (format === "datetime") {
+        text = formatDatetime(value);
+      } else if (format === "days") {
+        text = formatDays(Number(value));
+      } else if (value !== null && value !== undefined) {
+        text = String(value);
+      }
+      node.textContent = text;
+    });
+
+    if (statusFlags.length) {
+      const paused = Boolean(status?.upload_paused || status?.disk?.paused);
+      statusFlags.forEach((flag) => {
+        const valueNode = flag.querySelector("[data-admin-status-flag-value]");
+        if (valueNode) valueNode.textContent = paused ? "暂停" : "正常";
+        flag.classList.toggle("is-alert", paused);
+      });
+    }
+  }
+
+  async function loadAdminStatus() {
+    if (!statusFields.length) return;
+    if (statusBar) statusBar.classList.add("is-loading");
+    try {
+      const resp = await fetch(`/static/status.json?v=${Date.now()}`, { cache: "no-store" });
+      if (!resp.ok) throw new Error("状态读取失败");
+      const data = await resp.json();
+      applyStatusData(data);
+    } catch (err) {
+      if (statusBar) statusBar.classList.add("is-error");
+    } finally {
+      if (statusBar) statusBar.classList.remove("is-loading");
+    }
+  }
+
+  async function loadDmcaSummary() {
+    if (!dmcaPendingNode) return;
+    try {
+      const data = await fetchJSON("/upload/admin/dmca/summary");
+      dmcaPendingNode.textContent = formatDmcaSummary(data);
+    } catch (err) {
+      dmcaPendingNode.textContent = "待处理 -";
+    }
+  }
+
+  function renderDmcaItem(item) {
+    const statusInfo = formatDmcaStatus(item.status);
+    const title = formatDmcaTicket(item.id);
+    const authorityLabel = item.authority === "owner" ? "版权所有者" : "授权代表";
+    const createdAt = formatDatetime(item.created_at);
+    const processedAt = formatDatetime(item.processed_at);
+    const hasProcessed = Boolean(item.processed_at || item.processed_by || item.status_note);
+    const processedText = hasProcessed
+      ? `处理人：${escapeHtml(item.processed_by || "—")} · 时间：${processedAt}`
+      : "尚未处理";
+    const disabled = String(item.status || "").toLowerCase() !== "pending";
+    const workUrl = escapeHtml(item.work_url || "");
+    const sourceUrl = escapeHtml(item.source_url || "");
+    const noteValue = escapeHtml(item.status_note || "");
+    const authorityNote = escapeHtml(item.authority_note || "—");
+    const contact = escapeHtml(item.contact || "—");
+    const region = escapeHtml(item.region || "—");
+    const claim = escapeHtml(item.claim || "");
+    const evidence = escapeHtml(item.evidence || "");
+    const fullName = escapeHtml(item.full_name || "");
+    const email = escapeHtml(item.email || "");
+    const ip = escapeHtml(item.ip || "—");
+    const userAgent = escapeHtml(item.user_agent || "—");
+
+    return `
+      <details class="dmca-request-card" data-dmca-id="${item.id}">
+        <summary class="dmca-request-summary">
+          <div>
+            <div class="dmca-request-title">${title}</div>
+            <div class="dmca-request-meta">
+              <span>${fullName}</span>
+              <span>${email}</span>
+              <span>${createdAt}</span>
+            </div>
+          </div>
+          <span class="dmca-status-chip ${statusInfo.className}">${statusInfo.label}</span>
+        </summary>
+        <div class="dmca-request-body">
+          <div class="dmca-request-grid">
+            <div class="dmca-request-section">
+              <div class="dmca-request-label">作品链接</div>
+              <p class="dmca-request-text"><a href="${workUrl}" target="_blank" rel="noreferrer">${workUrl}</a></p>
+            </div>
+            <div class="dmca-request-section">
+              <div class="dmca-request-label">原始来源</div>
+              <p class="dmca-request-text"><a href="${sourceUrl}" target="_blank" rel="noreferrer">${sourceUrl}</a></p>
+            </div>
+            <div class="dmca-request-section">
+              <div class="dmca-request-label">身份</div>
+              <p class="dmca-request-text">${authorityLabel} · 授权说明：${authorityNote}</p>
+            </div>
+            <div class="dmca-request-section">
+              <div class="dmca-request-label">联系信息</div>
+              <p class="dmca-request-text">地区：${region} · 联系方式：${contact}</p>
+            </div>
+          </div>
+          <div class="dmca-request-section">
+            <div class="dmca-request-label">侵权说明</div>
+            <p class="dmca-request-text">${claim}</p>
+          </div>
+          <div class="dmca-request-section">
+            <div class="dmca-request-label">证明材料</div>
+            <p class="dmca-request-text">${evidence}</p>
+          </div>
+          <div class="dmca-request-actions">
+            <textarea class="admin-textarea dmca-request-note" data-dmca-note placeholder="处理备注（可选）" ${
+              disabled ? "disabled" : ""
+            }>${noteValue}</textarea>
+            <div class="admin-actions-row">
+              <button class="btn primary" type="button" data-dmca-action="approve" ${
+                disabled ? "disabled" : ""
+              }>通过</button>
+              <button class="btn ghost danger" type="button" data-dmca-action="reject" ${
+                disabled ? "disabled" : ""
+              }>拒绝</button>
+              <span class="hint" data-dmca-action-hint>${processedText}</span>
+            </div>
+            <div class="dmca-request-foot">提交 IP：${ip} · UA：${userAgent}</div>
+          </div>
+        </div>
+      </details>
+    `;
+  }
+
+  function updateDmcaPagination() {
+    if (!dmcaPagination || !dmcaPageInfo) return;
+    dmcaPagination.hidden = dmcaPages <= 1;
+    dmcaPagePrevBtn && (dmcaPagePrevBtn.disabled = dmcaPage <= 1);
+    dmcaPageNextBtn && (dmcaPageNextBtn.disabled = dmcaPage >= dmcaPages);
+    dmcaPageInfo.textContent = `共 ${dmcaPages} 页 / 共 ${dmcaTotal} 条`;
+  }
+
+  async function loadDmcaList(page = 1) {
+    if (!dmcaList) return;
+    if (dmcaHint) dmcaHint.textContent = "加载中...";
+    const status = dmcaFilter ? dmcaFilter.value : "pending";
+    try {
+      const params = new URLSearchParams({
+        status,
+        page: String(page),
+        page_size: String(DMCA_PAGE_SIZE),
+      });
+      const data = await fetchJSON(`/upload/admin/dmca?${params.toString()}`);
+      dmcaPage = data.page || 1;
+      dmcaPages = data.pages || 1;
+      dmcaTotal = data.total || 0;
+      const items = Array.isArray(data.items) ? data.items : [];
+      dmcaList.innerHTML = items.map(renderDmcaItem).join("");
+      if (dmcaEmpty) dmcaEmpty.hidden = items.length > 0;
+      updateDmcaPagination();
+      if (dmcaHint) dmcaHint.textContent = items.length ? "已加载最新申请" : "暂无申请记录";
+    } catch (err) {
+      if (dmcaHint) dmcaHint.textContent = err.message;
+      if (dmcaEmpty) dmcaEmpty.hidden = false;
+    }
+  }
+
+  async function updateDmcaStatus(requestId, status, note, hintNode) {
+    if (!requestId) return;
+    if (hintNode) hintNode.textContent = "提交中...";
+    try {
+      await fetchJSON(`/upload/admin/dmca/${requestId}/status`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status, note }),
+      });
+      if (hintNode) hintNode.textContent = "已更新";
+      await loadDmcaList(dmcaPage);
+      await loadDmcaSummary();
+    } catch (err) {
+      if (hintNode) hintNode.textContent = err.message;
+    }
   }
 
   function parseTagTokens(raw) {
@@ -477,26 +802,36 @@
   }
 
   function renderPagination() {
-    if (!pagination || !pageList || !pagePrevBtn || !pageNextBtn) return;
+    if (!paginations.length || !pageLists.length || !pagePrevBtns.length || !pageNextBtns.length) {
+      return;
+    }
     if (totalItems <= 0) {
-      pagination.hidden = true;
+      paginations.forEach((node) => {
+        node.hidden = true;
+      });
       return;
     }
     const safeTotal = Math.max(1, totalPages || 1);
-    pagination.hidden = false;
-    pagePrevBtn.disabled = currentPage <= 1;
-    pageNextBtn.disabled = currentPage >= safeTotal;
-    if (pageSummary) {
-      pageSummary.textContent = `共 ${safeTotal} 页 / 共 ${totalItems} 张`;
-    }
-    if (pageInput) {
-      pageInput.max = String(safeTotal);
-      pageInput.value = String(currentPage);
-      pageInput.disabled = safeTotal <= 1;
-    }
-    if (pageJumpBtn) {
-      pageJumpBtn.disabled = safeTotal <= 1;
-    }
+    paginations.forEach((node) => {
+      node.hidden = false;
+    });
+    pagePrevBtns.forEach((btn) => {
+      btn.disabled = currentPage <= 1;
+    });
+    pageNextBtns.forEach((btn) => {
+      btn.disabled = currentPage >= safeTotal;
+    });
+    pageSummaries.forEach((node) => {
+      node.textContent = `共 ${safeTotal} 页 / 共 ${totalItems} 张`;
+    });
+    pageInputs.forEach((input) => {
+      input.max = String(safeTotal);
+      input.value = String(currentPage);
+      input.disabled = safeTotal <= 1;
+    });
+    pageJumpBtns.forEach((btn) => {
+      btn.disabled = safeTotal <= 1;
+    });
     const items = buildPageItems(safeTotal, currentPage);
     let html = "";
     let last = 0;
@@ -508,7 +843,9 @@
       html += `<button class="page-number${active}" type="button" data-page="${page}">${page}</button>`;
       last = page;
     });
-    pageList.innerHTML = html;
+    pageLists.forEach((list) => {
+      list.innerHTML = html;
+    });
   }
 
   function jumpToPage(rawValue) {
@@ -785,7 +1122,10 @@
       inviteExpiresAtInput ? inviteExpiresAtInput.value : ""
     );
     if (directValue) {
-      return directValue;
+      if (directValue.includes("T") || directValue.includes(" ")) {
+        return directValue.replace("T", " ");
+      }
+      return `${directValue} 00:00`;
     }
     const daysValue = inviteExpiresDaysInput ? inviteExpiresDaysInput.value : "";
     const days = parseInt(daysValue || "0", 10);
@@ -793,11 +1133,10 @@
       return "";
     }
     const now = new Date();
+    now.setHours(0, 0, 0, 0);
     now.setDate(now.getDate() + days);
     const pad = (num) => String(num).padStart(2, "0");
-    return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(
-      now.getHours()
-    )}:${pad(now.getMinutes())}`;
+    return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} 00:00`;
   }
 
   function parseInviteDate(value) {
@@ -841,14 +1180,14 @@
     inviteCreatedCode.textContent = code;
   }
 
-  function renderInvites(list) {
-    if (!inviteList) return;
+  function renderInviteCards(list, options) {
+    const emptyText = (options && options.emptyText) || "暂无邀请码。";
     if (!list || !list.length) {
-      inviteList.innerHTML = '<div class="empty">暂无邀请码。</div>';
-      return;
+      return `<div class="empty">${escapeHtml(emptyText)}</div>`;
     }
-    inviteList.innerHTML = list
+    return list
       .map((invite) => {
+        const isActive = Boolean(invite.is_active);
         const codeText = `${invite.code_prefix || ""}****`;
         const maxUses =
           invite.max_uses === null || invite.max_uses === undefined
@@ -858,13 +1197,19 @@
         const expiresAt = invite.expires_at || "";
         const expiresLabel = expiresAt ? formatInviteDate(expiresAt) : "不过期";
         const remainingLabel = formatInviteRemaining(expiresAt);
-        const statusText =
-          !invite.is_active ? "停用" : remainingLabel === "已过期" ? "已过期" : "启用";
+        const statusText = isActive
+          ? remainingLabel === "已过期"
+            ? "已过期"
+            : "启用"
+          : "停用";
         const noteText = invite.note ? escapeHtml(invite.note) : "无备注";
-        const disableLabel = invite.is_active ? "停用" : "已停用";
-        const disableAttr = invite.is_active ? "" : "disabled";
+        const actions = isActive
+          ? `<button class="btn ghost" type="button" data-invite-action="disable" data-invite-id="${invite.id}">停用</button>`
+          : `<button class="btn ghost" type="button" data-invite-action="enable" data-invite-id="${invite.id}">启用</button>
+             <button class="btn ghost" type="button" data-invite-action="delete" data-invite-id="${invite.id}">删除</button>`;
+        const cardClass = isActive ? "admin-invite-card" : "admin-invite-card is-inactive";
         return `
-          <div class="admin-invite-card">
+          <div class="${cardClass}">
             <div class="admin-invite-main">
               <div class="admin-invite-code">${escapeHtml(codeText)}</div>
               <div class="admin-invite-meta">
@@ -876,14 +1221,51 @@
               <div class="admin-invite-note">${noteText}</div>
             </div>
             <div class="admin-invite-actions">
-              <button class="btn ghost" type="button" data-invite-disable data-invite-id="${
-                invite.id
-              }" ${disableAttr}>${disableLabel}</button>
+              ${actions}
             </div>
           </div>
         `;
       })
       .join("");
+  }
+
+  function syncInviteArchiveState(inactiveCount) {
+    inviteArchiveCountValue = inactiveCount;
+    if (inviteArchiveCount) {
+      inviteArchiveCount.textContent = inactiveCount ? `${inactiveCount} 个` : "0";
+    }
+    if (inviteArchive) {
+      inviteArchive.hidden = inactiveCount === 0;
+    }
+    if (!inviteArchiveList) return;
+    if (inactiveCount === 0) {
+      inviteArchiveOpen = false;
+      inviteArchiveList.hidden = true;
+      if (inviteArchiveToggle) inviteArchiveToggle.setAttribute("aria-expanded", "false");
+      return;
+    }
+    inviteArchiveList.hidden = !inviteArchiveOpen;
+    if (inviteArchiveToggle) {
+      inviteArchiveToggle.setAttribute("aria-expanded", inviteArchiveOpen ? "true" : "false");
+    }
+  }
+
+  function renderInvites(list) {
+    if (!inviteList) return;
+    const active = [];
+    const inactive = [];
+    (list || []).forEach((invite) => {
+      if (invite && invite.is_active) {
+        active.push(invite);
+      } else if (invite) {
+        inactive.push(invite);
+      }
+    });
+    inviteList.innerHTML = renderInviteCards(active, { emptyText: "暂无可用邀请码。" });
+    if (inviteArchiveList) {
+      inviteArchiveList.innerHTML = renderInviteCards(inactive, { emptyText: "暂无停用邀请码。" });
+    }
+    syncInviteArchiveState(inactive.length);
   }
 
   async function loadInvites() {
@@ -923,7 +1305,6 @@
 
   async function disableInvite(inviteId) {
     if (!inviteId) return;
-    if (!confirm("确认停用该邀请码？")) return;
     if (inviteHint) inviteHint.textContent = "停用中...";
     try {
       await fetchJSON(`/upload/admin/invites/${inviteId}/disable`, { method: "POST" });
@@ -931,6 +1312,95 @@
       await loadInvites();
     } catch (err) {
       if (inviteHint) inviteHint.textContent = err.message;
+    }
+  }
+
+  async function enableInvite(inviteId) {
+    if (!inviteId) return;
+    if (inviteHint) inviteHint.textContent = "启用中...";
+    try {
+      await fetchJSON(`/upload/admin/invites/${inviteId}/enable`, { method: "POST" });
+      if (inviteHint) inviteHint.textContent = "已启用";
+      await loadInvites();
+    } catch (err) {
+      if (inviteHint) inviteHint.textContent = err.message;
+    }
+  }
+
+  async function deleteInvite(inviteId) {
+    if (!inviteId) return;
+    if (inviteHint) inviteHint.textContent = "删除中...";
+    try {
+      await fetchJSON(`/upload/admin/invites/${inviteId}/delete`, { method: "POST" });
+      if (inviteHint) inviteHint.textContent = "已删除";
+      await loadInvites();
+    } catch (err) {
+      if (inviteHint) inviteHint.textContent = err.message;
+    }
+  }
+
+  function openInviteDialog(inviteId, mode) {
+    if (!inviteDialog) return;
+    inviteDialogInviteId = inviteId;
+    inviteDialogMode = mode || "choice";
+    if (inviteDialogDesc) {
+      inviteDialogDesc.textContent =
+        inviteDialogMode === "delete"
+          ? "确认删除该邀请码吗？"
+          : "请选择对该邀请码的操作。";
+    }
+    if (inviteDialogDisable) {
+      inviteDialogDisable.hidden = inviteDialogMode === "delete";
+    }
+    if (inviteDialogDelete) {
+      inviteDialogDelete.textContent = inviteDialogMode === "delete" ? "确认删除" : "删除";
+    }
+    inviteDialog.setAttribute("aria-hidden", "false");
+    inviteDialog.classList.remove("is-open");
+    void inviteDialog.offsetHeight;
+    window.requestAnimationFrame(() => {
+      inviteDialog.classList.add("is-open");
+    });
+  }
+
+  function closeInviteDialog() {
+    if (!inviteDialog) return;
+    inviteDialog.classList.remove("is-open");
+    inviteDialogInviteId = null;
+    inviteDialogMode = "choice";
+    inviteDialog.setAttribute("aria-hidden", "true");
+  }
+
+  async function handleInviteDialogDisable() {
+    if (!inviteDialogInviteId) return;
+    const inviteId = inviteDialogInviteId;
+    closeInviteDialog();
+    await disableInvite(inviteId);
+  }
+
+  async function handleInviteDialogDelete() {
+    if (!inviteDialogInviteId) return;
+    const inviteId = inviteDialogInviteId;
+    closeInviteDialog();
+    await deleteInvite(inviteId);
+  }
+
+  function handleInviteActionClick(event) {
+    const btn = event.target.closest("[data-invite-action]");
+    if (!btn) return;
+    const inviteId = btn.dataset.inviteId;
+    const action = btn.dataset.inviteAction;
+    if (!inviteId || !action) return;
+    if (action === "disable") {
+      openInviteDialog(inviteId, "choice");
+      return;
+    }
+    if (action === "enable") {
+      enableInvite(inviteId);
+      return;
+    }
+    if (action === "delete") {
+      openInviteDialog(inviteId, "delete");
     }
   }
 
@@ -973,6 +1443,7 @@
 
   function initAdmin() {
     readUrlState();
+    loadAdminStatus();
     if (trashBtn) {
       trashBtn.textContent = showTrash ? "查看正常作品" : "查看垃圾桶";
     }
@@ -993,6 +1464,18 @@
     loadInvites().catch((err) => {
       if (inviteHint) inviteHint.textContent = err.message;
     });
+    loadDmcaSummary().catch(() => {});
+    if (dmcaPendingNode && !dmcaSummaryTimer) {
+      dmcaSummaryTimer = window.setInterval(loadDmcaSummary, 30000);
+    }
+    if (dmcaList) {
+      loadDmcaList(dmcaPage).catch((err) => {
+        if (dmcaHint) dmcaHint.textContent = err.message;
+      });
+      if (!dmcaListTimer) {
+        dmcaListTimer = window.setInterval(() => loadDmcaList(dmcaPage), 45000);
+      }
+    }
 
     if (grid && refreshBtn) {
       refreshBtn.addEventListener("click", () => loadImages(currentPage));
@@ -1041,44 +1524,89 @@
       collectionFilter.addEventListener("change", applyFilters);
     }
 
-    if (pagePrevBtn) {
-      pagePrevBtn.addEventListener("click", () => {
+    if (dmcaFilter) {
+      dmcaFilter.addEventListener("change", () => {
+        dmcaPage = 1;
+        loadDmcaList(dmcaPage);
+      });
+    }
+
+    if (dmcaRefreshBtn) {
+      dmcaRefreshBtn.addEventListener("click", () => loadDmcaList(dmcaPage));
+    }
+
+    if (dmcaPagePrevBtn) {
+      dmcaPagePrevBtn.addEventListener("click", () => {
+        if (dmcaPage <= 1) return;
+        loadDmcaList(dmcaPage - 1);
+      });
+    }
+
+    if (dmcaPageNextBtn) {
+      dmcaPageNextBtn.addEventListener("click", () => {
+        if (dmcaPage >= dmcaPages) return;
+        loadDmcaList(dmcaPage + 1);
+      });
+    }
+
+    if (dmcaList) {
+      dmcaList.addEventListener("click", (event) => {
+        const actionBtn = event.target.closest("[data-dmca-action]");
+        if (!actionBtn) return;
+        const card = actionBtn.closest("[data-dmca-id]");
+        if (!card) return;
+        const requestId = card.dataset.dmcaId;
+        const action = actionBtn.dataset.dmcaAction;
+        if (!requestId || !action) return;
+        if (!confirm(`确认将该申请标记为${action === "approve" ? "已通过" : "已拒绝"}？`)) {
+          return;
+        }
+        const noteInput = card.querySelector("[data-dmca-note]");
+        const hintNode = card.querySelector("[data-dmca-action-hint]");
+        updateDmcaStatus(requestId, action === "approve" ? "approved" : "rejected", noteInput ? noteInput.value : "", hintNode);
+      });
+    }
+
+    pagePrevBtns.forEach((btn) => {
+      btn.addEventListener("click", () => {
         if (currentPage <= 1) return;
         loadImages(currentPage - 1);
       });
-    }
+    });
 
-    if (pageNextBtn) {
-      pageNextBtn.addEventListener("click", () => {
+    pageNextBtns.forEach((btn) => {
+      btn.addEventListener("click", () => {
         if (currentPage >= totalPages) return;
         loadImages(currentPage + 1);
       });
-    }
+    });
 
-    if (pageList) {
-      pageList.addEventListener("click", (event) => {
+    pageLists.forEach((list) => {
+      list.addEventListener("click", (event) => {
         const btn = event.target.closest("[data-page]");
         if (!btn) return;
         const target = parseInt(btn.dataset.page || "1", 10);
         if (!Number.isFinite(target) || target === currentPage) return;
         loadImages(target);
       });
-    }
+    });
 
-    if (pageInput) {
-      pageInput.addEventListener("keydown", (event) => {
+    pageInputs.forEach((input) => {
+      input.addEventListener("keydown", (event) => {
         if (event.key !== "Enter") return;
         event.preventDefault();
-        jumpToPage(pageInput.value);
+        jumpToPage(input.value);
       });
-    }
+    });
 
-    if (pageJumpBtn) {
-      pageJumpBtn.addEventListener("click", () => {
-        if (!pageInput) return;
-        jumpToPage(pageInput.value);
+    pageJumpBtns.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const wrap = btn.closest("[data-admin-pagination], [data-admin-pagination-top]");
+        const input = wrap ? wrap.querySelector("[data-admin-page-input]") : null;
+        if (!input) return;
+        jumpToPage(input.value);
       });
-    }
+    });
 
     if (inviteLimitToggle) {
       syncInviteLimitState();
@@ -1097,13 +1625,44 @@
       });
     }
 
+    if (inviteArchiveToggle) {
+      inviteArchiveToggle.addEventListener("click", () => {
+        inviteArchiveOpen = !inviteArchiveOpen;
+        syncInviteArchiveState(inviteArchiveCountValue);
+      });
+    }
+
     if (inviteList) {
-      inviteList.addEventListener("click", (event) => {
-        const btn = event.target.closest("[data-invite-disable]");
-        if (!btn) return;
-        const inviteId = btn.dataset.inviteId;
-        if (!inviteId) return;
-        disableInvite(inviteId);
+      inviteList.addEventListener("click", handleInviteActionClick);
+    }
+
+    if (inviteArchiveList) {
+      inviteArchiveList.addEventListener("click", handleInviteActionClick);
+    }
+
+    if (inviteDialogDisable) {
+      inviteDialogDisable.addEventListener("click", handleInviteDialogDisable);
+    }
+
+    if (inviteDialogDelete) {
+      inviteDialogDelete.addEventListener("click", handleInviteDialogDelete);
+    }
+
+    if (inviteDialogCancel) {
+      inviteDialogCancel.addEventListener("click", closeInviteDialog);
+    }
+
+    if (inviteDialogCloseBtns.length) {
+      inviteDialogCloseBtns.forEach((btn) => {
+        btn.addEventListener("click", closeInviteDialog);
+      });
+    }
+
+    if (inviteDialog) {
+      document.addEventListener("keydown", (event) => {
+        if (event.key !== "Escape") return;
+        if (inviteDialog.hidden) return;
+        closeInviteDialog();
       });
     }
 
@@ -1497,7 +2056,7 @@
 
   async function initTagsPage() {
     const tagList = document.querySelector("[data-admin-tag-list]");
-    if (!tagList && !typeList) return;
+    if (!tagList && !typeList && !tagAddBtn && !tagEditorTagPanel) return;
     let tags = [];
     let tagTypes = [];
     let tagPage = 1;
@@ -1901,30 +2460,62 @@
 
     function renderTagEditor(tag) {
       if (!tagEditorTagPanel) return;
-      tagEditorTagPanel.innerHTML = `
-        <div class="tag-admin-row" data-tag-row>
-          <div class="tag-admin-head">
-            <div class="tag-admin-head-main">
-              <label class="tag-field">
-                <span>标签名</span>
-                <input type="text" value="${escapeHtml(tag.tag || "")}" placeholder="无需 #，例：long_hair" data-tag-field="tag">
-              </label>
-              <label class="tag-field">
-                <span>URL Slug</span>
-                <input type="text" value="${escapeHtml((tag.slug || "").trim())}" placeholder="english-tag" data-tag-field="slug">
-              </label>
-              <label class="tag-field">
-                <span>类型</span>
-                <select data-tag-field="type">
-                  ${buildTagTypeOptions(tag.type)}
-                </select>
-              </label>
-            </div>
-            <div class="tag-admin-count">
-              <span>作品数</span>
-              <input type="text" value="${escapeHtml(tag.count || 0)}" disabled>
-            </div>
+      const compact = tagEditorTagPanel.dataset.editorMode === "compact";
+      const rowClass = compact ? "tag-admin-row tag-admin-row-compact" : "tag-admin-row";
+      const headMarkup = `
+        <div class="tag-admin-head">
+          <div class="tag-admin-head-main">
+            <label class="tag-field">
+              <span>标签名</span>
+              <input type="text" value="${escapeHtml(tag.tag || "")}" placeholder="无需 #，例：long_hair" data-tag-field="tag">
+            </label>
+            <label class="tag-field">
+              <span>URL Slug</span>
+              <input type="text" value="${escapeHtml((tag.slug || "").trim())}" placeholder="english-tag" data-tag-field="slug">
+            </label>
+            <label class="tag-field">
+              <span>类型</span>
+              <select data-tag-field="type">
+                ${buildTagTypeOptions(tag.type)}
+              </select>
+            </label>
           </div>
+          ${
+            compact
+              ? ""
+              : `
+          <div class="tag-admin-count">
+            <span>作品数</span>
+            <input type="text" value="${escapeHtml(tag.count || 0)}" disabled>
+          </div>
+          `
+          }
+        </div>
+      `;
+      const fieldsMarkup = compact
+        ? `
+          <div class="tag-admin-fields">
+            <label class="tag-field tag-field-wide">
+              <span>简介</span>
+              <textarea rows="2" placeholder="标签简介" data-tag-field="intro">${escapeHtml(
+                (tag.intro || "").trim()
+              )}</textarea>
+            </label>
+            <label class="tag-field tag-field-wide">
+              <span>别名</span>
+              <textarea rows="2" placeholder="long hair | long_hair | 长发" data-tag-field="aliases">${escapeHtml(
+                (tag.aliases || []).join(" | ")
+              )}</textarea>
+            </label>
+            <label class="tag-field tag-field-wide">
+              <span>父标签</span>
+              <textarea rows="2" placeholder="animal_ears | kemonomimi" data-tag-field="parents">${escapeHtml(
+                (tag.parents || []).join(" | ")
+              )}</textarea>
+            </label>
+          </div>
+        `
+        : `
           <div class="tag-admin-fields">
             <label class="tag-field tag-field-wide">
               <span>简介</span>
@@ -1946,16 +2537,36 @@
             </label>
             <label class="tag-field">
               <span>合并到</span>
-              <input type="text" value="${escapeHtml((tag.alias_to || "").trim())}" placeholder="主标签（可空）" data-tag-field="alias-to">
+              <input type="text" value="${escapeHtml(
+                (tag.alias_to || "").trim()
+              )}" placeholder="主标签（可空）" data-tag-field="alias-to">
             </label>
           </div>
-          ${renderTagTree(tag)}
+        `;
+      const actionsMarkup = compact
+        ? `
+          <div class="tag-admin-actions tag-admin-actions-compact">
+            <label class="tag-quick-attach">
+              <input type="checkbox" data-tag-attach checked>
+              <span>保存后加入上传标签</span>
+            </label>
+            <button class="btn primary" type="button" data-tag-action="save">保存标签</button>
+          </div>
+        `
+        : `
           <div class="tag-admin-actions">
             <button class="btn primary" type="button" data-tag-action="save">保存</button>
             <button class="btn ghost" type="button" data-tag-action="meta-delete">清除简介/别名</button>
             <button class="btn ghost" type="button" data-tag-action="rename">改名</button>
             <button class="btn ghost" type="button" data-tag-action="delete">删除</button>
           </div>
+        `;
+      tagEditorTagPanel.innerHTML = `
+        <div class="${rowClass}" data-tag-row>
+          ${headMarkup}
+          ${fieldsMarkup}
+          ${compact ? "" : renderTagTree(tag)}
+          ${actionsMarkup}
         </div>
       `;
       bindTagRowActions(tagEditorTagPanel);
@@ -2208,10 +2819,10 @@
     }
 
     async function loadTagTypes() {
-      if (!typeList) return;
+      if (!typeList && !tagEditorTagPanel && !tagTypeFilter && !tagTypeSummary) return;
       const data = await fetchJSON("/upload/admin/tag-types");
       tagTypes = data.types || [];
-      renderTagTypes(tagTypes);
+      if (typeList) renderTagTypes(tagTypes);
       refreshTypeFilterOptions();
     }
 
@@ -2234,7 +2845,7 @@
 
     async function refreshAll() {
       await loadTagIndex();
-      if (typeList) await loadTagTypes();
+      await loadTagTypes();
       await loadTags();
     }
 
@@ -2325,18 +2936,43 @@
       });
     }
 
+    function appendTagToUploadInput(tagName) {
+      if (!uploadForm) return false;
+      const input = uploadForm.querySelector("[data-tag-input]");
+      if (!input) return false;
+      const cleaned = String(tagName || "").trim();
+      if (!cleaned) return false;
+      const parsed = parseTagTokens(input.value);
+      const exists = parsed.tags.some(
+        (item) => item.toLowerCase() === cleaned.toLowerCase()
+      );
+      const nextTags = exists ? parsed.tags : [...parsed.tags, cleaned];
+      const requireHash = input.dataset.tagRequireHash === "1";
+      const useHash = requireHash || parsed.hasHash;
+      input.value = formatTagsValue(nextTags, useHash);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      input.focus();
+      return true;
+    }
+
     function bindTagRowActions(scope) {
       const host = scope || document;
       host.querySelectorAll("[data-tag-action='save']").forEach((btn) => {
         btn.addEventListener("click", async () => {
           const row = btn.closest("[data-tag-row]");
-          const tag = row.querySelector("[data-tag-field='tag']").value.trim();
-          const slug = row.querySelector("[data-tag-field='slug']").value.trim();
-          const type = row.querySelector("[data-tag-field='type']").value;
-          const intro = row.querySelector("[data-tag-field='intro']").value.trim();
-          const aliases = row.querySelector("[data-tag-field='aliases']").value.trim();
-          const parents = row.querySelector("[data-tag-field='parents']").value.trim();
-          const aliasTo = row.querySelector("[data-tag-field='alias-to']").value.trim();
+          const readValue = (field) => {
+            const input = row.querySelector(`[data-tag-field='${field}']`);
+            return input ? input.value.trim() : "";
+          };
+          const tag = readValue("tag");
+          const slug = readValue("slug");
+          const typeField = row.querySelector("[data-tag-field='type']");
+          const type = typeField ? typeField.value : "";
+          const intro = readValue("intro");
+          const aliases = readValue("aliases");
+          const parents = readValue("parents");
+          const aliasTo = readValue("alias-to");
+          const attachToggle = row.querySelector("[data-tag-attach]");
           if (tagsHint) tagsHint.textContent = "保存中...";
           try {
             await fetchJSON("/upload/admin/tags/meta", {
@@ -2344,7 +2980,13 @@
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ tag, slug, type, intro, aliases, parents, alias_to: aliasTo }),
             });
-            if (tagsHint) tagsHint.textContent = "已保存，等待刷新发布";
+            let hintMessage = "已保存，等待刷新发布";
+            if (attachToggle && attachToggle.checked) {
+              if (appendTagToUploadInput(tag)) {
+                hintMessage = "已保存并加入上传标签";
+              }
+            }
+            if (tagsHint) tagsHint.textContent = hintMessage;
             loadTags();
           } catch (err) {
             if (tagsHint) tagsHint.textContent = err.message;

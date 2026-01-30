@@ -14,10 +14,12 @@ def main() -> int:
     parser.add_argument("--no-publish", action="store_true", help="Skip publish after regen thumbs")
     parser.add_argument("--vacuum", action="store_true", help="Run SQLite VACUUM")
     parser.add_argument("--backup", action="store_true", help="Backup SQLite database")
+    parser.add_argument("--backup-storage", action="store_true", help="Backup raw/www storage")
     parser.add_argument("--backup-dir", default=None, help="Backup directory")
     args = parser.parse_args()
 
     report = {}
+    target_dir = Path(args.backup_dir) if args.backup_dir else None
     if args.scan or args.clean:
         report = maintenance.run_maintenance()
     if args.regen_thumbs:
@@ -26,9 +28,12 @@ def main() -> int:
         maintenance.vacuum_db()
         report["vacuum"] = ["ok"]
     if args.backup:
-        target_dir = Path(args.backup_dir) if args.backup_dir else None
         dst = maintenance.backup_db(target_dir) if target_dir else maintenance.backup_db()
         report["backup"] = [str(dst)]
+    if args.backup_storage:
+        report["backup_storage"] = (
+            maintenance.backup_storage(target_dir) if target_dir else maintenance.backup_storage()
+        )
 
     print(json.dumps(report, ensure_ascii=False, indent=2))
     return 0

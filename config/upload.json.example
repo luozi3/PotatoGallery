@@ -1,0 +1,26 @@
+{
+  "_notes": {
+    "max_upload_mb": "Max upload size in MB (preferred).",
+    "max_upload_bytes": "Max upload size in bytes (overrides max_upload_mb if set).",
+    "chunk_size_kb": "Upload stream chunk size in KB (preferred).",
+    "chunk_size_bytes": "Upload stream chunk size in bytes (overrides chunk_size_kb if set).",
+    "max_pixels": "Max image pixels (width * height).",
+    "allowed_mime": "Allowed MIME to extension mapping.",
+    "enforce_upload_size": "Enable upload size limit (default true).",
+    "enforce_pixel_limit": "Enable max pixel limit (default true).",
+    "enforce_mime": "Enable MIME sniffing allowlist (default true).",
+    "enforce_extension": "Enable extension allowlist (default true)."
+  },
+  "max_upload_mb": 30,
+  "chunk_size_kb": 512,
+  "max_pixels": 50000000,
+  "allowed_mime": {
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/webp": ".webp"
+  },
+  "enforce_upload_size": true,
+  "enforce_pixel_limit": true,
+  "enforce_mime": true,
+  "enforce_extension": true
+}

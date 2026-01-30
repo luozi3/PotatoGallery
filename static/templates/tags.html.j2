@@ -3,12 +3,29 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>标签 ｜ {{ site_name }}</title>
+  {% set title_sep = site.seo.title_separator or "｜" %}
+  {% set twitter_card = site.seo.twitter_card or "summary_large_image" %}
+  {% set og_image_value = og_image or (site.seo.default_og_image or "") %}
+  <title>标签 {{ title_sep }} {{ site_name }}</title>
   <meta name="description" content="{{ site_description }}">
   <meta name="theme-color" content="{{ site.theme_color }}">
   {% include "partials/theme_init.html.j2" %}
   {% if site_url %}
   <link rel="canonical" href="{{ site_url }}/tags/">
+  {% endif %}
+  <meta property="og:title" content="标签 {{ title_sep }} {{ site_name }}">
+  <meta property="og:description" content="{{ site_description }}">
+  <meta property="og:type" content="website">
+  <meta property="og:locale" content="{{ site.locale }}">
+  {% if site_url %}
+  <meta property="og:url" content="{{ site_url }}/tags/">
+  {% endif %}
+  {% if og_image_value %}
+  <meta property="og:image" content="{{ og_image_value }}">
+  {% endif %}
+  <meta name="twitter:card" content="{{ twitter_card }}">
+  {% if json_ld %}
+  <script type="application/ld+json">{{ json_ld | safe }}</script>
   {% endif %}
   <link rel="stylesheet" href="/static/styles/gallery.css?v={{ static_version }}">
 </head>
@@ -23,19 +40,48 @@
         <section class="tags-hero">
           <h1>标签</h1>
           <p class="lede">点击标签查看对应作品合集。</p>
+          <div class="tags-toolbar">
+            <div class="tags-toolbar-main">
+              <label class="tags-filter">
+                <span>搜索</span>
+                <input type="search" placeholder="标签 / 别名 / URL" autocomplete="off" data-tags-search>
+              </label>
+              <label class="tags-filter">
+                <span>类型</span>
+                <select data-tags-type></select>
+              </label>
+            </div>
+            <div class="tags-toolbar-meta">
+              <span data-tags-count></span>
+            </div>
+          </div>
         </section>
-        <section class="tag-grid" aria-label="标签列表">
+        <section class="tag-grid" aria-label="标签列表" data-tags-grid>
           {% for tag in tags %}
-          <a class="tag-card" href="/tags/{{ tag.slug|urlencode }}/" style="{{ tag.style }}">
+          <a class="tag-card" href="/tags/{{ tag.slug|urlencode }}/"
+             style="{{ tag.style }} --tag-type-color: {{ tag.type_color }};"
+             data-tag="{{ tag.tag }}"
+             data-type="{{ tag.type }}"
+             data-type-label="{{ tag.type_label }}"
+             data-search="{{ tag.tag }} {{ tag.slug }} {{ tag.type_label }} {{ tag.aliases|join(' ') }}"
+             data-count="{{ tag.count }}">
             <span class="tag-title">#{{ tag.tag }}</span>
-            <span class="tag-count">{{ tag.count }} 件</span>
+            <span class="tag-meta">
+              <span class="tag-type">
+                <span class="tag-type-dot" aria-hidden="true"></span>
+                {{ tag.type_label }}
+              </span>
+              <span class="tag-count">{{ tag.count }} 件</span>
+            </span>
           </a>
           {% endfor %}
         </section>
+        <p class="tags-empty" data-tags-empty hidden>没有匹配的标签</p>
       </div>
     </div>
   </main>
 
   <script src="/static/js/ui.js?v={{ static_version }}" defer></script>
+  <script src="/static/js/tags.js?v={{ static_version }}" defer></script>
 </body>
 </html>

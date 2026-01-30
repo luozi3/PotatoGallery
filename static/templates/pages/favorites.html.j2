@@ -3,7 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>我的收藏 ｜ {{ site_name }}</title>
+  {% set title_sep = site.seo.title_separator or "｜" %}
+  <title>我的收藏 {{ title_sep }} {{ site_name }}</title>
   <meta name="description" content="{{ site_description }}">
   <meta name="theme-color" content="{{ site.theme_color }}">
   {% include "partials/theme_init.html.j2" %}
@@ -155,6 +156,17 @@
               </div>
             </aside>
             <div class="favorites-list">
+              <div class="admin-pagination favorites-pagination favorites-pagination-top" data-fav-pagination data-fav-pagination-top hidden>
+                <button class="btn ghost" type="button" data-fav-page-prev>上一页</button>
+                <div class="admin-page-list" data-fav-page-list></div>
+                <button class="btn ghost" type="button" data-fav-page-next>下一页</button>
+                <div class="admin-page-summary" data-fav-page-summary>共 1 页 / 共 0 张</div>
+                <label class="admin-page-jump">
+                  <span>跳转</span>
+                  <input class="admin-input" type="number" min="1" step="1" inputmode="numeric" data-fav-page-input>
+                </label>
+                <button class="btn ghost" type="button" data-fav-page-jump>确定</button>
+              </div>
               <div class="favorites-list-head">
                 <span>作品</span>
                 <span>信息</span>
@@ -164,6 +176,17 @@
               <div class="favorites-list-body" data-fav-grid></div>
               <div class="favorites-empty" data-fav-empty>暂无收藏</div>
               <div class="favorites-login-hint" data-fav-login-hint hidden>请先登录</div>
+              <div class="admin-pagination favorites-pagination" data-fav-pagination hidden>
+                <button class="btn ghost" type="button" data-fav-page-prev>上一页</button>
+                <div class="admin-page-list" data-fav-page-list></div>
+                <button class="btn ghost" type="button" data-fav-page-next>下一页</button>
+                <div class="admin-page-summary" data-fav-page-summary>共 1 页 / 共 0 张</div>
+                <label class="admin-page-jump">
+                  <span>跳转</span>
+                  <input class="admin-input" type="number" min="1" step="1" inputmode="numeric" data-fav-page-input>
+                </label>
+                <button class="btn ghost" type="button" data-fav-page-jump>确定</button>
+              </div>
             </div>
           </section>
         </section>

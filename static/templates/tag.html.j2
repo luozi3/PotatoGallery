@@ -3,12 +3,30 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>#{{ tag.tag }} ｜ {{ site_name }}</title>
-  <meta name="description" content="标签 #{{ tag.tag }} 的作品列表">
+  {% set title_sep = site.seo.title_separator or "｜" %}
+  {% set twitter_card = site.seo.twitter_card or "summary_large_image" %}
+  {% set og_image_value = og_image or (site.seo.default_og_image or "") %}
+  <title>#{{ tag.tag }} {{ title_sep }} {{ site_name }}</title>
+  {% set tag_description = tag.intro or ("标签 #" ~ tag.tag ~ " 的作品列表") %}
+  <meta name="description" content="{{ tag_description }}">
   <meta name="theme-color" content="{{ site.theme_color }}">
   {% include "partials/theme_init.html.j2" %}
   {% if site_url %}
   <link rel="canonical" href="{{ site_url }}/tags/{{ tag.slug|urlencode }}/">
+  {% endif %}
+  <meta property="og:title" content="#{{ tag.tag }} {{ title_sep }} {{ site_name }}">
+  <meta property="og:description" content="{{ tag_description }}">
+  <meta property="og:type" content="website">
+  <meta property="og:locale" content="{{ site.locale }}">
+  {% if site_url %}
+  <meta property="og:url" content="{{ site_url }}/tags/{{ tag.slug|urlencode }}/">
+  {% endif %}
+  {% if og_image_value %}
+  <meta property="og:image" content="{{ og_image_value }}">
+  {% endif %}
+  <meta name="twitter:card" content="{{ twitter_card }}">
+  {% if json_ld %}
+  <script type="application/ld+json">{{ json_ld | safe }}</script>
   {% endif %}
   <link rel="stylesheet" href="/static/styles/gallery.css?v={{ static_version }}">
 </head>
@@ -97,9 +115,20 @@
             <p class="hint" data-tag-editor-hint></p>
           </div>
         </section>
-        <section class="gallery" data-masonry aria-live="polite">
+        <div class="admin-pagination admin-pagination-top tag-pagination" data-tag-pagination-top hidden>
+          <button class="btn ghost" type="button" data-tag-page-prev>上一页</button>
+          <div class="admin-page-list" data-tag-page-list></div>
+          <button class="btn ghost" type="button" data-tag-page-next>下一页</button>
+          <div class="admin-page-summary" data-tag-page-summary>共 1 页 / 共 0 张</div>
+          <label class="admin-page-jump">
+            <span>跳转</span>
+            <input class="admin-input" type="number" min="1" step="1" inputmode="numeric" data-tag-page-input>
+          </label>
+          <button class="btn ghost" type="button" data-tag-page-jump>确定</button>
+        </div>
+        <section class="gallery" data-masonry data-gallery-grid data-tag-gallery data-page-limit="{{ tag_page_limit or 40 }}" data-total="{{ tag.count }}" data-gallery-endpoint="/api/tags/{{ tag.slug|urlencode }}/images" aria-live="polite">
           {% for image in images %}
-          <article class="illust-card" data-masonry-item data-card-link="{{ image.detail_path }}" data-collection="{{ image.collection }}" data-orientation="{{ image.orientation }}" data-size="{{ image.size_bucket }}" tabindex="0" role="link" aria-label="{{ image.title }}">
+          <article class="illust-card" data-image-card data-masonry-item data-card-link="{{ image.detail_path }}" data-image-id="{{ image.id or image.short_id }}" data-created-at="{{ image.created_at or '' }}" data-collection="{{ image.collection }}" data-orientation="{{ image.orientation }}" data-size="{{ image.size_bucket }}" tabindex="0" role="link" aria-label="{{ image.title }}">
             <a class="thumb-link" href="{{ image.detail_path }}" aria-label="{{ image.title }}">
               <div class="thumb-shell" style="--thumb-ratio: {{ image.thumb_width }}/{{ image.thumb_height }};">
                 <img class="thumb" src="/thumb/{{ image.thumb_filename }}" alt="{{ image.title }}" loading="lazy" width="{{ image.thumb_width }}" height="{{ image.thumb_height }}" onerror="this.onerror=null;this.src='/raw/{{ image.raw_filename }}';">
@@ -126,14 +155,25 @@
           </article>
           {% endfor %}
           {% if not images %}
-          <div class="empty">该标签暂无作品。</div>
+          <div class="empty" data-empty-state>该标签暂无作品。</div>
           {% endif %}
         </section>
+        <div class="admin-pagination tag-pagination" data-tag-pagination hidden>
+          <button class="btn ghost" type="button" data-tag-page-prev>上一页</button>
+          <div class="admin-page-list" data-tag-page-list></div>
+          <button class="btn ghost" type="button" data-tag-page-next>下一页</button>
+          <div class="admin-page-summary" data-tag-page-summary>共 1 页 / 共 0 张</div>
+          <label class="admin-page-jump">
+            <span>跳转</span>
+            <input class="admin-input" type="number" min="1" step="1" inputmode="numeric" data-tag-page-input>
+          </label>
+          <button class="btn ghost" type="button" data-tag-page-jump>确定</button>
+        </div>
       </div>
     </div>
   </main>
 
   <script src="/static/js/ui.js?v={{ static_version }}" defer></script>
-  <script src="/static/js/gallery.js?v={{ static_version }}" defer></script>
+  <script src="/static/js/tag.js?v={{ static_version }}" defer></script>
 </body>
 </html>

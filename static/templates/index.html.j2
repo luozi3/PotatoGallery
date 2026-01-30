@@ -3,7 +3,10 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{ site_name }}{% if site.brand_tagline %} ｜ {{ site.brand_tagline }}{% endif %}</title>
+  {% set title_sep = site.seo.title_separator or "｜" %}
+  {% set twitter_card = site.seo.twitter_card or "summary_large_image" %}
+  {% set og_image_value = og_image or (site.seo.default_og_image or "") %}
+  <title>{{ site_name }}{% if site.brand_tagline %} {{ title_sep }} {{ site.brand_tagline }}{% endif %}</title>
   <meta name="description" content="{{ site_description }}">
   <meta name="theme-color" content="{{ site.theme_color }}">
   {% include "partials/theme_init.html.j2" %}
@@ -17,14 +20,11 @@
   {% if site_url %}
   <meta property="og:url" content="{{ site_url }}/">
   {% endif %}
-  {% if og_image %}
-  <meta property="og:image" content="{{ og_image }}">
+  {% if og_image_value %}
+  <meta property="og:image" content="{{ og_image_value }}">
   {% endif %}
-  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:card" content="{{ twitter_card }}">
   <link rel="stylesheet" href="/static/styles/gallery.css?v={{ static_version }}">
-  {% if site.live2d.enabled %}
-  <link rel="stylesheet" href="{{ site.live2d.base_url }}/live2d/css/live2d.css">
-  {% endif %}
   {% if json_ld %}
   <script type="application/ld+json">{{ json_ld | safe }}</script>
   {% endif %}
@@ -136,30 +136,6 @@
       {% endif %}
     </div>
   </footer>
-
-  {% if site.live2d.enabled %}
-  {% set live2d_width = site.live2d.width or 300 %}
-  {% set live2d_height = site.live2d.height or 336 %}
-  <div id="landlord" class="live2d-root" aria-hidden="true" style="--live2d-width: {{ live2d_width }}px; --live2d-height: {{ live2d_height }}px;">
-    <div class="message" style="opacity:0"></div>
-    <canvas id="{{ site.live2d.canvas_id }}" width="{{ live2d_width }}" height="{{ live2d_height }}" class="live2d"></canvas>
-  </div>
-  <script src="{{ site.live2d.base_url }}/live2d/js/Setting.js" defer onerror="var r=document.getElementById('landlord');if(r){r.style.display='none';}"></script>
-  <script src="{{ site.live2d.base_url }}/jquery.min.js" defer onerror="var r=document.getElementById('landlord');if(r){r.style.display='none';}"></script>
-  <script src="{{ site.live2d.base_url }}/live2d/js/message.js" defer onerror="var r=document.getElementById('landlord');if(r){r.style.display='none';}"></script>
-  <script src="{{ site.live2d.base_url }}/bundle.js" defer onerror="var r=document.getElementById('landlord');if(r){r.style.display='none';}"></script>
-  <script>
-    window.addEventListener('load', function () {
-      if (!window.loadlive2d) return;
-      try {
-        loadlive2d("{{ site.live2d.canvas_id }}", "{{ site.live2d.model }}");
-      } catch (e) {
-        const root = document.getElementById('landlord');
-        if (root) root.style.display = 'none';
-      }
-    });
-  </script>
-  {% endif %}
 
   <script src="/static/js/ui.js?v={{ static_version }}" defer></script>
   <script src="/static/js/gallery.js?v={{ static_version }}" defer></script>

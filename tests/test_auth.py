@@ -151,3 +151,43 @@ def test_auth_schema_cache_marks_db_path(tmp_path):
 
     assert auth._SCHEMA_READY is True
     assert auth._SCHEMA_READY_DB == str(db.DB_PATH)
+
+
+def test_login_sets_custom_session_days_cookie(tmp_path):
+    seed_test_root(tmp_path)
+    modules = setup_env(tmp_path)
+    auth = modules["app.auth"]
+    upload_service = modules["app.upload_service"]
+
+    auth.create_user("user1", "secret123", groups=["user"])
+    app = upload_service.create_app()
+    client = app.test_client()
+    resp = client.post(
+        "/auth/login",
+        json={"username": "user1", "password": "secret123", "session_days": 30},
+        headers={"X-Forwarded-Proto": "https"},
+        base_url="https://example.com",
+    )
+    assert resp.status_code == 200
+    cookies = resp.headers.getlist("Set-Cookie")
+    assert any("Max-Age=2592000" in cookie for cookie in cookies)
+
+
+def test_register_does_not_auto_login(tmp_path):
+    seed_test_root(tmp_path)
+    _set_registration_mode(tmp_path, "open")
+    modules = setup_env(tmp_path)
+    config = modules["app.config"]
+    upload_service = modules["app.upload_service"]
+
+    app = upload_service.create_app()
+    client = app.test_client()
+    resp = client.post(
+        "/auth/register",
+        json={"username": "user1", "password": "secret123", "password_confirm": "secret123"},
+        headers={"X-Forwarded-Proto": "https"},
+        base_url="https://example.com",
+    )
+    assert resp.status_code == 201
+    cookies = resp.headers.getlist("Set-Cookie")
+    assert not any(config.USER_COOKIE_NAME in cookie for cookie in cookies)

@@ -893,12 +893,39 @@ def test_seo_pages_and_personalization(tmp_path):
     assert "live2d.css" in index_html
     assert "counter.png" in index_html
 
+    search_html = (config.WWW_DIR / "search" / "index.html").read_text()
+    assert "og:title" in search_html
+    assert "og:image" in search_html
+    assert "application/ld+json" in search_html
+    assert "id=\"landlord\"" in search_html
+    assert "live2d.css" in search_html
+
+    tags_html = (config.WWW_DIR / "tags" / "index.html").read_text()
+    assert "og:title" in tags_html
+    assert "og:image" in tags_html
+    assert "application/ld+json" in tags_html
+
+    tags_meta = json.loads((config.STATIC / "data" / "tags.json").read_text(encoding="utf-8"))
+    tag_slug = next(tag["slug"] for tag in tags_meta.get("tags", []) if not tag.get("alias_to"))
+    tag_page = (config.WWW_DIR / "tags" / tag_slug / "index.html").read_text()
+    assert "og:title" in tag_page
+    assert "application/ld+json" in tag_page
+
+    status_html = (config.WWW_DIR / "status" / "index.html").read_text()
+    assert "og:title" in status_html
+    assert "og:image" in status_html
+    assert "application/ld+json" in status_html
+
     sitemap = (config.WWW_DIR / "sitemap.xml").read_text()
     with db.connect() as conn:
         image_id = conn.execute("SELECT id FROM images WHERE uuid=?", (uid,)).fetchone()["id"]
     assert f"https://example.com/images/{image_id}/index.html" in sitemap
     robots = (config.WWW_DIR / "robots.txt").read_text()
     assert "Sitemap: https://example.com/sitemap.xml" in robots
+    assert "Disallow: /admin/" in robots
+    assert "Disallow: /auth/" in robots
+    assert "Disallow: /upload/" in robots
+    assert "Disallow: /api/" in robots
 
     assert (config.WWW_DIR / "404.html").exists()
     assert (config.WWW_DIR / "maintenance.html").exists()

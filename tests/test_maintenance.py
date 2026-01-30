@@ -84,3 +84,23 @@ def test_regenerate_thumbnails_replaces_old_jpg(tmp_path):
     assert row["thumb_path"].endswith(".webp")
     assert (config.THUMB_DIR / row["thumb_path"].split("/")[-1]).exists()
     assert not old_jpg.exists()
+
+
+def test_backup_storage_mirrors_raw_and_www(tmp_path, monkeypatch):
+    seed_test_root(tmp_path)
+    modules = setup_env(tmp_path)
+    config = modules["app.config"]
+    maintenance = modules["app.maintenance"]
+
+    config.RAW_DIR.mkdir(parents=True, exist_ok=True)
+    config.WWW_DIR.mkdir(parents=True, exist_ok=True)
+    (config.RAW_DIR / "sample.txt").write_text("raw", encoding="utf-8")
+    (config.WWW_DIR / "index.html").write_text("www", encoding="utf-8")
+
+    monkeypatch.setattr(maintenance.shutil, "which", lambda _: None)
+    report = maintenance.backup_storage(config.CLEANUP_BACKUP_DIR)
+
+    assert report["raw"].endswith("raw_mirror")
+    assert report["www"].endswith("www_mirror")
+    assert (config.CLEANUP_BACKUP_DIR / "raw_mirror" / "sample.txt").exists()
+    assert (config.CLEANUP_BACKUP_DIR / "www_mirror" / "index.html").exists()

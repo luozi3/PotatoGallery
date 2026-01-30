@@ -1,6 +1,7 @@
 from pathlib import Path
 import json
 import re
+import pytest
 
 
 BASE_DIR = Path(__file__).resolve().parents[1]
@@ -51,9 +52,11 @@ def test_theme_toggle_after_brand():
         "static/templates/tags.html.j2",
         "static/templates/tag.html.j2",
         "static/templates/admin.html.j2",
+        "static/templates/admin_dmca.html.j2",
         "static/templates/admin_tags.html.j2",
         "static/templates/pages/wiki.html.j2",
         "static/templates/pages/dmca.html.j2",
+        "static/templates/pages/profile.html.j2",
     ]
     for template in templates:
         content = read_text(template)
@@ -81,11 +84,92 @@ def test_auth_hint_css_hides_login_links():
     assert re.search(r"html\.auth-hint-logged-in\s*\[data-auth-register-link\]", css)
 
 
+def test_avatar_menu_hover_has_fade_and_delay():
+    css = read_text("static/styles/gallery.css")
+    assert re.search(r"\.avatar-dropdown\s*\{[^}]*opacity:\s*0", css, re.S)
+    assert re.search(r"\.avatar-dropdown\s*\{[^}]*transition:\s*opacity\s*0\.14s", css, re.S)
+    assert re.search(r"\.avatar-menu\.is-open\s+\.avatar-dropdown\s*\{[^}]*opacity:\s*1", css, re.S)
+    js = read_text("static/js/ui.js")
+    assert re.search(r"const\s+AVATAR_MENU_CLOSE_DELAY\s*=\s*160", js)
+    assert re.search(r"const\s+AVATAR_MENU_ANIM_MS\s*=\s*140", js)
+    assert re.search(r"setTimeout\([^,]+,\s*AVATAR_MENU_CLOSE_DELAY", js)
+
+
+def test_avatar_dropdown_compact_width():
+    css = read_text("static/styles/gallery.css")
+    assert re.search(r"\.avatar-dropdown\s*\{[^}]*min-width:\s*150px", css, re.S)
+    assert re.search(r"\.avatar-dropdown\s*\{[^}]*padding:\s*6px", css, re.S)
+
+
+def test_avatar_dropdown_logout_icon_style():
+    css = read_text("static/styles/gallery.css")
+    assert re.search(r"\.dropdown-item\s*\{[^}]*width:\s*100%", css, re.S)
+    assert re.search(r"\.dropdown-item\s*\{[^}]*font:\s*inherit", css, re.S)
+    assert re.search(r"\.dropdown-icon\s*\{[^}]*width:\s*14px", css, re.S)
+    assert re.search(r"\.dropdown-icon\s*\{[^}]*height:\s*14px", css, re.S)
+    assert re.search(r"\.dropdown-icon\s*\{[^}]*margin-left:\s*auto", css, re.S)
+
+
+def test_avatar_dropdown_logout_items():
+    topbar = read_text("static/templates/partials/topbar.html.j2")
+    assert "data-admin-logout" not in topbar
+    assert re.search(r"data-avatar-dropdown[\s\S]*data-user-logout", topbar)
+    assert re.search(r"data-user-logout[^>]*\bhidden\b", topbar)
+    assert "dropdown-icon" in topbar
+    user_idx = topbar.find("data-user-logout")
+    user_end = topbar.find("</button>", user_idx)
+    if user_idx != -1 and user_end != -1:
+        user_segment = topbar[user_idx:user_end]
+        assert user_segment.find("退出账号") < user_segment.find("<svg")
+    js = read_text("static/js/ui.js")
+    assert "data-user-logout" in js
+    assert "/auth/logout" in js
+
+
+def test_admin_home_status_and_side_panels_have_compact_pills():
+    css = read_text("static/styles/gallery.css")
+    assert re.search(r"\.admin-status-strip\s*\{[^}]*gap:\s*8px", css, re.S)
+    assert re.search(r"\.admin-status-strip\s*\{[^}]*border-radius:\s*12px", css, re.S)
+    assert re.search(r"\.admin-status-item\s*\{[^}]*border-radius:\s*10px", css, re.S)
+    assert re.search(r"\.admin-status-item\s*\{[^}]*padding:\s*6px 12px", css, re.S)
+    assert re.search(r"\.admin-status-item\s*\{[^}]*background:\s*var\(--panel-strong\)", css, re.S)
+    assert re.search(r"\.admin-side-list\s*\{[^}]*border:\s*1px solid var\(--border\)", css, re.S)
+    assert re.search(r"\.admin-side-row\s*\{[^}]*padding:\s*10px 12px", css, re.S)
+    assert re.search(r"\.admin-side-links\s*\{[^}]*background:\s*var\(--border\)", css, re.S)
+
+
+def test_admin_home_flow_notes_removed():
+    html = read_text("static/templates/admin.html.j2")
+    assert "流程提醒" not in html
+    assert "admin-side-notes" not in html
+
+
+def test_profile_page_html_structure():
+    html = read_text("static/templates/pages/profile.html.j2")
+    assert 'data-profile-page' in html
+    assert 'class="profile-account-line"' in html
+    assert 'data-profile-tab="basic"' in html
+    assert 'data-profile-tab="security"' in html
+    assert "profile-section-overview" in html
+    assert "profile-section-avatar" in html
+    assert "profile-section-form" in html
+
+
+def test_profile_css_supports_dense_layout():
+    css = read_text("static/styles/gallery.css")
+    assert ".profile-shell" in css
+    assert ".profile-header-meta" in css
+    assert ".profile-account-line" in css
+    assert ".profile-account-value" in css
+    assert ".profile-tab.is-active" in css
+
+
 def test_admin_login_section_hidden_by_default():
     templates = [
         "static/templates/admin.html.j2",
         "static/templates/admin_auth.html.j2",
         "static/templates/admin_collections.html.j2",
+        "static/templates/admin_dmca.html.j2",
         "static/templates/admin_images.html.j2",
         "static/templates/admin_tags.html.j2",
         "static/templates/admin_upload.html.j2",
@@ -101,9 +185,108 @@ def test_html_sidebar_collapsed_support():
     assert re.search(r"html\.sidebar-collapsed\s+body\s+\.detail-shell", css)
 
 
+def test_profile_shell_left_padding():
+    css = read_text("static/styles/gallery.css")
+    assert re.search(
+        r"\.page-profile\s+\.profile-shell\s*\{[^}]*padding-left:\s*18px",
+        css,
+        re.S,
+    )
+
+
+def test_right_sidebar_background_and_sticky_inner():
+    css = read_text("static/styles/gallery.css")
+    assert re.search(r"\.detail-shell\s*\{[^}]*--detail-sidebar-offset:\s*var\(--sidebar-width\)", css, re.S)
+    assert re.search(r"\.detail-shell\s*\{[^}]*background:\s*linear-gradient", css, re.S)
+    assert re.search(r"\.detail-shell::before\s*\{[^}]*left:\s*var\(--detail-sidebar-offset\)", css, re.S)
+    assert re.search(r"\.detail-shell::after\s*\{[^}]*left:\s*calc\(var\(--detail-sidebar-offset\)", css, re.S)
+    assert re.search(r"\.detail-static-sidebar\s*\{[^}]*align-self:\s*stretch", css, re.S)
+    assert re.search(r"\.detail-static-sidebar\s*\{[^}]*position:\s*relative", css, re.S)
+    assert re.search(r"\.detail-static-sidebar\s*\{[^}]*background:\s*var\(--sidebar-bg\)", css, re.S)
+    assert re.search(r"\.detail-static-sidebar\s*\{[^}]*padding-bottom:\s*48px", css, re.S)
+    assert re.search(r"\.detail-static-sidebar\s+\.left-sidebar-inner\s*\{[^}]*position:\s*sticky", css, re.S)
+    assert re.search(
+        r"body\.page-detail\.with-sidebar\s+main\s*\{[^}]*padding:\s*var\(--topbar-height\)\s+18px\s+0\s+0",
+        css,
+        re.S,
+    )
+    assert re.search(r"\.detail-main\s*\{[^}]*padding:\s*12px\s+0\s+48px\s+24px", css, re.S)
+    assert re.search(r"\.wiki-static-sidebar\s*\{[^}]*align-self:\s*stretch", css, re.S)
+    assert re.search(r"\.wiki-static-sidebar\s*\{[^}]*background:\s*transparent", css, re.S)
+    assert re.search(r"\.wiki-static-sidebar\s*\{[^}]*padding:\s*0", css, re.S)
+    assert re.search(r"\.wiki-toc-panel\s*\{[^}]*position:\s*sticky", css, re.S)
+    assert re.search(r"\.wiki-toc-panel\s*\{[^}]*background:\s*var\(--glass\)", css, re.S)
+    assert re.search(
+        r"body\.page-wiki\.with-sidebar\s+main\s*\{[^}]*padding:\s*var\(--topbar-height\)\s+18px\s+0\s+0",
+        css,
+        re.S,
+    )
+    assert re.search(r"\.wiki-main\s*\{[^}]*padding:\s*12px\s+0\s+48px\s+24px", css, re.S)
+
+
+def test_detail_shell_relative_for_layers():
+    css = read_text("static/styles/gallery.css")
+    assert re.search(r"\.detail-shell\s*\{[^}]*position:\s*relative", css, re.S)
+
+
 def test_live2d_html_hidden_rule():
     css = read_text("static/styles/gallery.css")
     assert re.search(r"html\.live2d-hidden\s+#landlord", css)
+    assert re.search(r"\.live2d-root\.live2d-hidden\s*\{", css)
+    assert not re.search(
+        r"(^|\n)\s*\.live2d-hidden\s*\{\s*display\s*:\s*none",
+        css,
+        re.M,
+    )
+
+
+def test_live2d_hidden_on_narrow_and_toggle_hidden():
+    css = read_text("static/styles/gallery.css")
+    assert re.search(
+        r"@media \(max-width: 640px\)[\s\S]*?\.live2d-root\s*\{[^}]*display:\s*none",
+        css,
+        re.S,
+    )
+    assert re.search(
+        r"@media \(max-width: 640px\)[\s\S]*?\.side-toggle\[data-live2d-toggle\]\s*\{[^}]*display:\s*none",
+        css,
+        re.S,
+    )
+    assert re.search(
+        r"html\.live2d-narrow\s+\.side-toggle\[data-live2d-toggle\]\s*\{[^}]*display:\s*none",
+        css,
+        re.S,
+    )
+
+
+def test_live2d_forced_off_on_narrow():
+    js = read_text("static/js/ui.js")
+    assert "matchMedia('(max-width: 640px)')" in js
+    assert re.search(
+        r"applyLive2dState\(\s*live2dMedia\s*&&\s*live2dMedia\.matches\s*\)",
+        js,
+        re.S,
+    )
+    assert "live2d-narrow" in js
+    assert "classList.add('live2d-hidden')" in js
+    assert "classList.remove('live2d-hidden')" in js
+
+
+def test_live2d_lazy_load_on_narrow():
+    html = read_text("static/templates/partials/live2d_block.html.j2")
+    assert "matchMedia('(max-width: 640px)')" in html
+    assert "id=\"landlord\"" in html
+    assert re.search(
+        r"live2dMedia\s*&&\s*live2dMedia\.matches[\s\S]*return",
+        html,
+        re.S,
+    )
+    assert "loadlive2d" in html
+    assert re.search(
+        r"live2dMedia\.addEventListener\('change'|live2dMedia\.addListener\(",
+        html,
+        re.S,
+    )
 
 
 def test_sidebar_restore_back_forward_hook():
@@ -111,6 +294,11 @@ def test_sidebar_restore_back_forward_hook():
     assert "sidebar-restore-open" in js
     assert "pagehide" in js
     assert "pageshow" in js
+
+
+def test_mobile_sidebar_clears_root_collapse():
+    js = read_text("static/js/ui.js")
+    assert "root.classList.remove('sidebar-collapsed')" in js
 
 
 def test_default_theme_is_light():
@@ -141,8 +329,25 @@ def test_admin_invite_panel_has_controls():
     html = read_text("static/templates/admin_auth.html.j2")
     assert "data-admin-invite-create" in html
     assert "data-admin-invite-list" in html
+    assert "data-admin-invite-archive-list" in html
+    assert "data-admin-invite-archive-toggle" in html
+    assert "data-admin-invite-dialog" in html
+    assert "data-admin-invite-dialog-disable" in html
+    assert "data-admin-invite-dialog-delete" in html
+    assert "btn danger" in html
+    assert re.search(
+        r"<input[^>]*data-admin-invite-expires-at[^>]*type=\"date\"|<input[^>]*type=\"date\"[^>]*data-admin-invite-expires-at",
+        html,
+    )
     assert "data-admin-invite-expires-at" in html
     assert "data-admin-invite-max-uses" in html
+
+
+def test_admin_dialog_has_animation_styles():
+    css = read_text("static/styles/gallery.css")
+    assert ".admin-dialog.is-open" in css
+    assert "transition: opacity 0.18s var(--ease), visibility 0s linear 0s" in css
+    assert ".admin-dialog.is-open .admin-dialog-backdrop" in css
 
 
 def test_controls_use_theme_panel_background():
@@ -154,10 +359,139 @@ def test_controls_use_theme_panel_background():
     )
 
 
+def test_primary_button_gradient_alignment():
+    css = read_text("static/styles/gallery.css")
+    assert re.search(r"\.btn\.primary\s*\{[^}]*background-size:\s*120% 120%", css, re.S)
+    assert re.search(r"\.btn\.primary\s*\{[^}]*background-position:\s*60% 50%", css, re.S)
+
+
+def test_tags_page_density_rules():
+    css = read_text("static/styles/gallery.css")
+    assert re.search(r"\.tag-grid\s*\{[^}]*gap:\s*0", css, re.S)
+    assert re.search(
+        r"\.tag-grid\.tags-two-column\s*\{[^}]*repeat\(2,\s*minmax\(0,\s*1fr\)\)",
+        css,
+        re.S,
+    )
+    assert re.search(r"\.tag-card\s*\{[^}]*border-radius:\s*0", css, re.S)
+    assert re.search(r"\.tag-card\s*\{[^}]*box-shadow:\s*none", css, re.S)
+    assert re.search(
+        r"@media\s*\(max-width:\s*720px\)[\s\S]*?\.tag-grid\s*\{[^}]*grid-template-columns:\s*1fr",
+        css,
+    )
+
+
+def test_tags_page_filters_present():
+    html = read_text("static/templates/tags.html.j2")
+    assert "data-tags-search" in html
+    assert "data-tags-type" in html
+    assert "data-tags-grid" in html
+    assert "/static/js/tags.js" in html
+
+
+def test_tags_toolbar_compact_style():
+    css = read_text("static/styles/gallery.css")
+    assert re.search(r"\.tags-toolbar\s*\{[^}]*border-bottom:\s*1px", css, re.S)
+    assert re.search(r"\.tags-filter input[\s\S]*border-bottom:\s*1px", css)
+    assert re.search(r"\.tags-filter input[\s\S]*border-radius:\s*0", css)
+
+
+def test_tags_filter_script_hooks():
+    js = read_text("static/js/tags.js")
+    assert "data-tags-search" in js
+    assert "data-tags-type" in js
+    assert "data-tags-grid" in js
+    assert "data-tags-empty" in js
+    assert "tags-two-column" in js
+
+
+def test_wiki_mobile_density_rules():
+    css = read_text("static/styles/gallery.css")
+    assert re.search(
+        r"@media\s*\(max-width:\s*980px\)[\s\S]*?\.wiki-header\s*\{[^}]*flex-direction:\s*column",
+        css,
+    )
+    assert re.search(
+        r"@media\s*\(max-width:\s*640px\)[\s\S]*?\.wiki-header-actions\s+\.btn\s*\{[^}]*font-size:\s*12px",
+        css,
+    )
+    assert re.search(
+        r"@media\s*\(max-width:\s*640px\)[\s\S]*?\.wiki-article\s+h2\s*\{[^}]*font-size:\s*19px",
+        css,
+    )
+
+
+def test_wiki_narrow_no_card_background():
+    css = read_text("static/styles/gallery.css")
+    assert re.search(r"\.wiki-main\s*\{[^}]*background:\s*transparent", css, re.S)
+    assert re.search(
+        r"@media\s*\(max-width:\s*900px\)[\s\S]*?body\.page-wiki\s+main\s*\{[^}]*padding-left:\s*0[^}]*padding-right:\s*0",
+        css,
+        re.S,
+    )
+    assert re.search(
+        r"@media\s*\(max-width:\s*900px\)[\s\S]*?body\.page-wiki\s+\.wiki-main\s*\{[^}]*padding:\s*20px\s+16px\s+48px",
+        css,
+        re.S,
+    )
+    assert re.search(
+        r"@media\s*\(max-width:\s*900px\)[\s\S]*?\.wiki-shell\s*\{[^}]*grid-template-columns:\s*var\(--sidebar-width\)\s+minmax\(0,\s*1fr\)",
+        css,
+        re.S,
+    )
+    assert re.search(
+        r"@media\s*\(max-width:\s*900px\)[\s\S]*?body\.page-wiki\s+\.wiki-static-sidebar\s*\{[^}]*position:\s*fixed",
+        css,
+        re.S,
+    )
+
+
+def test_error_card_overlay_layering():
+    css = read_text("static/styles/gallery.css")
+    assert re.search(r"\.error-card\s*\{[^}]*z-index:\s*0", css, re.S)
+    assert re.search(r"\.error-card::before\s*\{[^}]*z-index:\s*0", css, re.S)
+    assert re.search(r"\.error-card\s*>\s*\*\s*\{[^}]*z-index:\s*1", css, re.S)
+    assert re.search(r"\.error-card::before\s*\{[^}]*inset:\s*0", css, re.S)
+    assert re.search(r"\.error-card::before\s*\{[^}]*linear-gradient", css, re.S)
+
+
 def test_admin_gallery_auto_rows_override():
     css = read_text("static/styles/gallery.css")
     assert re.search(
         r"\.page-admin\s+\.admin-gallery\s*\{[^}]*grid-auto-rows:\s*auto",
+        css,
+        re.S,
+    )
+
+
+def test_admin_narrow_padding_removed():
+    css = read_text("static/styles/gallery.css")
+    assert re.search(
+        r"body\.page-admin\s+main\s*\{[^}]*padding-left:\s*0[^}]*padding-right:\s*0",
+        css,
+        re.S,
+    )
+    assert re.search(
+        r"body\.page-admin\s+\.admin-main\s*\{[^}]*padding-left:\s*0[^}]*padding-right:\s*0",
+        css,
+        re.S,
+    )
+
+
+def test_admin_narrow_outer_panel_removed():
+    css = read_text("static/styles/gallery.css")
+    assert re.search(
+        r"body\.page-admin\s+\.admin-panel\.admin-surface,\s*body\.page-admin\s+\.admin-auth\.admin-surface\s*\{[^}]*padding:\s*0",
+        css,
+        re.S,
+    )
+    assert re.search(
+        r"body\.page-admin\s+\.admin-panel\.admin-surface,\s*body\.page-admin\s+\.admin-auth\.admin-surface\s*\{[^}]*border:\s*none",
+        css,
+        re.S,
+    )
+    assert re.search(
+        r"body\.page-admin\s+\.admin-panel\.admin-surface,\s*body\.page-admin\s+\.admin-auth\.admin-surface\s*\{[^}]*background:\s*transparent",
         css,
         re.S,
     )
@@ -206,6 +540,19 @@ def test_favorites_flag_icons_present():
     assert 'data-fav-flag="reject"' in js
     assert "⚑" in js
     assert "⚐" in js
+
+
+def test_favorites_pagination_controls_present():
+    html = read_text("static/templates/pages/favorites.html.j2")
+    assert html.count("data-fav-pagination") >= 2
+    assert "data-fav-pagination-top" in html
+    assert "data-fav-page-prev" in html
+    assert "data-fav-page-next" in html
+    assert "data-fav-page-list" in html
+    assert "data-fav-page-input" in html
+    assert "data-fav-page-jump" in html
+    js = read_text("static/js/favorites.js")
+    assert re.search(r"pageSize\s*=\s*25", js)
 
 
 def test_favorites_narrow_list_above_facets():
@@ -405,6 +752,14 @@ def test_admin_dashboard_layout_present():
     assert "data-admin-grid data-masonry" not in html
 
 
+def test_admin_images_top_pagination_present():
+    html = read_text("static/templates/admin_images.html.j2")
+    assert "data-admin-pagination-top" in html
+    assert html.count("data-admin-page-jump") >= 2
+    js = read_text("static/js/admin.js")
+    assert "data-admin-pagination-top" in js
+
+
 def test_admin_image_cards_default_open():
     js = read_text("static/js/admin.js")
     assert "admin-card-editor" in js
@@ -434,6 +789,43 @@ def test_admin_tag_editor_present():
     assert ".tag-chip" in css
 
 
+def test_admin_upload_tag_quick_panel_present():
+    html = read_text("static/templates/admin_upload.html.j2")
+    assert "admin-tag-quick-panel" in html
+    assert "data-admin-tag-add" in html
+    assert "data-admin-tags-hint" in html
+    assert "data-admin-editor" in html
+    assert "data-editor-mode=\"compact\"" in html
+
+
+def test_admin_upload_tag_quick_styles_present():
+    css = read_text("static/styles/gallery.css")
+    assert ".admin-tag-quick-panel" in css
+    assert ".tag-admin-row-compact" in css
+    assert ".tag-quick-attach" in css
+    assert ".tag-admin-shell-compact" in css
+
+
+def test_admin_upload_tag_quick_attach_hook():
+    js = read_text("static/js/admin.js")
+    assert "data-tag-attach" in js
+    assert "appendTagToUploadInput" in js
+
+
+def test_admin_upload_tag_quick_mobile_density_rules():
+    css = read_text("static/styles/gallery.css")
+    assert re.search(
+        r"@media\s*\(max-width:\s*900px\)[\s\S]*admin-tag-quick-panel\.admin-surface[\s\S]*background:\s*transparent",
+        css,
+        re.S,
+    )
+    assert re.search(
+        r"@media\s*\(max-width:\s*900px\)[\s\S]*admin-tag-quick-panel[\s\S]*tag-admin-row[\s\S]*border:\s*none",
+        css,
+        re.S,
+    )
+
+
 def test_admin_home_navigation_cards():
     html = read_text("static/templates/admin.html.j2")
     assert "admin-home-grid" in html
@@ -444,7 +836,75 @@ def test_admin_home_navigation_cards():
     assert 'href="/admin/collections/"' in html
     assert 'href="/admin/auth/"' in html
     assert 'href="/admin/tags/"' in html
+    assert 'href="/admin/dmca/"' in html
+
+
+def test_admin_dmca_page_structure_present():
+    html = read_text("static/templates/admin_dmca.html.j2")
+    assert "page-admin-dmca" in html
+    assert "data-admin-dmca-list" in html
+    assert "data-admin-dmca-filter" in html
+    assert "data-admin-dmca-refresh" in html
+    assert 'href="/admin/dmca/"' in html
     assert 'href="/status/"' in html
+
+
+def test_admin_home_status_strip_present():
+    html = read_text("static/templates/admin.html.j2")
+    assert "data-admin-status-bar" in html
+    assert 'data-admin-status="images.total"' in html
+    assert 'data-admin-status="disk"' in html
+    assert 'data-admin-status="request_counts.api"' in html
+    assert 'data-admin-status="request_counts.pages"' in html
+    assert "data-admin-status-flag" in html
+    assert "data-admin-user" in html
+    assert "status-hide-xxl" in html
+    assert "status-hide-xl" in html
+    assert "status-hide-lg" in html
+    assert "status-hide-md" in html
+    assert "status-hide-sm" in html
+    assert "status-hide-xs" in html
+
+
+def test_admin_memory_status_uses_used_percent():
+    js = read_text("static/js/admin.js")
+    assert "formatMemory" in js
+    assert "已用" in js
+    assert "memory.available" in js
+    assert re.search(r"used\s*=\s*Math\.max\(memory\.total\s*-\s*available", js)
+    assert re.search(r"\(\$\{pct\}%\)", js)
+
+
+def test_admin_home_status_styles_present():
+    css = read_text("static/styles/gallery.css")
+    assert ".admin-status-strip" in css
+    assert ".admin-home-layout" in css
+    assert ".admin-side-panel" in css
+    assert re.search(r"\.admin-status-strip\s*\{[^}]*flex-wrap:\s*nowrap", css, re.S)
+    assert re.search(r"\.admin-status-item\s*\{[^}]*min-width:\s*150px", css, re.S)
+
+
+def test_admin_status_strip_fade_hint():
+    css = read_text("static/styles/gallery.css")
+    assert re.search(r"\.admin-status-strip::after\s*\{[^}]*linear-gradient\(\s*90deg", css, re.S)
+    assert re.search(r"\.admin-status-strip::after\s*\{[^}]*pointer-events:\s*none", css, re.S)
+    assert re.search(
+        r"@media\s*\(max-width:\s*1360px\)[\s\S]*?\.admin-status-strip::after\s*\{[^}]*opacity:\s*1",
+        css,
+        re.S,
+    )
+
+
+def test_admin_status_loader_present():
+    js = read_text("static/js/admin.js")
+    assert "loadAdminStatus" in js
+    assert "/static/status.json" in js
+
+
+def test_admin_disk_status_uses_free_space():
+    js = read_text("static/js/admin.js")
+    assert re.search(r"disk\.free", js)
+    assert "剩余" in js
 
 
 def test_admin_dashboard_grid_styles_present():
@@ -491,6 +951,49 @@ def test_admin_and_auth_main_offset_topbar():
     )
 
 
+def test_admin_mobile_top_padding_compact():
+    css = read_text("static/styles/gallery.css")
+    assert re.search(
+        r"@media \(max-width: 640px\)[\s\S]*?body\.page-admin\s+main\s*\{[^}]*padding:\s*var\(--topbar-height\)\s+12px\s+32px;",
+        css,
+        re.S,
+    )
+    assert re.search(
+        r"@media \(max-width: 640px\)[\s\S]*?body\.page-admin\s+\.home-main\s*\{[^}]*padding-top:\s*0",
+        css,
+        re.S,
+    )
+    assert re.search(
+        r"@media \(max-width: 640px\)[\s\S]*?body\.page-admin\s+\.admin-main\s*\{[^}]*padding-top:\s*0",
+        css,
+        re.S,
+    )
+
+
+def test_admin_mobile_hero_stack():
+    css = read_text("static/styles/gallery.css")
+    assert re.search(
+        r"@media \(max-width: 640px\)[\s\S]*?\.page-admin\s+\.admin-hero\s*\{[^}]*flex-direction:\s*column",
+        css,
+        re.S,
+    )
+    assert re.search(
+        r"@media \(max-width: 640px\)[\s\S]*?\.page-admin\s+\.admin-hero\s*\{[^}]*align-items:\s*flex-start",
+        css,
+        re.S,
+    )
+    assert re.search(
+        r"@media \(max-width: 640px\)[\s\S]*?\.page-admin\s+\.admin-hero-meta\s*\{[^}]*width:\s*100%",
+        css,
+        re.S,
+    )
+    assert re.search(
+        r"@media \(max-width: 640px\)[\s\S]*?\.page-admin\s+\.admin-hero-meta\s*\{[^}]*text-align:\s*left",
+        css,
+        re.S,
+    )
+
+
 def test_primary_button_uses_theme_gradient():
     css = read_text("static/styles/gallery.css")
     assert re.search(r"\.btn\.primary\s*\{[^}]*var\(--accent-2\)", css, re.S)
@@ -507,6 +1010,7 @@ def test_gallery_pages_use_compact_card_tokens():
     selector = match.group(0).split("{", 1)[0]
     assert ".page-search" in selector
     assert ".page-my" in selector
+    assert ".page-profile" in selector
     assert ".page-admin" in selector
     assert re.search(r"\.thumb-shell\s*\{[^}]*max-height:\s*var\(--card-thumb-max\)", css, re.S)
     assert re.search(r"\.card-body\s*\{[^}]*padding:\s*var\(--card-body-pad\)", css, re.S)
@@ -563,6 +1067,16 @@ def test_tag_page_masonry_init():
     assert "initTagPageMasonry" in js
     assert "page-tag" in js
     assert "data-masonry" in js
+
+
+def test_tag_page_pagination_hooks_in_script():
+    js = read_text("static/js/tag.js")
+    assert "data-tag-page-prev" in js
+    assert "data-tag-page-next" in js
+    assert "data-tag-page-list" in js
+    assert "data-tag-page-input" in js
+    assert "data-tag-page-jump" in js
+    assert "data-tag-gallery" in js
 
 
 def test_tag_editor_toggle_hooked():
@@ -650,6 +1164,7 @@ def test_global_search_bar_present_on_core_pages():
         "static/templates/tag.html.j2",
         "static/templates/pages/favorites.html.j2",
         "static/templates/pages/my.html.j2",
+        "static/templates/pages/profile.html.j2",
         "static/templates/pages/wiki.html.j2",
         "static/templates/pages/dmca.html.j2",
         "static/templates/legal.html.j2",
@@ -715,15 +1230,150 @@ def test_wiki_page_template_exists():
     assert "page-wiki" in html
     assert "wiki-tree" in html
     assert "data-wiki-content" in html
+    assert "data-wiki-aside" in html
     assert "wiki.js" in html
+    assert "data-wiki-toc-toggle" in html
+    assert "data-wiki-toc-close" in html
+
+
+def test_live2d_assets_in_shared_partials():
+    theme = read_text("static/templates/partials/theme_init.html.j2")
+    sidebar = read_text("static/templates/partials/sidebar_default.html.j2")
+    assert "live2d/css/live2d.css" in theme
+    assert "id=\"landlord\"" in sidebar
 
 
 def test_wiki_page_uses_sidebar_layout():
     html = read_text("static/templates/pages/wiki.html.j2")
     assert "data-left-sidebar" in html
-    assert "data-left-toggle" in html
-    assert "data-sidebar-dim" in html
-    assert "sidebar-close" in html
+    assert "wiki-static-sidebar" in html
+
+
+def test_wiki_mobile_toc_styles():
+    css = read_text("static/styles/gallery.css")
+    assert re.search(
+        r"@media \(max-width: 640px\)[\s\S]*?body\.page-wiki\s+\.wiki-static-sidebar[\s\S]*position:\s*fixed",
+        css,
+        re.S,
+    )
+    assert re.search(
+        r"@media \(max-width: 640px\)[\s\S]*?\.wiki-shell\s*\{[^}]*grid-template-columns:\s*1fr",
+        css,
+        re.S,
+    )
+    assert re.search(
+        r"@media \(max-width: 640px\)[\s\S]*?body\.sidebar-collapsed\s+\.wiki-shell[\s\S]*grid-template-columns:\s*1fr",
+        css,
+        re.S,
+    )
+    assert re.search(
+        r"@media \(max-width: 640px\)[\s\S]*?body\.page-wiki\.wiki-toc-open\s+\.wiki-static-sidebar",
+        css,
+        re.S,
+    )
+    assert re.search(
+        r"@media \(max-width: 640px\)[\s\S]*?body\.page-wiki\s+\.wiki-toc-fab",
+        css,
+        re.S,
+    )
+    assert re.search(
+        r"@media \(max-width: 640px\)[\s\S]*?body\.page-wiki\s+\.back-to-top[\s\S]*bottom:\s*calc\(",
+        css,
+        re.S,
+    )
+    assert re.search(
+        r"@media \(max-width: 640px\)[\s\S]*?body\.page-wiki\s+\.back-to-top[\s\S]*right:\s*16px",
+        css,
+        re.S,
+    )
+    assert re.search(
+        r"@media \(max-width: 640px\)[\s\S]*?body\.page-wiki\s+\.back-to-top[\s\S]*width:\s*44px",
+        css,
+        re.S,
+    )
+    assert re.search(
+        r"@media \(max-width: 640px\)[\s\S]*?body\.page-wiki\s+\.wiki-toc-dim",
+        css,
+        re.S,
+    )
+
+
+def test_wiki_medium_toc_styles():
+    css = read_text("static/styles/gallery.css")
+    assert re.search(
+        r"@media \(max-width: 900px\)[\s\S]*?\.wiki-shell\s*\{[^}]*grid-template-columns:\s*var\(--sidebar-width\)\s+minmax\(0,\s*1fr\)",
+        css,
+        re.S,
+    )
+    assert re.search(
+        r"@media \(max-width: 900px\)[\s\S]*?body\.page-wiki\s+\.wiki-static-sidebar[\s\S]*position:\s*fixed",
+        css,
+        re.S,
+    )
+    assert re.search(
+        r"@media \(max-width: 900px\)[\s\S]*?body\.page-wiki\s+\.wiki-toc-fab",
+        css,
+        re.S,
+    )
+
+
+def test_wiki_mobile_toc_script():
+    js = read_text("static/js/wiki.js")
+    assert "wiki-toc-open" in js
+    assert "data-wiki-toc-toggle" in js
+
+
+def test_wiki_two_sidebar_layout_styles():
+    css = read_text("static/styles/gallery.css")
+    assert re.search(
+        r"\.wiki-shell\s*\{[^}]*grid-template-columns:\s*var\(--sidebar-width\)\s+var\(--detail-sidebar-width\)\s+minmax\(0,\s*1fr\)",
+        css,
+        re.S,
+    )
+    assert re.search(
+        r"\.wiki-static-sidebar\s*\{[^}]*align-self:\s*stretch",
+        css,
+        re.S,
+    )
+    assert re.search(
+        r"\.wiki-static-sidebar\s*\{[^}]*position:\s*fixed",
+        css,
+        re.S,
+    )
+    assert re.search(
+        r"\.wiki-static-sidebar\s*\{[^}]*top:\s*var\(--topbar-height\)",
+        css,
+        re.S,
+    )
+    assert re.search(
+        r"\.wiki-static-sidebar\s*\{[^}]*left:\s*var\(--sidebar-width\)",
+        css,
+        re.S,
+    )
+    assert re.search(
+        r"\.wiki-static-sidebar\s*\{[^}]*height:\s*calc\(100vh\s*-\s*var\(--topbar-height\)\)",
+        css,
+        re.S,
+    )
+    assert re.search(
+        r"body\.sidebar-collapsed\s+\.wiki-static-sidebar[\s\S]*left:\s*18px",
+        css,
+        re.S,
+    )
+    assert re.search(
+        r"\.wiki-toc-panel\s*\{[^}]*position:\s*sticky",
+        css,
+        re.S,
+    )
+
+
+def test_wiki_heading_anchor_offset():
+    css = read_text("static/styles/gallery.css")
+    assert re.search(
+        r"\.wiki-article\s+h1[\s\S]*scroll-margin-top:\s*calc\(var\(--topbar-height\)\s*\+\s*12px\)",
+        css,
+        re.S,
+    )
 
 
 def test_masonry_ready_waits_for_images_or_timeout():
@@ -751,11 +1401,57 @@ def test_favorites_page_template_exists():
     assert "gallery.css" in html
 
 
+def test_profile_page_template_exists():
+    html = read_text("static/templates/pages/profile.html.j2")
+    assert "page-profile" in html
+    assert "data-profile-page" in html
+    assert "/static/js/profile.js" in html
+
+
+def test_profile_js_wires_avatar_cropper():
+    js = read_text("static/js/profile.js")
+    assert "data-avatar-cropper" in js
+    assert "/api/user/profile" in js
+    assert "/api/user/avatar" in js
+
+
+def test_profile_dense_layout_present():
+    html = read_text("static/templates/pages/profile.html.j2")
+    assert "profile-board" in html
+    assert "profile-name-line" in html
+    assert "profile-tabs" in html
+    assert "profile-flow" in html
+    css = read_text("static/styles/gallery.css")
+    assert re.search(r"\.profile-tabs\s*\{[^}]*border-bottom", css, re.S)
+    assert re.search(r"\.profile-flow\s*\{[^}]*display:\s*grid", css, re.S)
+    assert re.search(r"\.profile-field\s*\{[^}]*grid-template-columns:\s*80px", css, re.S)
+
+
+def test_profile_header_links_removed():
+    html = read_text("static/templates/pages/profile.html.j2")
+    assert "profile-header-links" not in html
+    assert "profile-header-main" in html
+    assert "profile-header-stats" in html
+
+
+def test_profile_header_main_grid_rule():
+    css = read_text("static/styles/gallery.css")
+    assert re.search(
+        r"\.profile-header-main\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+minmax\(0,\s*220px\)",
+        css,
+        re.S,
+    )
+
+
 def test_dmca_page_template_exists():
     html = read_text("static/templates/pages/dmca.html.j2")
     assert "page-dmca" in html
     assert "版权/侵权删除申请" in html
     assert "我保证以上提供的信息是真实准确的" in html
+    assert "每次仅受理一张作品" in html
+    assert "多张链接不予处理" in html
+    assert "action=\"/api/dmca\"" in html
+    assert "data-dmca-status" in html
     assert "name=\"work_url\"" in html
     assert "name=\"full_name\"" in html
     assert "name=\"authority\"" in html
@@ -772,6 +1468,45 @@ def test_masonry_grid_hidden_until_ready():
     assert re.search(r"\.gallery\[data-masonry\]\.masonry-ready\s*\{[^}]*opacity:\s*1", css, re.S)
     assert re.search(
         r"\.gallery\[data-masonry\]:not\(\.masonry-ready\)\s+\.illust-card\s*\{[^}]*grid-row-end:\s*span 1",
+        css,
+        re.S,
+    )
+
+
+def test_gallery_auto_rows_only_for_masonry():
+    css = read_text("static/styles/gallery.css")
+    assert re.search(r"\.gallery\[data-masonry\]\s*\{[^}]*grid-auto-rows:\s*8px", css, re.S)
+    assert not re.search(r"\.gallery\s*\{[^}]*grid-auto-rows", css, re.S)
+
+
+def test_mobile_gallery_non_masonry_spacing():
+    css = read_text("static/styles/gallery.css")
+    assert re.search(
+        r"@media \(max-width: 640px\)[\s\S]*?\.gallery:not\(\[data-masonry\]\)\s*\{[^}]*margin-top:\s*10px",
+        css,
+        re.S,
+    )
+    assert re.search(
+        r"@media \(max-width: 640px\)[\s\S]*?body\.sidebar-collapsed\s+\.home-main[\s\S]*padding-left:\s*0",
+        css,
+        re.S,
+    )
+
+
+def test_mobile_detail_orders_media_before_meta():
+    css = read_text("static/styles/gallery.css")
+    assert re.search(
+        r"@media \(max-width: 640px\)[\s\S]*?\.detail-main\s*\{[^}]*order:\s*0",
+        css,
+        re.S,
+    )
+    assert re.search(
+        r"@media \(max-width: 640px\)[\s\S]*?\.detail-static-sidebar\s*\{[^}]*order:\s*1",
+        css,
+        re.S,
+    )
+    assert re.search(
+        r"@media \(max-width: 640px\)[\s\S]*?\.detail-static-sidebar\s*\{[^}]*border-top:\s*1px",
         css,
         re.S,
     )
@@ -826,6 +1561,29 @@ def test_tag_page_editor_toggle_present():
     assert "data-tag-editor-toggle" in html
     assert "id=\"tag-editor-panel\"" in html
     assert "data-tag-editor" in html
+
+
+def test_tag_page_pagination_markup_present():
+    html = read_text("static/templates/tag.html.j2")
+    assert "data-tag-pagination-top" in html
+    assert "data-tag-pagination" in html
+    assert "data-tag-page-prev" in html
+    assert "data-tag-page-next" in html
+    assert "data-tag-page-list" in html
+    assert "data-tag-page-summary" in html
+    assert "data-tag-page-input" in html
+    assert "data-tag-page-jump" in html
+
+
+def test_tag_page_pagination_script_loaded():
+    html = read_text("static/templates/tag.html.j2")
+    assert "/static/js/tag.js" in html
+    assert "/static/js/gallery.js" not in html
+
+
+def test_tag_page_has_masonry_marker():
+    html = read_text("static/templates/tag.html.j2")
+    assert "data-masonry" in html
 
 
 def test_homepage_live2d_toggle_before_wiki_heading():
@@ -907,7 +1665,7 @@ def test_tablet_sidebar_width_matches_layout():
         re.S,
     )
     assert re.search(
-        r"@media \(max-width: 900px\)[\s\S]*\.wiki-shell\s*\{[^}]*grid-template-columns:\s*var\(--sidebar-width\)",
+        r"@media \(max-width: 900px\)[\s\S]*\.wiki-shell\s*\{[^}]*grid-template-columns:\s*1fr",
         css,
         re.S,
     )
@@ -940,6 +1698,11 @@ def test_mobile_sidebar_drawer_styles_present():
     )
     assert re.search(
         r"@media \(max-width: 640px\)[\s\S]*body\.page-home\s+main[\s\S]*z-index:\s*auto",
+        css,
+        re.S,
+    )
+    assert re.search(
+        r"@media \(max-width: 640px\)[\s\S]*body\.with-sidebar\s+main[\s\S]*z-index:\s*auto",
         css,
         re.S,
     )
@@ -1121,6 +1884,16 @@ def test_auth_pages_have_static_links_and_https_flag():
     assert "data-auth-login-form" in login_html
     assert "data-auth-register-form" in register_html
     assert 'name="password_confirm"' in register_html
+    assert 'name="session_days"' in login_html
+    assert "记住我" in login_html
+    for value in ("1", "7", "30", "60"):
+        assert f'value="{value}"' in login_html
+
+
+def test_auth_login_js_supports_session_days():
+    js = read_text("static/js/auth.js")
+    assert "session_days" in js
+    assert "/auth/login" in js
 
 
 def test_error_pages_have_apology_and_figure():
@@ -1422,16 +2195,39 @@ def test_upload_progress_styles():
     assert ".upload-progress-fill" in css
 
 
-def test_my_page_template_has_upload_and_gallery():
+def test_my_page_template_has_gallery_only():
     html = read_text("static/templates/pages/my.html.j2")
-    assert "data-user-upload-form" in html
+    assert "data-user-upload-form" not in html
     assert "data-user-gallery" in html
+
+
+def test_upload_page_template_has_upload_form():
+    upload_page = BASE_DIR / "static" / "templates" / "pages" / "upload.html.j2"
+    if not upload_page.exists():
+        pytest.skip("upload page template removed to avoid reserved path conflict")
+    html = read_text("static/templates/pages/upload.html.j2")
+    assert "data-user-upload-page" in html
+    assert "data-user-upload-form" in html
+
+
+def test_avatar_dropdown_has_user_upload_link():
+    topbar = read_text("static/templates/partials/topbar.html.j2")
+    upload_idx = topbar.find('href="/upload/"')
+    my_idx = topbar.find('href="/my/"')
+    assert upload_idx != -1
+    assert my_idx != -1
+    assert upload_idx < my_idx
 
 
 def test_detail_page_has_editor_panel():
     html = read_text("static/templates/detail.html.j2")
     assert "data-image-editor" in html
     assert "data-image-uuid" in html
+    assert "data-image-edit-toggle" in html
+    assert "data-image-edit-close" in html
+    assert re.search(r"<button[^>]*data-image-edit-toggle[^>]*detail-action-toggle", html) or re.search(
+        r"<button[^>]*detail-action-toggle[^>]*data-image-edit-toggle", html
+    )
 
 
 def test_detail_page_has_tag_tree_panel():
@@ -1471,3 +2267,14 @@ def test_ui_supports_tag_tree_toggle():
     js = read_text("static/js/ui.js")
     assert "data-tag-tree-toggle" in js
     assert "data-tag-tree-panel" in js
+
+
+def test_tag_gallery_uses_masonry_grid():
+    html = read_text("static/templates/tag.html.j2")
+    assert 'class="gallery" data-masonry data-gallery-grid' in html
+    assert "data-masonry-item" in html
+
+
+def test_tag_js_initializes_gallery_masonry():
+    js = read_text("static/js/tag.js")
+    assert "window.GalleryMasonry ? window.GalleryMasonry.init(gallery)" in js

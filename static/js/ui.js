@@ -302,6 +302,7 @@
       body.classList.toggle('sidebar-open', open);
       root.classList.toggle('sidebar-open', open);
       body.classList.remove('sidebar-collapsed');
+      root.classList.remove('sidebar-collapsed');
       syncToggleAria(open);
     }
 
@@ -1059,9 +1060,17 @@
   const live2dRoot = document.getElementById('landlord');
   const live2dToggle = document.querySelector('[data-live2d-toggle]');
   if (live2dRoot && live2dToggle) {
-    const pref = getCookie('live2d');
-    if (pref === '0') {
-      live2dRoot.classList.add('live2d-hidden');
+    const live2dMedia = window.matchMedia ? window.matchMedia('(max-width: 640px)') : null;
+    let pref = getCookie('live2d');
+    function isPrefHidden() {
+      return pref === '0';
+    }
+    function setLive2dHidden(hidden) {
+      if (hidden) {
+        live2dRoot.classList.add('live2d-hidden');
+      } else {
+        live2dRoot.classList.remove('live2d-hidden');
+      }
     }
     function updateLive2dLabel() {
       const hidden = live2dRoot.classList.contains('live2d-hidden');
@@ -1069,11 +1078,35 @@
       live2dToggle.textContent = hidden ? 'Live2D 关' : 'Live2D 开';
       live2dToggle.dataset.live2dState = hidden ? 'off' : 'on';
     }
-    updateLive2dLabel();
+    function applyLive2dState(isNarrow) {
+      root.classList.toggle('live2d-narrow', !!isNarrow);
+      if (isNarrow) {
+        setLive2dHidden(true);
+      } else {
+        setLive2dHidden(isPrefHidden());
+      }
+      updateLive2dLabel();
+    }
+    applyLive2dState(live2dMedia && live2dMedia.matches);
+    if (live2dMedia) {
+      const enforceNarrowLive2d = (event) => {
+        applyLive2dState(event.matches);
+      };
+      if (live2dMedia.addEventListener) {
+        live2dMedia.addEventListener('change', enforceNarrowLive2d);
+      } else if (live2dMedia.addListener) {
+        live2dMedia.addListener(enforceNarrowLive2d);
+      }
+    }
     live2dToggle.addEventListener('click', () => {
-      live2dRoot.classList.toggle('live2d-hidden');
-      const hidden = live2dRoot.classList.contains('live2d-hidden');
-      setCookie('live2d', hidden ? '0' : '1', 365);
+      if (live2dMedia && live2dMedia.matches) {
+        applyLive2dState(true);
+        return;
+      }
+      const nextHidden = !live2dRoot.classList.contains('live2d-hidden');
+      setLive2dHidden(nextHidden);
+      pref = nextHidden ? '0' : '1';
+      setCookie('live2d', pref, 365);
       updateLive2dLabel();
     });
   }
@@ -1634,6 +1667,8 @@
   const adminEntries = Array.from(document.querySelectorAll('[data-admin-entry]'));
   const userAvatar = document.querySelector('[data-user-avatar]');
   const userAvatarImg = document.querySelector('[data-user-avatar-img]');
+  const defaultAvatarSrc = userAvatarImg ? userAvatarImg.getAttribute('src') : '';
+  const userLogoutBtn = document.querySelector('[data-user-logout]');
   const loginLinks = document.querySelectorAll('[data-auth-login-link]');
   const registerLinks = document.querySelectorAll('[data-auth-register-link]');
   const userLinks = document.querySelectorAll('[data-auth-user-link]');
@@ -1651,7 +1686,7 @@
     } catch (e) {}
   }
 
-  function setAuthVisibility(isLoggedIn, username, groups) {
+  function setAuthVisibility(isLoggedIn, username, groups, avatarUrl) {
     if (userAvatar) {
       userAvatar.hidden = !isLoggedIn;
     }
@@ -1664,8 +1699,15 @@
     userLinks.forEach((link) => {
       link.hidden = !isLoggedIn;
     });
-    if (userAvatarImg && username) {
-      userAvatarImg.alt = `${username} 的头像`;
+    if (userAvatarImg) {
+      if (isLoggedIn && avatarUrl) {
+        userAvatarImg.src = avatarUrl;
+      } else if (!isLoggedIn && defaultAvatarSrc) {
+        userAvatarImg.src = defaultAvatarSrc;
+      }
+      if (username) {
+        userAvatarImg.alt = `${username} 的头像`;
+      }
     }
     if (adminEntries.length) {
       const isAdmin = Array.isArray(groups) && groups.includes('admin');
@@ -1678,24 +1720,70 @@
   const avatarMenu = document.querySelector('[data-avatar-menu]');
   const avatarToggle = document.querySelector('[data-avatar-toggle]');
   const avatarDropdown = document.querySelector('[data-avatar-dropdown]');
+  const AVATAR_MENU_CLOSE_DELAY = 160;
+  const AVATAR_MENU_ANIM_MS = 140;
+  let avatarCloseTimer = null;
+  let avatarHideTimer = null;
 
   function openAvatarMenu() {
     if (!avatarMenu || !avatarDropdown || !avatarToggle) return;
-    avatarMenu.classList.add('is-open');
+    if (avatarCloseTimer) {
+      window.clearTimeout(avatarCloseTimer);
+      avatarCloseTimer = null;
+    }
+    if (avatarHideTimer) {
+      window.clearTimeout(avatarHideTimer);
+      avatarHideTimer = null;
+    }
     avatarDropdown.hidden = false;
-    avatarToggle.setAttribute('aria-expanded', 'true');
+    if (!avatarMenu.classList.contains('is-open')) {
+      window.requestAnimationFrame(() => {
+        avatarMenu.classList.add('is-open');
+        avatarToggle.setAttribute('aria-expanded', 'true');
+      });
+    } else {
+      avatarToggle.setAttribute('aria-expanded', 'true');
+    }
   }
 
-  function closeAvatarMenu() {
+  function closeAvatarMenu({ immediate = false } = {}) {
     if (!avatarMenu || !avatarDropdown || !avatarToggle) return;
+    if (avatarCloseTimer) {
+      window.clearTimeout(avatarCloseTimer);
+      avatarCloseTimer = null;
+    }
     avatarMenu.classList.remove('is-open');
-    avatarDropdown.hidden = true;
     avatarToggle.setAttribute('aria-expanded', 'false');
+    if (avatarHideTimer) {
+      window.clearTimeout(avatarHideTimer);
+      avatarHideTimer = null;
+    }
+    if (immediate) {
+      avatarDropdown.hidden = true;
+      return;
+    }
+    avatarHideTimer = window.setTimeout(() => {
+      if (!avatarMenu.classList.contains('is-open')) {
+        avatarDropdown.hidden = true;
+      }
+    }, AVATAR_MENU_ANIM_MS);
+  }
+
+  function scheduleCloseAvatarMenu() {
+    if (!avatarMenu || !avatarDropdown || !avatarToggle) return;
+    if (avatarCloseTimer) {
+      window.clearTimeout(avatarCloseTimer);
+    }
+    avatarCloseTimer = window.setTimeout(() => {
+      closeAvatarMenu();
+    }, AVATAR_MENU_CLOSE_DELAY);
   }
 
   if (avatarMenu && avatarToggle && avatarDropdown) {
     avatarMenu.addEventListener('mouseenter', openAvatarMenu);
-    avatarMenu.addEventListener('mouseleave', closeAvatarMenu);
+    avatarMenu.addEventListener('mouseleave', scheduleCloseAvatarMenu);
+    avatarDropdown.addEventListener('mouseenter', openAvatarMenu);
+    avatarDropdown.addEventListener('mouseleave', scheduleCloseAvatarMenu);
     avatarToggle.addEventListener('click', (event) => {
       event.stopPropagation();
       if (avatarMenu.classList.contains('is-open')) {
@@ -1714,6 +1802,19 @@
     });
   }
 
+  if (userLogoutBtn) {
+    userLogoutBtn.addEventListener('click', (event) => {
+      event.preventDefault();
+      fetch('/auth/logout', { method: 'POST', credentials: 'include' })
+        .catch(() => {})
+        .finally(() => {
+          setAuthHint(false);
+          setAuthVisibility(false, '', [], '');
+          location.reload();
+        });
+    });
+  }
+
   const shouldCheckUserAuth =
     userAvatar || loginLinks.length || registerLinks.length || uploadProgress.hasProgressForScope('user');
   if (shouldCheckUserAuth) {
@@ -1724,7 +1825,7 @@
       })
       .then((data) => {
         if (data && data.ok) {
-          setAuthVisibility(true, data.user, data.groups || []);
+          setAuthVisibility(true, data.user, data.groups || [], data.avatar_url || '');
           setAuthHint(true);
           uploadProgress.restore('user', data.user);
           return;

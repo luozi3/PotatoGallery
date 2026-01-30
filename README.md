@@ -79,14 +79,82 @@ However, the project code is fully functional and operational, and community con
 ---
 
 ## 📂 目录语义 (让数据井然有序)
+下面是项目目录的“完整结构摘要”，只列核心目录与必要文件，并标注用途（避免过长，已折叠）。
+
+<details>
+<summary>📁 点击展开项目文件树（关键目录 + 必要文件）</summary>
+
 ```text
 /opt/PotatoGallery
-├── app/             # 逻辑核心
-├── db/              # SQLite 元数据
-├── storage/         
-│   ├── raw/         # 归档：已入库的原图
-│   ├── thumb/       # 缓存：可随时重建的缩略图
-│   ├── www/         # 门面：Nginx 直接服务的静态站点
-│   ├── .upload_tmp/ # 隔离：未完成的临时文件
-│   └── quarantine/  # 隔离：异常或超限文件
-└── static/          # 前端静态资产
+├── app/                        # 核心服务与生成逻辑
+│   ├── upload_service.py       # 上传服务入口（Flask + Waitress）
+│   ├── worker.py               # 单线程处理/发布 Worker
+│   ├── static_site.py          # 静态页生成器
+│   ├── auth.py                 # 账号/密码与鉴权逻辑
+│   ├── auth_api.py             # 登录/注册 API
+│   ├── admin_api.py            # 管理后台 API
+│   ├── user_api.py             # 用户上传/收藏 API
+│   ├── db.py                   # SQLite 连接与事务
+│   ├── config.py               # 全局配置与环境变量读取
+│   ├── storage.py              # 存储写入、校验、原子操作
+│   └── maintenance.py          # 清理/备份/一致性检查
+├── bin/                        # 运维脚本入口
+│   ├── refresh_static.sh       # 一键刷新静态站点
+│   ├── maintenance.py          # 维护任务命令行
+│   ├── cron_daily.sh           # 定时任务入口（cron 调用）
+│   ├── disk_guard.py           # 磁盘水位保护
+│   ├── init_db.py              # 初始化数据库
+│   ├── manage_users.py         # 用户管理脚本
+│   └── manage_invites.py       # 邀请码管理脚本
+├── config/                     # 运行期配置
+│   ├── auth.json               # 认证/注册策略
+│   └── upload.json.example     # 上传限制示例配置
+├── db/                         # SQLite 数据库
+│   ├── gallery.db              # 运行库（可备份）
+│   └── schema.sql              # 表结构与索引
+├── docs/                       # 运维与恢复文档
+│   └── backup_restore.md        # 备份/恢复演练说明
+├── frontend/                   # 前端构建源码（可选构建）
+│   └── home/                   # Vue3 首页（Vite）
+├── static/                     # 静态资源与模板
+│   ├── templates/              # Jinja 模板（含 pages 扩展）
+│   ├── styles/                 # 样式表
+│   ├── js/                     # 前端脚本
+│   ├── images/                 # 站点图片资源
+│   ├── live2d/                 # Live2D 资源
+│   └── data/                   # site/tags/collections/wiki 等配置
+├── storage/                    # 运行期数据（只读站点 + 写入缓存）
+│   ├── .upload_tmp/            # 上传临时文件（未完成不可见）
+│   ├── config/                 # 本地运行时配置覆盖（如 auth.local.json）
+│   ├── counter/                # 访问计数器旧版资源（PHP）
+│   ├── raw/                    # 原图归档（只追加）
+│   ├── thumb/                  # 缩略图缓存（可重建）
+│   ├── www/                    # 对外发布站点（Nginx 读）
+│   ├── www_staging/            # 生成中的临时站点
+│   ├── www_old_*/              # 历史发布快照
+│   ├── quarantine/             # 异常/非法文件隔离
+│   ├── status_data/            # 状态页采集数据
+│   ├── logs/                   # 服务与定时任务日志
+│   ├── backups/                # 备份（DB + raw/www 镜像）
+│   └── trash/                  # 回收站文件（待清理）
+├── tests/                      # pytest 测试
+├── venv/                       # Python 虚拟环境
+├── VERSION                     # 版本号
+├── LICENSE                     # 开源协议
+└── requirements.txt            # Python 依赖清单
+```
+</details>
+
+## ⚠️ 部署注意
+- 建议将 `storage` 子目录保持在同一分区，以确保 `os.replace` 的原子移动语义。
+- 若拆分到不同分区，系统会告警并自动降级为“复制 + 替换 + 删除源”，性能与原子性会下降。
+
+## ⚙️ 配置与自定义
+
+- 站点信息与 SEO：`static/data/site.json`（默认值）+ `static/data/site.local.json`（本地覆盖，不提交）。
+  - `site_name`/`site_description`/`site_url` 控制 SEO 标题、描述、OG。
+  - `seo.title_separator`/`seo.twitter_card`/`seo.default_og_image` 可自定义标题分隔符、Twitter 卡片、OG 兜底图。
+- 标签/分区：`static/data/tags.json`、`static/data/collections.json` 可自定义标签名、类型、别名、分区顺序。
+- 上传安全限制：`config/upload.json`（参考 `config/upload.json.example`）可调整上传大小、像素上限、允许类型与开关策略（默认开启，私站可按需关闭）。
+- 备份任务：维护任务优先使用 `rsync` 做 raw/www 增量镜像备份（已安装）。
+- 认证与注册：`config/auth.json` 控制开放/邀请/私有注册、密码策略。
