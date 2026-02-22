@@ -387,7 +387,15 @@
 
   function normalizeTagName(input) {
     const value = String(input || '').trim().replace(/^#/, '');
-    return value.replace(/\s+/g, ' ').toLowerCase();
+    return value.replace(/_/g, ' ').replace(/\s+/g, ' ').toLowerCase();
+  }
+
+  function formatTagForInput(tag) {
+    return normalizeTagName(tag).replace(/ /g, '_');
+  }
+
+  function formatTagForLabel(tag) {
+    return normalizeTagName(tag);
   }
 
   function normalizeTagMatch(input) {
@@ -628,13 +636,15 @@
     return panel;
   }
 
-  function renderSuggestButtons(container, tags, prefix) {
+  function renderSuggestButtons(container, tags, prefix, formatter) {
+    const formatLabel = typeof formatter === 'function' ? formatter : (value) => value;
     container.innerHTML = tags
       .map((item) => {
         const tag = typeof item === 'string' ? item : item.tag;
         const alias = typeof item === 'string' ? '' : item.alias;
-        const displayAlias = alias && alias !== tag ? `${prefix}${alias}` : '';
-        const displayTag = `${prefix}${tag}`;
+        const displayAlias =
+          alias && alias !== tag ? `${prefix}${formatLabel(alias)}` : '';
+        const displayTag = `${prefix}${formatLabel(tag)}`;
         const label = displayAlias ? `${displayAlias} -> ${displayTag}` : displayTag;
         return `<button class="suggest-chip" type="button" data-suggest-tag="${escapeHtml(
           tag
@@ -662,7 +672,7 @@
     if (tagSection && tagList) {
       if (suggestions.length) {
         tagSection.classList.add('show');
-        renderSuggestButtons(tagList, suggestions, requireHash ? '#' : '');
+        renderSuggestButtons(tagList, suggestions, requireHash ? '#' : '', formatTagForLabel);
       } else {
         tagSection.classList.remove('show');
       }
@@ -670,7 +680,7 @@
     if (parentSection && parentList) {
       if (missingParents.length) {
         parentSection.classList.add('show');
-        renderSuggestButtons(parentList, missingParents, '#');
+        renderSuggestButtons(parentList, missingParents, '#', formatTagForLabel);
       } else {
         parentSection.classList.remove('show');
       }
@@ -695,28 +705,30 @@
       canonicalSet.add(parent);
       nextTags.push(parent);
     });
-    input.value = nextTags.map((tag) => `#${tag}`).join(' ');
+    input.value = nextTags.map((tag) => `#${formatTagForInput(tag)}`).join(' ');
     input.dispatchEvent(new Event('input', { bubbles: true }));
   }
 
   function applyTagToInput(input, tag, requireHash) {
     const rawValue = input.value || '';
     const tags = parseTagInput(rawValue);
+    const normalizedTag = normalizeTagName(tag);
     const endsWithDelimiter = /[,\s|]$/.test(rawValue);
     if (tags.length && !endsWithDelimiter) {
-      tags[tags.length - 1] = tag;
-    } else if (!tags.includes(tag)) {
-      tags.push(tag);
+      tags[tags.length - 1] = normalizedTag;
+    } else if (!tags.includes(normalizedTag)) {
+      tags.push(normalizedTag);
     }
     const unique = [];
     const seen = new Set();
     tags.forEach((item) => {
-      if (seen.has(item)) return;
-      seen.add(item);
-      unique.push(item);
+      const normalized = normalizeTagName(item);
+      if (!normalized || seen.has(normalized)) return;
+      seen.add(normalized);
+      unique.push(normalized);
     });
     const prefix = requireHash ? '#' : '';
-    input.value = unique.map((item) => `${prefix}${item}`).join(' ');
+    input.value = unique.map((item) => `${prefix}${formatTagForInput(item)}`).join(' ');
     input.dispatchEvent(new Event('input', { bubbles: true }));
   }
 
@@ -1850,6 +1862,14 @@
     const image = detailMedia.querySelector('[data-detail-image]');
     const status = detailMedia.querySelector('[data-image-status]');
     const frame = detailMedia.querySelector('.detail-frame');
+    const overlay = detailMedia.querySelector('[data-detail-overlay]');
+    const HINT_STARTUP_MS = 5000;
+    const HINT_HOVER_HIDE_MS = 3000;
+    const HINT_TOGGLE_SHOW_MS = 3000;
+    let hintTimer = null;
+    let hintAutoHideExpired = false;
+    let hintHoverFrame = false;
+    let hintHoverOverlay = false;
     let detailFitScheduled = false;
 
     const parseSize = (value) => {
@@ -1909,6 +1929,72 @@
       });
     };
 
+    const clearHintTimer = () => {
+      if (hintTimer) {
+        window.clearTimeout(hintTimer);
+        hintTimer = null;
+      }
+    };
+
+    const setHintVisible = (visible) => {
+      if (!overlay) return;
+      overlay.classList.toggle('is-visible', visible);
+      if (!visible) hintAutoHideExpired = false;
+    };
+
+    const scheduleHintHide = (delay) => {
+      if (!overlay) return;
+      clearHintTimer();
+      hintAutoHideExpired = false;
+      hintTimer = window.setTimeout(() => {
+        hintAutoHideExpired = true;
+        if (!hintHoverOverlay) {
+          setHintVisible(false);
+        }
+      }, delay);
+    };
+
+    const showHintFor = (delay) => {
+      if (!overlay) return;
+      setHintVisible(true);
+      if (typeof delay === 'number' && delay > 0) {
+        scheduleHintHide(delay);
+      }
+    };
+
+    if (overlay) {
+      overlay.classList.add('hint-managed');
+      showHintFor(HINT_STARTUP_MS);
+    }
+
+    if (overlay && frame) {
+      frame.addEventListener('mouseenter', () => {
+        hintHoverFrame = true;
+        showHintFor(HINT_HOVER_HIDE_MS);
+      });
+
+      frame.addEventListener('mouseleave', () => {
+        hintHoverFrame = false;
+        if (!hintHoverOverlay) {
+          setHintVisible(false);
+        }
+      });
+    }
+
+    if (overlay) {
+      overlay.addEventListener('mouseenter', () => {
+        hintHoverOverlay = true;
+        setHintVisible(true);
+      });
+
+      overlay.addEventListener('mouseleave', () => {
+        hintHoverOverlay = false;
+        if (!hintHoverFrame || hintAutoHideExpired) {
+          setHintVisible(false);
+        }
+      });
+    }
+
     if (image) {
       const thumbSrc = image.dataset.thumbSrc || image.getAttribute('src') || '';
       const fullSrc = image.dataset.fullSrc || '';
@@ -1931,6 +2017,7 @@
         image.addEventListener('click', () => {
           const next = detailMedia.dataset.imageMode === 'full' ? 'thumb' : 'full';
           setMode(next);
+          showHintFor(HINT_TOGGLE_SHOW_MS);
         });
       } else {
         if (status) status.textContent = '原图';

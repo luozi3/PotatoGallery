@@ -78,6 +78,20 @@ def cmd_list(args) -> int:
     return 0
 
 
+def cmd_delete(args) -> int:
+    _ensure_schema()
+    try:
+        deleted = auth.delete_user(args.username)
+    except Exception as exc:  # noqa: BLE001
+        print(f"删除失败: {exc}", file=sys.stderr)
+        return 1
+    if not deleted:
+        print(f"用户不存在: {args.username}", file=sys.stderr)
+        return 1
+    print(f"已删除用户 {args.username}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="管理 PotatoGallery 后台用户")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -95,6 +109,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     list_cmd = sub.add_parser("list", help="列出用户与分组")
     list_cmd.set_defaults(func=cmd_list)
+
+    delete_cmd = sub.add_parser("delete", help="删除用户并清理关联数据")
+    delete_cmd.add_argument("username")
+    delete_cmd.set_defaults(func=cmd_delete)
 
     return parser
 

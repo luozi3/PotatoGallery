@@ -191,3 +191,42 @@ def test_register_does_not_auto_login(tmp_path):
     assert resp.status_code == 201
     cookies = resp.headers.getlist("Set-Cookie")
     assert not any(config.USER_COOKIE_NAME in cookie for cookie in cookies)
+
+
+def test_delete_user_cleans_upload_and_images(tmp_path):
+    seed_test_root(tmp_path)
+    modules = setup_env(tmp_path)
+    auth = modules["app.auth"]
+    db = modules["app.db"]
+
+    auth.create_user("user1", "secret123", groups=["user"])
+
+    with db.connect() as conn:
+        user_row = conn.execute("SELECT id FROM auth_users WHERE username='user1'").fetchone()
+        user_id = int(user_row["id"])
+        conn.execute(
+            """
+            INSERT INTO images (uuid, original_name, ext, mime, bytes, sha256, stored_path, owner_user_id)
+            VALUES ('img-1', 'img.png', 'png', 'image/png', 12, 'abc', 'raw/img-1.png', ?)
+            """,
+            (user_id,),
+        )
+        conn.execute(
+            """
+            INSERT INTO upload_requests (uuid, owner_user_id, title)
+            VALUES ('up-1', ?, 'demo')
+            """,
+            (user_id,),
+        )
+        conn.commit()
+
+    assert auth.delete_user("user1") is True
+
+    with db.connect() as conn:
+        user_row = conn.execute("SELECT 1 FROM auth_users WHERE username='user1'").fetchone()
+        request_row = conn.execute("SELECT 1 FROM upload_requests WHERE uuid='up-1'").fetchone()
+        image_row = conn.execute("SELECT owner_user_id FROM images WHERE uuid='img-1'").fetchone()
+
+    assert user_row is None
+    assert request_row is None
+    assert image_row["owner_user_id"] is None

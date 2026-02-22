@@ -152,6 +152,14 @@ def _format_expires_at(value: Optional[datetime.datetime]) -> Optional[str]:
     return value.strftime("%Y-%m-%d %H:%M:%S")
 
 
+def _table_exists(conn, name: str) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+        (name,),
+    ).fetchone()
+    return bool(row)
+
+
 def create_invite(
     code: str,
     *,
@@ -301,6 +309,35 @@ def set_password(username: str, password: str, *, conn=None) -> None:
         )
         if owned_conn:
             conn.commit()
+    except Exception:
+        if owned_conn:
+            conn.rollback()
+        raise
+    finally:
+        if owned_conn:
+            conn.close()
+
+
+def delete_user(username: str, *, conn=None) -> bool:
+    if not username:
+        raise ValueError("用户名不能为空")
+    owned_conn = conn is None
+    if owned_conn:
+        conn = db.connect()
+    try:
+        ensure_schema(conn)
+        row = conn.execute("SELECT id FROM auth_users WHERE username=?", (username,)).fetchone()
+        if not row:
+            return False
+        user_id = int(row["id"])
+        if _table_exists(conn, "images"):
+            conn.execute("UPDATE images SET owner_user_id=NULL WHERE owner_user_id=?", (user_id,))
+        if _table_exists(conn, "upload_requests"):
+            conn.execute("DELETE FROM upload_requests WHERE owner_user_id=?", (user_id,))
+        conn.execute("DELETE FROM auth_users WHERE id=?", (user_id,))
+        if owned_conn:
+            conn.commit()
+        return True
     except Exception:
         if owned_conn:
             conn.rollback()

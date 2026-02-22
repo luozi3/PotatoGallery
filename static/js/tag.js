@@ -267,7 +267,7 @@
       }[item.size_bucket] || "未标";
     tags.appendChild(sizeTag);
 
-    (item.tags || []).slice(0, 3).forEach((tag) => {
+    (item.tags || []).slice(0, 1).forEach((tag) => {
       const tagLink = document.createElement("a");
       tagLink.className = "tag ghost";
       tagLink.href = `/tags/${encodeURIComponent(tag.slug || tag.tag || "")}/`;

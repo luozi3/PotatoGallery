@@ -67,6 +67,44 @@
       "slug": "lily_white",
       "alias_to": "",
       "type": "character"
+    },
+    {
+      "tag": "爱丽丝・玛格特罗依德",
+      "intro": "爱丽丝·玛格特洛依德是东方Project系列中的官方角色，初登场作品为东方怪绮谈。\n她是由人类修行而成[求闻史纪]的魔法使，擅长操控人偶的魔法，被称为七色的人偶师[东方妖妖梦]。",
+      "aliases": [
+        "アリス・マーガトロイド，alice margatroid",
+        "アリス",
+        "爱丽丝",
+        "爱丽丝玛格特罗依德"
+      ],
+      "parents": [
+        "东方project"
+      ],
+      "slug": "alic_margatroid",
+      "alias_to": "",
+      "type": "character"
+    },
+    {
+      "tag": "シエラ",
+      "intro": "该作者通常活跃于二次元幻想风格或同人创作领域。\nhttps://www.pixiv.net/users/2948941",
+      "aliases": [
+        "shiera"
+      ],
+      "parents": [],
+      "slug": "shiera",
+      "alias_to": "",
+      "type": "artist"
+    },
+    {
+      "tag": "ai work",
+      "intro": "使用生成式AI生成的作品。\n但仍有小部分画作经过人类润色。",
+      "aliases": [
+        "ai，artificial intelligence，人工智能"
+      ],
+      "parents": [],
+      "slug": "artificial_intelligence",
+      "alias_to": "",
+      "type": "general"
     }
   ]
 }

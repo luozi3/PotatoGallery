@@ -126,6 +126,15 @@ def test_avatar_dropdown_logout_items():
     assert "/auth/logout" in js
 
 
+def test_tag_suggest_underscore_mapping():
+    js = read_text("static/js/ui.js")
+    assert re.search(r"replace\(/_/g,\s*' '\)", js)
+    assert re.search(r"replace\(/ /g,\s*'_'\)", js)
+    assert "formatTagForLabel" in js
+    assert "formatTagForInput" in js
+    assert "formatTagForLabel" in js
+
+
 def test_admin_home_status_and_side_panels_have_compact_pills():
     css = read_text("static/styles/gallery.css")
     assert re.search(r"\.admin-status-strip\s*\{[^}]*gap:\s*8px", css, re.S)
@@ -164,6 +173,36 @@ def test_profile_css_supports_dense_layout():
     assert ".profile-tab.is-active" in css
 
 
+def test_profile_header_panel_style():
+    css = read_text("static/styles/gallery.css")
+    assert re.search(r"\.profile-header\s*\{[^}]*border-radius:\s*12px", css, re.S)
+    assert re.search(r"\.profile-header\s*\{[^}]*background:\s*linear-gradient", css, re.S)
+    assert re.search(r"\.profile-avatar\s*\{[^}]*box-shadow:\s*0 6px 14px", css, re.S)
+
+
+def test_profile_avatar_modal_layout():
+    html = read_text("static/templates/pages/profile.html.j2")
+    assert "data-avatar-modal" in html
+    assert "data-avatar-open" in html
+    assert "data-avatar-current" in html
+    assert "data-avatar-size" in html
+    assert "data-avatar-frame" in html
+    assert "data-avatar-handle" in html
+    css = read_text("static/styles/gallery.css")
+    assert re.search(r"\.profile-avatar-modal\s*\{[^}]*position:\s*fixed", css, re.S)
+    assert re.search(r"\.profile-avatar-row\s*\{[^}]*grid-template-columns", css, re.S)
+    assert re.search(r"\.profile-crop-frame\s*\{[^}]*box-shadow", css, re.S)
+    assert ".profile-crop-handle" in css
+
+
+def test_profile_avatar_picker_resets_and_locks_preview():
+    js = read_text("static/js/profile.js")
+    assert "previewLocked" in js
+    assert "loadToken" in js
+    assert "!cropState.previewLocked" in js
+    assert "avatarInput.value = ''" in js
+
+
 def test_admin_login_section_hidden_by_default():
     templates = [
         "static/templates/admin.html.j2",
@@ -198,6 +237,19 @@ def test_right_sidebar_background_and_sticky_inner():
     css = read_text("static/styles/gallery.css")
     assert re.search(r"\.detail-shell\s*\{[^}]*--detail-sidebar-offset:\s*var\(--sidebar-width\)", css, re.S)
     assert re.search(r"\.detail-shell\s*\{[^}]*background:\s*linear-gradient", css, re.S)
+
+
+def test_detail_hint_visibility_controls():
+    html = read_text("static/templates/detail.html.j2")
+    assert "data-detail-overlay" in html
+    css = read_text("static/styles/gallery.css")
+    assert re.search(r"\.detail-overlay\.hint-managed\s*\{[^}]*opacity:\s*0", css, re.S)
+    assert re.search(r"\.detail-overlay\.hint-managed\.is-visible\s*\{[^}]*opacity:\s*1", css, re.S)
+    js = read_text("static/js/ui.js")
+    assert re.search(r"HINT_STARTUP_MS\s*=\s*5000", js)
+    assert re.search(r"HINT_HOVER_HIDE_MS\s*=\s*3000", js)
+    assert re.search(r"HINT_TOGGLE_SHOW_MS\s*=\s*3000", js)
+    assert "showHintFor(HINT_TOGGLE_SHOW_MS)" in js
     assert re.search(r"\.detail-shell::before\s*\{[^}]*left:\s*var\(--detail-sidebar-offset\)", css, re.S)
     assert re.search(r"\.detail-shell::after\s*\{[^}]*left:\s*calc\(var\(--detail-sidebar-offset\)", css, re.S)
     assert re.search(r"\.detail-static-sidebar\s*\{[^}]*align-self:\s*stretch", css, re.S)
@@ -555,6 +607,13 @@ def test_favorites_pagination_controls_present():
     assert re.search(r"pageSize\s*=\s*25", js)
 
 
+def test_favorites_facets_flat_style():
+    css = read_text("static/styles/gallery.css")
+    assert re.search(r"\.facet-card\s*\{[^}]*background:\s*var\(--panel\)", css, re.S)
+    assert re.search(r"\.facet-card\s*\{[^}]*border:\s*1px solid", css, re.S)
+    assert re.search(r"\.facet-item\s*\{[^}]*border-bottom:\s*1px solid", css, re.S)
+
+
 def test_favorites_narrow_list_above_facets():
     css = read_text("static/styles/gallery.css")
     assert re.search(
@@ -672,6 +731,12 @@ def test_status_page_has_uptime_and_requests_cards():
     assert "status-raw" in html
 
 
+def test_status_page_canvas_styles_scoped():
+    html = read_text("static/templates/status.html.j2")
+    assert ".status-chart canvas" in html
+    assert not re.search(r"\n\s*canvas\s*\{", html)
+
+
 def test_status_page_mobile_padding():
     html = read_text("static/templates/status.html.j2")
     assert re.search(
@@ -726,6 +791,16 @@ def test_admin_tags_layout_structure_present():
     assert "tag-admin-fields" in js
     assert "tag-admin-actions" in js
     assert "tag-admin-tree" in js
+
+
+def test_admin_tags_parent_tag_suggest_hooked():
+    js = read_text("static/js/admin.js")
+    assert re.search(r"data-tag-field=\"parents\"[^>]*data-tag-input", js)
+
+
+def test_admin_tags_parent_tag_suggest_init_on_editor():
+    js = read_text("static/js/admin.js")
+    assert "initTagSuggest(tagEditorTagPanel)" in js
 
 
 def test_admin_tags_layout_responsive_grids():
@@ -1144,7 +1219,7 @@ def test_tag_suggest_auto_fills_missing_parents():
 def test_tag_suggest_replaces_last_token_on_click():
     js = read_text("static/js/ui.js")
     assert "endsWithDelimiter" in js
-    assert "tags[tags.length - 1] = tag" in js
+    assert "tags[tags.length - 1] = normalizedTag" in js
 
 
 def test_tag_suggest_supports_alias_match_key():
@@ -1411,6 +1486,8 @@ def test_profile_page_template_exists():
 def test_profile_js_wires_avatar_cropper():
     js = read_text("static/js/profile.js")
     assert "data-avatar-cropper" in js
+    assert "data-avatar-handle" in js
+    assert "readAsDataURL" in js
     assert "/api/user/profile" in js
     assert "/api/user/avatar" in js
 
@@ -1521,6 +1598,7 @@ def test_homepage_layout_has_sidebars():
     index = read_text("static/templates/index.html.j2")
     topbar = read_text("static/templates/partials/topbar.html.j2")
     sidebar = read_text("static/templates/partials/sidebar_default.html.j2")
+    assert "page-home with-sidebar" in index
     assert "data-left-sidebar" in index
     assert "data-left-sidebar" in sidebar
     assert "data-avatar-toggle" in topbar
@@ -1584,6 +1662,28 @@ def test_tag_page_pagination_script_loaded():
 def test_tag_page_has_masonry_marker():
     html = read_text("static/templates/tag.html.j2")
     assert "data-masonry" in html
+    assert "image.tags[:1]" in html
+
+
+def test_tag_page_js_limits_tags():
+    js = read_text("static/js/tag.js")
+    assert "slice(0, 1)" in js
+
+
+def test_tag_page_orientation_size_labels_literal():
+    html = read_text("static/templates/tag.html.j2")
+    assert '"portrait": "竖屏"' in html
+    assert '"landscape": "横屏"' in html
+    assert '"square": "方形"' in html
+    assert '"ultra": "超清"' in html
+    assert '"large": "高清"' in html
+    assert '"medium": "中等"' in html
+    assert '"compact": "轻量"' in html
+
+
+def test_tag_page_tags_not_clamped():
+    css = read_text("static/styles/gallery.css")
+    assert re.search(r"\.page-tag\s+\.tags\s*\{[^}]*max-height:\s*none", css, re.S)
 
 
 def test_homepage_live2d_toggle_before_wiki_heading():
@@ -1884,8 +1984,12 @@ def test_auth_pages_have_static_links_and_https_flag():
     assert "data-auth-login-form" in login_html
     assert "data-auth-register-form" in register_html
     assert 'name="password_confirm"' in register_html
+    assert 'name="remember_device"' in login_html
+    assert 'data-auth-remember' in login_html
     assert 'name="session_days"' in login_html
-    assert "记住我" in login_html
+    assert "记住本设备登录状态" in login_html
+    assert "用户协议" in login_html
+    assert "隐私政策" in login_html
     for value in ("1", "7", "30", "60"):
         assert f'value="{value}"' in login_html
 
@@ -1893,7 +1997,17 @@ def test_auth_pages_have_static_links_and_https_flag():
 def test_auth_login_js_supports_session_days():
     js = read_text("static/js/auth.js")
     assert "session_days" in js
+    assert "remember_device" in js
     assert "/auth/login" in js
+
+
+def test_legal_page_has_tos_and_privacy_sections():
+    html = read_text("static/templates/legal.html.j2")
+    assert 'id="tos"' in html
+    assert 'id="privacy"' in html
+    assert "用户协议" in html
+    assert "隐私政策" in html
+    assert "版权通知" in html
 
 
 def test_error_pages_have_apology_and_figure():

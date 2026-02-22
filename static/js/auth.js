@@ -37,6 +37,23 @@
   }
 
   if (loginForm) {
+    const rememberWrap = loginForm.querySelector("[data-auth-remember]");
+    const rememberCheck = loginForm.querySelector("[data-auth-remember-check]");
+    const rememberPanel = loginForm.querySelector("[data-auth-remember-panel]");
+
+    const syncRememberPanel = () => {
+      if (!rememberWrap || !rememberCheck) return;
+      rememberWrap.classList.toggle("is-open", rememberCheck.checked);
+      if (!rememberCheck.checked && rememberPanel) {
+        rememberPanel.scrollTop = 0;
+      }
+    };
+
+    if (rememberCheck) {
+      rememberCheck.addEventListener("change", syncRememberPanel);
+      syncRememberPanel();
+    }
+
     loginForm.addEventListener("submit", async (event) => {
       event.preventDefault();
       const form = new FormData(loginForm);
@@ -44,9 +61,15 @@
         username: form.get("username"),
         password: form.get("password"),
       };
-      const sessionDays = Number.parseInt(form.get("session_days"), 10);
-      if (Number.isFinite(sessionDays)) {
-        payload.session_days = sessionDays;
+      const shouldRemember = rememberCheck
+        ? rememberCheck.checked
+        : form.get("remember_device") === "1";
+      if (shouldRemember) {
+        const selected = loginForm.querySelector('input[name="session_days"]:checked');
+        const sessionDays = Number.parseInt(selected ? selected.value : "", 10);
+        if (Number.isFinite(sessionDays)) {
+          payload.session_days = sessionDays;
+        }
       }
       try {
         await fetchJSON("/auth/login", {

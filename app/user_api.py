@@ -995,7 +995,11 @@ def user_avatar_update():
         return _json_error("请选择头像文件")
     ext = Path(file.filename).suffix.lower()
     if ext not in AVATAR_ALLOWED_EXTS:
-        return _json_error("头像仅支持 png/jpg/webp")
+        mime_ext = _allowed_extension_from_mime(getattr(file, "mimetype", "") or "")
+        if mime_ext in AVATAR_ALLOWED_EXTS:
+            ext = mime_ext
+        else:
+            return _json_error("头像仅支持 png/jpg/webp")
     tmp_name = uuid.uuid4().hex
     tmp_path = config.UPLOAD_TMP / "avatars" / f"{tmp_name}.part"
     try:

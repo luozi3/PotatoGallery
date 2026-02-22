@@ -438,6 +438,23 @@ def test_user_profile_update_and_stats(tmp_path):
     avatar_rel = avatar_url.replace("/raw/", "")
     assert (config.RAW_DIR / avatar_rel).exists()
 
+    img_path_noext = tmp_path / "avatar_noext"
+    make_image(img_path_noext, size=(240, 240))
+    with img_path_noext.open("rb") as f:
+        resp = client.post(
+            "/api/user/avatar",
+            data={"avatar": (f, "blob", "image/png")},
+            content_type="multipart/form-data",
+            headers=headers,
+            base_url=base_url,
+        )
+    assert resp.status_code == 200
+    avatar_url = resp.get_json()["avatar_url"]
+    assert avatar_url.startswith("/raw/avatars/")
+    avatar_rel = avatar_url.replace("/raw/", "")
+    assert avatar_rel.endswith(".png")
+    assert (config.RAW_DIR / avatar_rel).exists()
+
 
 def test_home_api_pagination_and_filters(tmp_path):
     seed_test_root(tmp_path)

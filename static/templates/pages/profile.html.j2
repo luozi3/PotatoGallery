@@ -100,23 +100,53 @@
                       <p class="muted">建议正方形。</p>
                     </div>
                     <div class="profile-avatar-editor">
-                      <div class="profile-cropper" data-avatar-cropper>
-                        <img src="{{ site.auth_avatar_url }}" alt="" data-avatar-preview>
-                      </div>
-                      <div class="profile-avatar-controls">
-                        <label class="btn ghost btn-mini profile-file-btn">
-                          选择图片
-                          <input class="profile-file-input" type="file" accept="image/*" data-avatar-input>
-                        </label>
-                        <label class="profile-range">
-                          <span>缩放</span>
-                          <input type="range" min="1" max="1" step="0.01" value="1" data-avatar-zoom disabled>
-                        </label>
-                        <div class="admin-actions-row">
-                          <button class="btn primary" type="button" data-avatar-upload disabled>保存头像</button>
-                          <button class="btn ghost" type="button" data-avatar-reset disabled>还原</button>
+                      <div class="profile-avatar-row">
+                        <div class="profile-avatar-preview">
+                          <img src="{{ site.auth_avatar_url }}" alt="当前头像" width="72" height="72" data-avatar-current>
                         </div>
-                        <p class="hint" data-avatar-hint>选择图片后可拖动裁切。</p>
+                        <div class="profile-avatar-meta">
+                        <div class="profile-avatar-actions">
+                          <button class="btn ghost btn-mini" type="button" data-avatar-open>上传头像</button>
+                          <span class="muted">本地裁切确认后再上传。</span>
+                        </div>
+                          <p class="hint">支持正方形图片，上传后可裁切。</p>
+                          <input class="profile-file-input" type="file" accept="image/*" data-avatar-input>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="profile-avatar-modal" data-avatar-modal hidden>
+                      <div class="profile-avatar-modal-backdrop" data-avatar-close></div>
+                      <div class="profile-avatar-modal-panel" role="dialog" aria-modal="true" aria-labelledby="profile-avatar-title">
+                        <div class="profile-avatar-modal-head">
+                          <h3 id="profile-avatar-title">裁切头像</h3>
+                          <button class="btn ghost btn-mini" type="button" data-avatar-close>取消</button>
+                        </div>
+                          <div class="profile-avatar-modal-body">
+                            <div class="profile-cropper" data-avatar-cropper>
+                              <img src="{{ site.auth_avatar_url }}" alt="" data-avatar-preview>
+                              <div class="profile-crop-frame" data-avatar-frame>
+                                <span class="profile-crop-handle" data-avatar-handle="nw" aria-hidden="true"></span>
+                                <span class="profile-crop-handle" data-avatar-handle="ne" aria-hidden="true"></span>
+                                <span class="profile-crop-handle" data-avatar-handle="sw" aria-hidden="true"></span>
+                                <span class="profile-crop-handle" data-avatar-handle="se" aria-hidden="true"></span>
+                              </div>
+                            </div>
+                          <div class="profile-avatar-controls">
+                            <label class="profile-range">
+                              <span>裁切框大小</span>
+                              <input type="range" min="120" max="360" step="4" value="220" data-avatar-size>
+                            </label>
+                            <label class="profile-range">
+                              <span>缩放</span>
+                              <input type="range" min="1" max="3" step="0.01" value="1" data-avatar-zoom disabled>
+                            </label>
+                            <div class="admin-actions-row">
+                              <button class="btn primary" type="button" data-avatar-upload disabled>确定上传</button>
+                              <button class="btn ghost" type="button" data-avatar-reset disabled>重置</button>
+                            </div>
+                            <p class="hint" data-avatar-hint>拖动裁切框，拖拽四角可调整大小。</p>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </section>

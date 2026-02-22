@@ -30,14 +30,36 @@
               <input type="text" name="username" autocomplete="username" required>
               <label>密码</label>
               <input type="password" name="password" autocomplete="current-password" required>
-              <label for="session-days">记住我</label>
-              <select id="session-days" name="session_days">
-                <option value="1" {% if remember_days == 1 %}selected{% endif %}>1 天</option>
-                <option value="7" {% if remember_days == 7 %}selected{% endif %}>7 天</option>
-                <option value="30" {% if remember_days == 30 %}selected{% endif %}>30 天</option>
-                <option value="60" {% if remember_days == 60 %}selected{% endif %}>60 天</option>
-              </select>
+              <div class="auth-remember" data-auth-remember>
+                <label class="auth-remember-toggle">
+                  <input type="checkbox" name="remember_device" value="1" data-auth-remember-check>
+                  <span>记住本设备登录状态</span>
+                </label>
+                <div class="auth-remember-panel" data-auth-remember-panel>
+                  <p class="auth-remember-title">记忆时长</p>
+                  <div class="auth-remember-options">
+                    <label class="auth-option">
+                      <input type="radio" name="session_days" value="1" {% if remember_days == 1 %}checked{% endif %}>
+                      <span>1 天</span>
+                    </label>
+                    <label class="auth-option">
+                      <input type="radio" name="session_days" value="7" {% if remember_days == 7 %}checked{% endif %}>
+                      <span>7 天</span>
+                    </label>
+                    <label class="auth-option">
+                      <input type="radio" name="session_days" value="30" {% if remember_days == 30 %}checked{% endif %}>
+                      <span>30 天</span>
+                    </label>
+                    <label class="auth-option">
+                      <input type="radio" name="session_days" value="60" {% if remember_days == 60 %}checked{% endif %}>
+                      <span>60 天</span>
+                    </label>
+                  </div>
+                  <p class="auth-remember-note">勾选后将保持登录状态，过期自动退出。</p>
+                </div>
+              </div>
               <button class="btn primary" type="submit">登录</button>
+              <p class="muted auth-terms">登录即表示你同意<a href="/legal/#tos">用户协议</a>与<a href="/legal/#privacy">隐私政策</a>。</p>
               <p class="hint" data-auth-login-error></p>
             </form>
             {% if auth.registration_mode != "closed" %}

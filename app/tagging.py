@@ -41,6 +41,7 @@ def _decode_percent(text: str) -> str:
 
 def normalize_tag(tag: str) -> str:
     cleaned = _decode_percent(str(tag))
+    cleaned = cleaned.replace("_", " ")
     cleaned = " ".join(cleaned.strip().split())
     return cleaned.casefold()
 
@@ -48,6 +49,7 @@ def normalize_tag(tag: str) -> str:
 def safe_tag_slug(tag: str) -> str:
     slug = normalize_tag(tag or "")
     slug = slug.replace("/", "-").replace("\\", "-")
+    slug = slug.replace(" ", "_")
     slug = slug.strip()
     return slug or "tag"
 
@@ -156,7 +158,7 @@ def normalize_aliases(raw: object) -> List[str]:
     if raw is None:
         return []
     if isinstance(raw, str):
-        values = [v for v in re.split(r"[,\n\r\t|]+", raw) if v.strip()]
+        values = [v for v in re.split(r"[,，、;\n\r\t|；]+", raw) if v.strip()]
     elif isinstance(raw, list):
         values = [str(v) for v in raw if str(v).strip()]
     else:
@@ -182,7 +184,7 @@ def normalize_parents(raw: object) -> List[str]:
     if raw is None:
         return []
     if isinstance(raw, str):
-        values = [v for v in re.split(r"[,\n\r\t|]+", raw) if v.strip()]
+        values = [v for v in re.split(r"[,，、;\n\r\t|；]+", raw) if v.strip()]
     elif isinstance(raw, list):
         values = [str(v) for v in raw if str(v).strip()]
     else:

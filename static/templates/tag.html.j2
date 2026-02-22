@@ -31,8 +31,8 @@
   <link rel="stylesheet" href="/static/styles/gallery.css?v={{ static_version }}">
 </head>
 <body class="page-tag with-sidebar">
-  {% set orientation_labels = {portrait: 竖屏, landscape: 横屏, square: 方形, unknown: 未标} %}
-  {% set size_labels = {ultra: 超清, large: 高清, medium: 中等, compact: 轻量, unknown: 未标} %}
+  {% set orientation_labels = {"portrait": "竖屏", "landscape": "横屏", "square": "方形", "unknown": "未标"} %}
+  {% set size_labels = {"ultra": "超清", "large": "高清", "medium": "中等", "compact": "轻量", "unknown": "未标"} %}
   {% macro render_tag_tree(nodes, depth=0) -%}
     <ul class="{{ 'tag-tree' if depth == 0 else 'tag-branch' }}">
       {% for node in nodes %}
@@ -147,7 +147,7 @@
               <div class="tags">
                 <span class="tag accent">{{ orientation_labels.get(image.orientation, "未标") }}</span>
                 <span class="tag">{{ size_labels.get(image.size_bucket, "未标") }}</span>
-                {% for tag_item in image.tags[:3] %}
+                {% for tag_item in image.tags[:1] %}
                 <a class="tag ghost" href="/tags/{{ tag_slug_map.get(tag_item, tag_item)|urlencode }}/" style="{{ tag_style_map.get(tag_item, '') }}">#{{ tag_item }}</a>
                 {% endfor %}
               </div>

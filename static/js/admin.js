@@ -2509,7 +2509,7 @@
             </label>
             <label class="tag-field tag-field-wide">
               <span>父标签</span>
-              <textarea rows="2" placeholder="animal_ears | kemonomimi" data-tag-field="parents">${escapeHtml(
+              <textarea rows="2" placeholder="animal_ears | kemonomimi" data-tag-field="parents" data-tag-input>${escapeHtml(
                 (tag.parents || []).join(" | ")
               )}</textarea>
             </label>
@@ -2531,7 +2531,7 @@
             </label>
             <label class="tag-field tag-field-wide">
               <span>父标签</span>
-              <textarea rows="2" placeholder="animal_ears | kemonomimi" data-tag-field="parents">${escapeHtml(
+              <textarea rows="2" placeholder="animal_ears | kemonomimi" data-tag-field="parents" data-tag-input>${escapeHtml(
                 (tag.parents || []).join(" | ")
               )}</textarea>
             </label>
@@ -2571,6 +2571,7 @@
       `;
       bindTagRowActions(tagEditorTagPanel);
       bindTagTreeActions(tagEditorTagPanel);
+      initTagSuggest(tagEditorTagPanel);
       if (tagEditorTitle) {
         tagEditorTitle.textContent = tag.tag ? `编辑标签：${tag.tag}` : "新增标签";
       }
