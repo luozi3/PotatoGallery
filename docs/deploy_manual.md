@@ -1,4 +1,6 @@
-# 手动部署指南
+# 手动部署指南（不推荐）
+
+不推荐手动部署，优先使用自动部署（`docs/deploy_auto.md`）或 Release 一键安装（`install.sh`）。
 
 适用范围：手工部署在 Debian/Ubuntu 等常见 Linux 发行版，Nginx 负责静态分发与反代上传服务。
 

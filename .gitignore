@@ -3,6 +3,7 @@ storage/
 db/gallery.db
 *.db
 *.sqlite3
+dist/
 .upload_tmp/
 .upload_paused
 logs/

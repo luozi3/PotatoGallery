@@ -16,6 +16,8 @@ def test_readme_mentions_deploy_docs():
     readme = (root / "README.md").read_text(encoding="utf-8")
     assert "docs/deploy_manual.md" in readme
     assert "docs/deploy_auto.md" in readme
+    assert "https://luozi.de5.net/" in readme
+    assert readme.find("docs/deploy_auto.md") < readme.find("docs/deploy_manual.md")
 
 
 def test_auto_deploy_doc_mentions_scripts():
@@ -24,3 +26,9 @@ def test_auto_deploy_doc_mentions_scripts():
     assert "bin/build_release.sh" in text
     assert "bin/deploy_auto.sh" in text
     assert "./install.sh" in text
+
+
+def test_manual_deploy_marked_not_recommended():
+    root = Path(__file__).resolve().parents[1]
+    text = (root / "docs" / "deploy_manual.md").read_text(encoding="utf-8")
+    assert "不推荐" in text

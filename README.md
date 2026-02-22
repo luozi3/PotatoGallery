@@ -5,6 +5,8 @@
 ![License](https://img.shields.io/badge/License-MIT-blue?style=flat-square)
 ![Memory](https://img.shields.io/badge/RAM-0.5G_Required-green?style=flat-square)
 
+**体验地址： https://luozi.de5.net/**
+
 **PotatoGallery** 是一款专为 0.5G RAM 甚至更低配环境设计的画廊系统。它拒绝在访问时进行昂贵的动态计算，通过“静态发布”与“原子切换”技术，让廉价 VPS 也能拥有丝滑、稳定且防弹的 Pixiv 级体验。
 <img 
   width="1847" 
@@ -149,12 +151,12 @@ However, the project code is fully functional and operational, and community con
 - 建议将 `storage` 子目录保持在同一分区，以确保 `os.replace` 的原子移动语义。
 - 若拆分到不同分区，系统会告警并自动降级为“复制 + 替换 + 删除源”，性能与原子性会下降。
 
-## 🚀 部署（手动）
+## 🚀 部署
 本项目默认无需前端构建，站点由 Worker 生成完整静态页。
 
 **推荐阅读：**
-- 手动部署指南：`docs/deploy_manual.md`
-- 自动部署：`docs/deploy_auto.md`
+- 自动部署（推荐）：`docs/deploy_auto.md`
+- 手动部署（不推荐）：`docs/deploy_manual.md`
 - Release 一键部署：下载 Release 包后执行 `sudo ./install.sh`
 
 > 需要快速启动可直接参考 `docs/deploy_manual.md` 的最小步骤与 Nginx/systemd 示例。
