@@ -1,0 +1,4 @@
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+__CRON_DAILY__ __CRON_DAILY_USER__ __GALLERY_ROOT__/bin/cron_daily.sh >> __GALLERY_ROOT__/storage/logs/cron_daily.log 2>&1

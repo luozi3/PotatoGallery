@@ -36,7 +36,7 @@
 **你好！我目前因个人时间有限，无法继续积极开发新功能。
 但项目代码完整可用，且非常欢迎社区贡献！**
 **Hello! Due to limited personal time, I am currently unable to actively develop new features.
-However, the project code is fully functional and operational, and community contributions are most welcom**
+However, the project code is fully functional and operational, and community contributions are most welcome!**
 
 
 ---
@@ -52,7 +52,7 @@ However, the project code is fully functional and operational, and community con
 ### 🌈 现代交互
 * **丝滑布局**：响应式瀑布流，支持方向/清晰度/分区筛选。
 * **自适应卡片**：严格遵循图片宽高比，无布局偏移（Anti-CLS）。
-* **沉浸式详情**：主色提取、EXIF 信息展示、原图下载、SHA256 校验。
+* **沉浸式详情**：主色提取、分辨率/体积信息、原图下载、SHA256 校验。
 * **个性化**：主题切换、Live2D 看板娘支持。
 
 ### 🏷️ 深度标签 (Danbooru-like)
@@ -115,7 +115,7 @@ However, the project code is fully functional and operational, and community con
 ├── docs/                       # 运维与恢复文档
 │   └── backup_restore.md        # 备份/恢复演练说明
 ├── frontend/                   # 前端构建源码（可选构建）
-│   └── home/                   # Vue3 首页（Vite）
+│   └── home/                   # Vue3 首页（可选实验，默认发布不依赖构建）
 ├── static/                     # 静态资源与模板
 │   ├── templates/              # Jinja 模板（含 pages 扩展）
 │   ├── styles/                 # 样式表
@@ -149,12 +149,22 @@ However, the project code is fully functional and operational, and community con
 - 建议将 `storage` 子目录保持在同一分区，以确保 `os.replace` 的原子移动语义。
 - 若拆分到不同分区，系统会告警并自动降级为“复制 + 替换 + 删除源”，性能与原子性会下降。
 
+## 🚀 部署（手动）
+本项目默认无需前端构建，站点由 Worker 生成完整静态页。
+
+**推荐阅读：**
+- 手动部署指南：`docs/deploy_manual.md`
+- 自动部署：`docs/deploy_auto.md`
+- Release 一键部署：下载 Release 包后执行 `sudo ./install.sh`
+
+> 需要快速启动可直接参考 `docs/deploy_manual.md` 的最小步骤与 Nginx/systemd 示例。
+
 ## ⚙️ 配置与自定义
 
 - 站点信息与 SEO：`static/data/site.json`（默认值）+ `static/data/site.local.json`（本地覆盖，不提交）。
   - `site_name`/`site_description`/`site_url` 控制 SEO 标题、描述、OG。
   - `seo.title_separator`/`seo.twitter_card`/`seo.default_og_image` 可自定义标题分隔符、Twitter 卡片、OG 兜底图。
 - 标签/分区：`static/data/tags.json`、`static/data/collections.json` 可自定义标签名、类型、别名、分区顺序。
-- 上传安全限制：`config/upload.json`（参考 `config/upload.json.example`）可调整上传大小、像素上限、允许类型与开关策略（默认开启，私站可按需关闭）。
+- 上传安全限制：`config/upload.json`（参考 `config/upload.json.example`）或 `config/upload.local.json` 可调整上传大小、像素上限、允许类型与开关策略（默认开启，私站可按需关闭）。
 - 备份任务：维护任务优先使用 `rsync` 做 raw/www 增量镜像备份（已安装）。
-- 认证与注册：`config/auth.json` 控制开放/邀请/私有注册、密码策略。
+- 认证与注册：`config/auth.json` 控制开放/邀请/私有注册、密码策略；本机覆盖可用 `storage/config/auth.local.json`。

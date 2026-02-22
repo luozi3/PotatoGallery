@@ -1,0 +1,4 @@
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+__CRON_STATS__ __CRON_STATS_USER__ __GALLERY_ROOT__/venv/bin/python __GALLERY_ROOT__/bin/collect_request_stats.py >> __GALLERY_ROOT__/storage/logs/cron_requests.log 2>&1

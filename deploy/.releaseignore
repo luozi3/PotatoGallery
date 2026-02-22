@@ -1,0 +1,44 @@
+# VCS / cache
+.git/
+.pytest_cache/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual env / build artifacts
+venv/
+*.egg-info/
+dist/
+
+# Runtime data
+storage/
+db/gallery.db
+*.db
+*.sqlite3
+
+# Local configs (do not package)
+*.local.json
+static/data/site.local.json
+config/upload.json
+config/upload.local.json
+storage/config/auth.local.json
+
+# Logs / tmp
+*.log
+*.tmp
+*.swp
+*.bak
+.upload_tmp/
+.upload_paused
+logs/
+
+# Potentially copyrighted assets
+static/images/*.jpg
+static/images/*.jpeg
+static/images/*.png
+static/images/*.webp
+static/images/*.gif
+static/images/*.svg
+static/images/*.avif
+static/live2d/

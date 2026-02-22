@@ -1,0 +1,16 @@
+[Unit]
+Description=PotatoGallery Upload Service
+After=network.target
+
+[Service]
+User=__GALLERY_USER__
+Group=__GALLERY_GROUP__
+WorkingDirectory=__GALLERY_ROOT__
+EnvironmentFile=/etc/gallery/gallery_root.env
+Environment=PYTHONPATH=__GALLERY_ROOT__
+ExecStart=__GALLERY_ROOT__/venv/bin/python -m app.upload_service
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
