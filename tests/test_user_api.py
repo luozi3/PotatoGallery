@@ -1,3 +1,4 @@
+from conftest import TEST_PASSWORD
 import json
 from uuid import uuid4
 
@@ -42,12 +43,12 @@ def test_user_upload_and_permissions(tmp_path):
     }
     (data_dir / "tags.json").write_text(json.dumps(tags_cfg, ensure_ascii=False), encoding="utf-8")
 
-    auth.create_user("alice", "secret123", groups=["user"])
-    auth.create_user("bob", "secret123", groups=["user"])
+    auth.create_user("alice", TEST_PASSWORD, groups=["user"])
+    auth.create_user("bob", TEST_PASSWORD, groups=["user"])
 
     app = upload_service.create_app()
     client = app.test_client()
-    resp = _login(client, "alice", "secret123")
+    resp = _login(client, "alice", TEST_PASSWORD)
     assert resp.status_code == 200
 
     img_path = tmp_path / "input.png"
@@ -91,7 +92,7 @@ def test_user_upload_and_permissions(tmp_path):
     assert row["description"] == "说明"
     assert json.loads(row["tags_json"]) == ["猫咪", "天空"]
 
-    resp = _login(client, "bob", "secret123")
+    resp = _login(client, "bob", TEST_PASSWORD)
     assert resp.status_code == 200
     resp = client.post(
         f"/api/images/{uuid}/update",
@@ -101,7 +102,7 @@ def test_user_upload_and_permissions(tmp_path):
     )
     assert resp.status_code == 403
 
-    resp = _login(client, "alice", "secret123")
+    resp = _login(client, "alice", TEST_PASSWORD)
     assert resp.status_code == 200
     resp = client.post(
         f"/api/images/{uuid}/update",
@@ -117,10 +118,10 @@ def test_user_upload_rejects_unregistered_tag(tmp_path):
     modules = setup_env(tmp_path)
     auth = modules["app.auth"]
     upload_service = modules["app.upload_service"]
-    auth.create_user("alice", "secret123", groups=["user"])
+    auth.create_user("alice", TEST_PASSWORD, groups=["user"])
     app = upload_service.create_app()
     client = app.test_client()
-    resp = _login(client, "alice", "secret123")
+    resp = _login(client, "alice", TEST_PASSWORD)
     assert resp.status_code == 200
 
     img_path = tmp_path / "input.png"
@@ -155,12 +156,12 @@ def test_admin_cookie_allows_user_api_edit(tmp_path):
     tags_cfg = {"tags": [{"tag": "猫咪", "slug": "cat"}]}
     (data_dir / "tags.json").write_text(json.dumps(tags_cfg, ensure_ascii=False), encoding="utf-8")
 
-    auth.create_user("admin", "secret123", groups=["admin"])
-    auth.create_user("alice", "secret123", groups=["user"])
+    auth.create_user("admin", TEST_PASSWORD, groups=["admin"])
+    auth.create_user("alice", TEST_PASSWORD, groups=["user"])
 
     app = upload_service.create_app()
     user_client = app.test_client()
-    resp = _login(user_client, "alice", "secret123")
+    resp = _login(user_client, "alice", TEST_PASSWORD)
     assert resp.status_code == 200
 
     img_path = tmp_path / "input.png"
@@ -187,7 +188,7 @@ def test_admin_cookie_allows_user_api_edit(tmp_path):
     assert worker.process_file(raw_path)
 
     admin_client = app.test_client()
-    resp = _admin_login(admin_client, "admin", "secret123")
+    resp = _admin_login(admin_client, "admin", TEST_PASSWORD)
     assert resp.status_code == 200
 
     headers = {"X-Forwarded-Proto": "https"}
@@ -220,10 +221,10 @@ def test_user_upload_status_progress(tmp_path):
     tags_cfg = {"tags": [{"tag": "猫咪", "slug": "cat"}]}
     (data_dir / "tags.json").write_text(json.dumps(tags_cfg, ensure_ascii=False), encoding="utf-8")
 
-    auth.create_user("alice", "secret123", groups=["user"])
+    auth.create_user("alice", TEST_PASSWORD, groups=["user"])
     app = upload_service.create_app()
     client = app.test_client()
-    resp = _login(client, "alice", "secret123")
+    resp = _login(client, "alice", TEST_PASSWORD)
     assert resp.status_code == 200
 
     img_path = tmp_path / "input.png"
@@ -275,8 +276,8 @@ def test_my_images_pagination_and_filters(tmp_path):
     db = modules["app.db"]
     upload_service = modules["app.upload_service"]
 
-    auth.create_user("alice", "secret123", groups=["user"])
-    auth.create_user("bob", "secret123", groups=["user"])
+    auth.create_user("alice", TEST_PASSWORD, groups=["user"])
+    auth.create_user("bob", TEST_PASSWORD, groups=["user"])
     db.ensure_schema()
     with db.connect() as conn:
         alice_id = conn.execute(
@@ -324,7 +325,7 @@ def test_my_images_pagination_and_filters(tmp_path):
 
     app = upload_service.create_app()
     client = app.test_client()
-    resp = _login(client, "alice", "secret123")
+    resp = _login(client, "alice", TEST_PASSWORD)
     assert resp.status_code == 200
 
     headers = {"X-Forwarded-Proto": "https"}
@@ -364,12 +365,12 @@ def test_user_profile_update_and_stats(tmp_path):
     upload_service = modules["app.upload_service"]
     config = modules["app.config"]
 
-    alice = auth.create_user("alice", "secret123", groups=["user"])
-    bob = auth.create_user("bob", "secret123", groups=["user"])
+    alice = auth.create_user("alice", TEST_PASSWORD, groups=["user"])
+    bob = auth.create_user("bob", TEST_PASSWORD, groups=["user"])
 
     app = upload_service.create_app()
     client = app.test_client()
-    resp = _login(client, "alice", "secret123")
+    resp = _login(client, "alice", TEST_PASSWORD)
     assert resp.status_code == 200
 
     uuid_value = "a" * 32
@@ -597,10 +598,10 @@ def test_user_favorites_flow(tmp_path):
     storage = modules["app.storage"]
 
     storage.ensure_dirs()
-    auth.create_user("alice", "secret123", groups=["user"])
+    auth.create_user("alice", TEST_PASSWORD, groups=["user"])
     app = upload_service.create_app()
     client = app.test_client()
-    resp = _login(client, "alice", "secret123")
+    resp = _login(client, "alice", TEST_PASSWORD)
     assert resp.status_code == 200
 
     uid = "f" * 32
@@ -663,10 +664,10 @@ def test_user_gallery_flow(tmp_path):
     storage = modules["app.storage"]
 
     storage.ensure_dirs()
-    auth.create_user("alice", "secret123", groups=["user"])
+    auth.create_user("alice", TEST_PASSWORD, groups=["user"])
     app = upload_service.create_app()
     client = app.test_client()
-    resp = _login(client, "alice", "secret123")
+    resp = _login(client, "alice", TEST_PASSWORD)
     assert resp.status_code == 200
 
     uid = "c" * 32

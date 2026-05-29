@@ -10,6 +10,7 @@ from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from . import auth
 from . import config
 from . import db
+from .rate_limit import auth_login_limiter
 
 bp = Blueprint("auth", __name__)
 
@@ -219,6 +220,10 @@ def login():
     https_error = _require_https()
     if https_error:
         return https_error
+    # 速率限制检查
+    rate_error = auth_login_limiter.check_and_block()
+    if rate_error:
+        return rate_error
     payload = request.get_json(silent=True) or {}
     username = str(payload.get("username") or "").strip()
     password = str(payload.get("password") or "")
@@ -230,7 +235,9 @@ def login():
         return _json_error(err)
     user = auth.authenticate(username, password)
     if not user:
+        auth_login_limiter.record_failure()
         return _json_error("账号或密码错误", 401)
+    auth_login_limiter.record_success()
     groups = auth.get_user_groups(user.id)
     max_age = _resolve_session_max_age(payload)
     now = int(time.time())

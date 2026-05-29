@@ -1,3 +1,4 @@
+from conftest import TEST_PASSWORD
 import json
 import os
 
@@ -15,13 +16,13 @@ def test_admin_can_toggle_registration_mode(tmp_path):
     config = modules["app.config"]
     upload_service = modules["app.upload_service"]
 
-    auth.create_user("boss", "secret123", groups=[config.ADMIN_GROUP])
+    auth.create_user("boss", TEST_PASSWORD, groups=[config.ADMIN_GROUP])
     app = upload_service.create_app()
     client = app.test_client()
 
     resp = client.post(
         "/upload/admin/login",
-        json={"username": "boss", "password": "secret123"},
+        json={"username": "boss", "password": TEST_PASSWORD},
     )
     assert resp.status_code == 200
 
@@ -54,13 +55,13 @@ def test_admin_auth_config_fallback_write(tmp_path):
 
     os.chmod(cfg_dir, 0o555)
     try:
-        auth.create_user("boss", "secret123", groups=[config.ADMIN_GROUP])
+        auth.create_user("boss", TEST_PASSWORD, groups=[config.ADMIN_GROUP])
         app = upload_service.create_app()
         client = app.test_client()
 
         resp = client.post(
             "/upload/admin/login",
-            json={"username": "boss", "password": "secret123"},
+            json={"username": "boss", "password": TEST_PASSWORD},
         )
         assert resp.status_code == 200
 

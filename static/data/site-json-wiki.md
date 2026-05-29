@@ -114,7 +114,7 @@
 
 ```json
 {
-  "site_url": "https://luozi.de5.net",
+  "site_url": "https://example.com",
   "site_name": "luozi_sama 的展馆",
   "seo": {
     "title_separator": "｜",

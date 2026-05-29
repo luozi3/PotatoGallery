@@ -1,3 +1,4 @@
+from conftest import TEST_PASSWORD
 import json
 import time
 from uuid import uuid4
@@ -20,7 +21,7 @@ def test_admin_update_and_delete(tmp_path):
     data_dir.mkdir(parents=True, exist_ok=True)
     tags_cfg = {"tags": [{"tag": "测试", "slug": "test"}]}
     (data_dir / "tags.json").write_text(json.dumps(tags_cfg, ensure_ascii=False), encoding="utf-8")
-    auth.create_user("admin", "secret", groups=[config.ADMIN_GROUP])
+    auth.create_user("admin", TEST_PASSWORD, groups=[config.ADMIN_GROUP])
     uid = "a" * 32
     raw_path = config.RAW_DIR / f"{uid}.png"
     make_image(raw_path)
@@ -30,7 +31,7 @@ def test_admin_update_and_delete(tmp_path):
     client = app.test_client()
     resp = client.post(
         "/upload/admin/login",
-        json={"username": "admin", "password": "secret"},
+        json={"username": "admin", "password": TEST_PASSWORD},
     )
     assert resp.status_code == 200
 
@@ -81,7 +82,7 @@ def test_admin_purge_trash_page_and_all(tmp_path):
     upload_service = modules["app.upload_service"]
 
     storage.ensure_dirs()
-    auth.create_user("admin", "secret", groups=[config.ADMIN_GROUP])
+    auth.create_user("admin", TEST_PASSWORD, groups=[config.ADMIN_GROUP])
     uid1 = "a" * 32
     uid2 = "b" * 32
     raw_path1 = config.RAW_DIR / f"{uid1}.png"
@@ -93,7 +94,7 @@ def test_admin_purge_trash_page_and_all(tmp_path):
 
     app = upload_service.create_app()
     client = app.test_client()
-    resp = client.post("/upload/admin/login", json={"username": "admin", "password": "secret"})
+    resp = client.post("/upload/admin/login", json={"username": "admin", "password": TEST_PASSWORD})
     assert resp.status_code == 200
 
     resp = client.post(f"/upload/admin/images/{uid1}/delete")
@@ -134,12 +135,12 @@ def test_admin_login_requires_group(tmp_path):
     auth = modules["app.auth"]
     upload_service = modules["app.upload_service"]
 
-    auth.create_user("viewer", "secret", groups=["viewer"])
+    auth.create_user("viewer", TEST_PASSWORD, groups=["viewer"])
     app = upload_service.create_app()
     client = app.test_client()
     resp = client.post(
         "/upload/admin/login",
-        json={"username": "viewer", "password": "secret"},
+        json={"username": "viewer", "password": TEST_PASSWORD},
     )
     assert resp.status_code == 401
 
@@ -151,12 +152,12 @@ def test_admin_invite_crud(tmp_path):
     auth = modules["app.auth"]
     upload_service = modules["app.upload_service"]
 
-    auth.create_user("boss", "secret", groups=[config.ADMIN_GROUP])
+    auth.create_user("boss", TEST_PASSWORD, groups=[config.ADMIN_GROUP])
     app = upload_service.create_app()
     client = app.test_client()
     resp = client.post(
         "/upload/admin/login",
-        json={"username": "boss", "password": "secret"},
+        json={"username": "boss", "password": TEST_PASSWORD},
     )
     assert resp.status_code == 200
 
@@ -214,12 +215,12 @@ def test_admin_upload_status_progress(tmp_path):
     data_dir.mkdir(parents=True, exist_ok=True)
     tags_cfg = {"tags": [{"tag": "测试", "slug": "test"}]}
     (data_dir / "tags.json").write_text(json.dumps(tags_cfg, ensure_ascii=False), encoding="utf-8")
-    auth.create_user("admin", "secret", groups=[config.ADMIN_GROUP])
+    auth.create_user("admin", TEST_PASSWORD, groups=[config.ADMIN_GROUP])
     app = upload_service.create_app()
     client = app.test_client()
     resp = client.post(
         "/upload/admin/login",
-        json={"username": "admin", "password": "secret"},
+        json={"username": "admin", "password": TEST_PASSWORD},
     )
     assert resp.status_code == 200
 
@@ -271,12 +272,12 @@ def test_admin_stress_generate_and_cleanup(tmp_path):
     upload_service = modules["app.upload_service"]
 
     storage.ensure_dirs()
-    auth.create_user("admin", "secret", groups=[config.ADMIN_GROUP])
+    auth.create_user("admin", TEST_PASSWORD, groups=[config.ADMIN_GROUP])
     app = upload_service.create_app()
     client = app.test_client()
     resp = client.post(
         "/upload/admin/login",
-        json={"username": "admin", "password": "secret"},
+        json={"username": "admin", "password": TEST_PASSWORD},
     )
     assert resp.status_code == 200
 
@@ -383,12 +384,12 @@ def test_admin_tag_meta_crud(tmp_path):
     auth = modules["app.auth"]
     upload_service = modules["app.upload_service"]
 
-    auth.create_user("admin", "secret", groups=[config.ADMIN_GROUP])
+    auth.create_user("admin", TEST_PASSWORD, groups=[config.ADMIN_GROUP])
     app = upload_service.create_app()
     client = app.test_client()
     resp = client.post(
         "/upload/admin/login",
-        json={"username": "admin", "password": "secret"},
+        json={"username": "admin", "password": TEST_PASSWORD},
     )
     assert resp.status_code == 200
 
@@ -426,12 +427,12 @@ def test_admin_tag_types_crud(tmp_path):
     auth = modules["app.auth"]
     upload_service = modules["app.upload_service"]
 
-    auth.create_user("admin", "secret", groups=[config.ADMIN_GROUP])
+    auth.create_user("admin", TEST_PASSWORD, groups=[config.ADMIN_GROUP])
     app = upload_service.create_app()
     client = app.test_client()
     resp = client.post(
         "/upload/admin/login",
-        json={"username": "admin", "password": "secret"},
+        json={"username": "admin", "password": TEST_PASSWORD},
     )
     assert resp.status_code == 200
 
@@ -471,12 +472,12 @@ def test_admin_wiki_markdown_crud(tmp_path):
     auth = modules["app.auth"]
     upload_service = modules["app.upload_service"]
 
-    auth.create_user("admin", "secret", groups=[config.ADMIN_GROUP])
+    auth.create_user("admin", TEST_PASSWORD, groups=[config.ADMIN_GROUP])
     app = upload_service.create_app()
     client = app.test_client()
     resp = client.post(
         "/upload/admin/login",
-        json={"username": "admin", "password": "secret"},
+        json={"username": "admin", "password": TEST_PASSWORD},
     )
     assert resp.status_code == 200
 

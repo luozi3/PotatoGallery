@@ -1,3 +1,4 @@
+from conftest import TEST_PASSWORD
 import json
 
 from test_pipeline import seed_test_root, setup_env
@@ -48,10 +49,10 @@ def test_dmca_submit_and_admin_review(tmp_path):
     assert row["full_name"] == payload["full_name"]
     assert row["work_url"].endswith("/images/1/")
 
-    auth.create_user("admin", "secret", groups=[config.ADMIN_GROUP])
+    auth.create_user("admin", TEST_PASSWORD, groups=[config.ADMIN_GROUP])
     resp = client.post(
         "/upload/admin/login",
-        json={"username": "admin", "password": "secret"},
+        json={"username": "admin", "password": TEST_PASSWORD},
     )
     assert resp.status_code == 200
 

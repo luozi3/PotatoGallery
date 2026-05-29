@@ -1,3 +1,4 @@
+from conftest import TEST_PASSWORD
 import importlib
 import json
 import os
@@ -88,8 +89,8 @@ def test_upload_and_raw_write(tmp_path):
     storage.ensure_dirs()
     app = upload_service.create_app()
     client = app.test_client()
-    auth.create_user("alice", "secret123", groups=["user"])
-    resp = login_user(client, "alice", "secret123")
+    auth.create_user("alice", TEST_PASSWORD, groups=["user"])
+    resp = login_user(client, "alice", TEST_PASSWORD)
     assert resp.status_code == 200
 
     img_path = tmp_path / "input.png"
@@ -180,8 +181,8 @@ def test_upload_paused_flag(tmp_path):
     config.UPLOAD_PAUSE_FLAG.write_text("paused", encoding="utf-8")
     app = upload_service.create_app()
     client = app.test_client()
-    auth.create_user("alice", "secret123", groups=["user"])
-    resp = login_user(client, "alice", "secret123")
+    auth.create_user("alice", TEST_PASSWORD, groups=["user"])
+    resp = login_user(client, "alice", TEST_PASSWORD)
     assert resp.status_code == 200
 
     img_path = tmp_path / "paused.png"
@@ -722,8 +723,8 @@ def test_upload_rejects_bad_content_type(tmp_path):
     storage.ensure_dirs()
     app = upload_service.create_app()
     client = app.test_client()
-    auth.create_user("alice", "secret123", groups=["user"])
-    resp = login_user(client, "alice", "secret123")
+    auth.create_user("alice", TEST_PASSWORD, groups=["user"])
+    resp = login_user(client, "alice", TEST_PASSWORD)
     assert resp.status_code == 200
 
     img_path = tmp_path / "bad.png"

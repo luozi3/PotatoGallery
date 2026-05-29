@@ -20,6 +20,7 @@ from . import db
 from . import static_site
 from . import tagging
 from . import storage
+from .rate_limit import admin_login_limiter
 
 bp = Blueprint("admin", __name__)
 
@@ -574,15 +575,21 @@ def _normalize_registration_mode(mode: str) -> Optional[str]:
 
 @bp.post("/upload/admin/login")
 def admin_login():
+    # 速率限制检查
+    rate_error = admin_login_limiter.check_and_block()
+    if rate_error:
+        return rate_error
     data = request.get_json(silent=True) or {}
     username = str(data.get("username") or "").strip()
     password = str(data.get("password") or "")
     auth.bootstrap_admin_if_needed()
     user = auth.authenticate(username, password, required_group=config.ADMIN_GROUP)
     if not user:
+        admin_login_limiter.record_failure()
         if not auth.has_any_users():
             return _json_error("未配置管理员账号，请先创建用户", 503)
         return _json_error("账号或密码错误", 401)
+    admin_login_limiter.record_success()
     serializer = _serializer()
     token = serializer.dumps({"u": user.username})
     resp = jsonify({"ok": True, "user": user.username})

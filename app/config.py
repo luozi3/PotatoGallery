@@ -1,5 +1,6 @@
 import json
 import os
+import secrets as _secrets
 from pathlib import Path
 
 # 路径配置（支持 GALLERY_ROOT 覆盖以便测试）
@@ -68,7 +69,7 @@ ADMIN_BOOTSTRAP_USER = os.environ.get("GALLERY_ADMIN_BOOTSTRAP_USER") or os.envi
 ADMIN_BOOTSTRAP_PASSWORD = os.environ.get("GALLERY_ADMIN_BOOTSTRAP_PASSWORD") or os.environ.get(
     "GALLERY_ADMIN_PASSWORD"
 )
-ADMIN_SECRET = os.environ.get("GALLERY_ADMIN_SECRET", "gallery-admin-secret")
+ADMIN_SECRET = os.environ.get("GALLERY_ADMIN_SECRET") or _secrets.token_hex(32)
 ADMIN_SESSION_MAX_AGE = int(os.environ.get("GALLERY_ADMIN_SESSION_MAX_AGE", "604800"))
 ADMIN_COOKIE_NAME = os.environ.get("GALLERY_ADMIN_COOKIE_NAME", "gallery_admin")
 ADMIN_COOKIE_SECURE = os.environ.get("GALLERY_ADMIN_COOKIE_SECURE", "0") == "1"
@@ -76,7 +77,7 @@ ADMIN_COOKIE_SECURE = os.environ.get("GALLERY_ADMIN_COOKIE_SECURE", "0") == "1"
 
 def _load_auth_config() -> dict:
     defaults = {
-        "registration_mode": "open",
+        "registration_mode": "closed",
         "default_groups": ["user"],
         "require_https": True,
         "session_days": 15,
