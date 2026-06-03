@@ -69,7 +69,32 @@ ADMIN_BOOTSTRAP_USER = os.environ.get("GALLERY_ADMIN_BOOTSTRAP_USER") or os.envi
 ADMIN_BOOTSTRAP_PASSWORD = os.environ.get("GALLERY_ADMIN_BOOTSTRAP_PASSWORD") or os.environ.get(
     "GALLERY_ADMIN_PASSWORD"
 )
-ADMIN_SECRET = os.environ.get("GALLERY_ADMIN_SECRET") or _secrets.token_hex(32)
+
+_ADMIN_SECRET_FILE = ROOT / "config" / ".admin_secret"
+
+
+def _load_or_generate_admin_secret() -> str:
+    """从文件加载 ADMIN_SECRET，首次启动时生成并持久化，避免重启后 session 失效。"""
+    env_val = os.environ.get("GALLERY_ADMIN_SECRET")
+    if env_val:
+        return env_val
+    try:
+        if _ADMIN_SECRET_FILE.exists():
+            secret = _ADMIN_SECRET_FILE.read_text(encoding="utf-8").strip()
+            if len(secret) >= 32:
+                return secret
+    except OSError:
+        pass
+    secret = _secrets.token_hex(32)
+    try:
+        _ADMIN_SECRET_FILE.parent.mkdir(parents=True, exist_ok=True)
+        _ADMIN_SECRET_FILE.write_text(secret, encoding="utf-8")
+    except OSError:
+        pass
+    return secret
+
+
+ADMIN_SECRET = _load_or_generate_admin_secret()
 ADMIN_SESSION_MAX_AGE = int(os.environ.get("GALLERY_ADMIN_SESSION_MAX_AGE", "604800"))
 ADMIN_COOKIE_NAME = os.environ.get("GALLERY_ADMIN_COOKIE_NAME", "gallery_admin")
 ADMIN_COOKIE_SECURE = os.environ.get("GALLERY_ADMIN_COOKIE_SECURE", "0") == "1"
