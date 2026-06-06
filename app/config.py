@@ -1,7 +1,10 @@
 import json
+import logging
 import os
 import secrets as _secrets
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 # 路径配置（支持 GALLERY_ROOT 覆盖以便测试）
 ROOT = Path(os.environ.get("GALLERY_ROOT", "/opt/PotatoGallery"))
@@ -87,10 +90,12 @@ def _load_or_generate_admin_secret() -> str:
         pass
     secret = _secrets.token_hex(32)
     try:
-        _ADMIN_SECRET_FILE.parent.mkdir(parents=True, exist_ok=True)
-        _ADMIN_SECRET_FILE.write_text(secret, encoding="utf-8")
-    except OSError:
-        pass
+        _ADMIN_SECRET_FILE.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        fd = os.open(_ADMIN_SECRET_FILE, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(secret)
+    except OSError as exc:
+        logger.warning("failed to persist generated admin secret at %s: %s", _ADMIN_SECRET_FILE, exc)
     return secret
 
 

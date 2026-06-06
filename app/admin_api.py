@@ -20,7 +20,6 @@ from . import db
 from . import static_site
 from . import tagging
 from . import storage
-from .rate_limit import admin_login_limiter
 
 bp = Blueprint("admin", __name__)
 
@@ -154,8 +153,18 @@ def _serializer() -> URLSafeTimedSerializer:
     return URLSafeTimedSerializer(config.ADMIN_SECRET, salt="gallery-admin")
 
 
-def _json_error(message: str, status: int = 400):
-    resp = jsonify({"error": message})
+def _user_serializer() -> URLSafeTimedSerializer:
+    return URLSafeTimedSerializer(config.USER_SECRET, salt="gallery-user")
+
+
+def _json_error(message: str, status: int = 400, extra: Optional[dict] = None):
+    if message == "未授权" and status == 401 and request.environ.get("gallery_admin_auth_status") == 403:
+        message = "无管理员权限"
+        status = 403
+    payload = {"error": message}
+    if extra:
+        payload.update(extra)
+    resp = jsonify(payload)
     resp.status_code = status
     return resp
 
@@ -183,20 +192,38 @@ def _clear_admin_cookie(resp) -> None:
 
 
 def _require_admin() -> Optional[str]:
-    token = request.cookies.get(config.ADMIN_COOKIE_NAME, "")
+    request.environ["gallery_admin_auth_status"] = 401
+    token = request.cookies.get(config.USER_COOKIE_NAME, "")
     if not token:
         return None
-    serializer = _serializer()
+    serializer = _user_serializer()
     try:
-        data = serializer.loads(token, max_age=config.ADMIN_SESSION_MAX_AGE)
+        data = serializer.loads(token, max_age=max(config.USER_SESSION_MAX_AGE, 60 * 86400))
     except (BadSignature, SignatureExpired):
         return None
-    username = data.get("u")
-    if not username:
+    exp = data.get("exp")
+    if exp is not None:
+        try:
+            if int(time.time()) > int(exp):
+                return None
+        except (TypeError, ValueError):
+            return None
+    user_id = data.get("id")
+    if not user_id:
         return None
-    user = auth.get_user_in_group(username, config.ADMIN_GROUP)
-    if not user:
+    with db.connect() as conn:
+        auth.ensure_schema(conn)
+        row = conn.execute(
+            "SELECT id, username, is_active FROM auth_users WHERE id=?",
+            (user_id,),
+        ).fetchone()
+    if not row or not row["is_active"]:
         return None
+    user = auth.AuthUser(id=int(row["id"]), username=str(row["username"]), is_active=bool(row["is_active"]))
+    if config.ADMIN_GROUP not in auth.get_user_groups(user.id):
+        request.environ["gallery_admin_auth_status"] = 403
+        return None
+    request.environ["gallery_admin_auth_status"] = 200
     return user.username
 
 
@@ -575,26 +602,7 @@ def _normalize_registration_mode(mode: str) -> Optional[str]:
 
 @bp.post("/upload/admin/login")
 def admin_login():
-    # 速率限制检查
-    rate_error = admin_login_limiter.check_and_block()
-    if rate_error:
-        return rate_error
-    data = request.get_json(silent=True) or {}
-    username = str(data.get("username") or "").strip()
-    password = str(data.get("password") or "")
-    auth.bootstrap_admin_if_needed()
-    user = auth.authenticate(username, password, required_group=config.ADMIN_GROUP)
-    if not user:
-        admin_login_limiter.record_failure()
-        if not auth.has_any_users():
-            return _json_error("未配置管理员账号，请先创建用户", 503)
-        return _json_error("账号或密码错误", 401)
-    admin_login_limiter.record_success()
-    serializer = _serializer()
-    token = serializer.dumps({"u": user.username})
-    resp = jsonify({"ok": True, "user": user.username})
-    _set_admin_cookie(resp, token)
-    return resp
+    return _json_error("管理员登录已合并到用户登录", 410)
 
 
 @bp.post("/upload/admin/logout")

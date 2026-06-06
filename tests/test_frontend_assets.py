@@ -84,6 +84,19 @@ def test_auth_hint_css_hides_login_links():
     assert re.search(r"html\.auth-hint-logged-in\s*\[data-auth-register-link\]", css)
 
 
+def test_login_rate_limit_feedback_scripts_present():
+    auth_js = read_text("static/js/auth.js")
+    admin_js = read_text("static/js/admin.js")
+    assert "data.retry_after" in auth_js
+    assert "data.attempts_remaining" in auth_js
+    assert "还剩 ${err.attemptsRemaining} 次机会" in auth_js
+    assert "后可重试" in auth_js
+    assert "loginButton.disabled = true" in auth_js
+    assert "window.setInterval" in auth_js
+    assert "/upload/admin/login" not in admin_js
+    assert "data-admin-access-message" in read_text("static/templates/admin.html.j2")
+
+
 def test_avatar_menu_hover_has_fade_and_delay():
     css = read_text("static/styles/gallery.css")
     assert re.search(r"\.avatar-dropdown\s*\{[^}]*opacity:\s*0", css, re.S)

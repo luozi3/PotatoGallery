@@ -174,6 +174,43 @@ def test_login_sets_custom_session_days_cookie(tmp_path):
     assert any("Max-Age=2592000" in cookie for cookie in cookies)
 
 
+def test_login_rate_limit_reports_remaining_and_blocks(tmp_path):
+    seed_test_root(tmp_path)
+    modules = setup_env(tmp_path)
+    auth = modules["app.auth"]
+    upload_service = modules["app.upload_service"]
+
+    auth.create_user("user1", TEST_PASSWORD, groups=["user"])
+    app = upload_service.create_app()
+    client = app.test_client()
+
+    for index in range(5):
+        resp = client.post(
+            "/auth/login",
+            json={"username": "user1", "password": "wrong"},
+            headers={"X-Forwarded-Proto": "https", "X-Forwarded-For": "203.0.113.10"},
+            base_url="https://example.com",
+        )
+        assert resp.status_code == 401
+        data = resp.get_json()
+        assert data["max_attempts"] == 5
+        assert data["attempts_remaining"] == 4 - index
+        assert data["retry_after"] > 0
+        assert data["reset_at"] > 0
+
+    resp = client.post(
+        "/auth/login",
+        json={"username": "user1", "password": "wrong"},
+        headers={"X-Forwarded-Proto": "https", "X-Forwarded-For": "203.0.113.10"},
+        base_url="https://example.com",
+    )
+    assert resp.status_code == 429
+    data = resp.get_json()
+    assert data["attempts_remaining"] == 0
+    assert data["retry_after"] > 0
+    assert resp.headers["Retry-After"] == str(data["retry_after"])
+
+
 def test_register_does_not_auto_login(tmp_path):
     seed_test_root(tmp_path)
     _set_registration_mode(tmp_path, "open")

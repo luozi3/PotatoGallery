@@ -22,8 +22,11 @@ def _serializer() -> URLSafeTimedSerializer:
     return URLSafeTimedSerializer(config.USER_SECRET, salt="gallery-user")
 
 
-def _json_error(message: str, status: int = 400):
-    resp = jsonify({"error": message})
+def _json_error(message: str, status: int = 400, extra: Optional[dict] = None):
+    payload = {"error": message}
+    if extra:
+        payload.update(extra)
+    resp = jsonify(payload)
     resp.status_code = status
     return resp
 
@@ -229,14 +232,16 @@ def login():
     password = str(payload.get("password") or "")
     err = _validate_username(username)
     if err:
-        return _json_error(err)
+        info = auth_login_limiter.record_failure()
+        return _json_error(err, extra=info)
     err = _validate_password(password, check_length=False)
     if err:
-        return _json_error(err)
+        info = auth_login_limiter.record_failure()
+        return _json_error(err, extra=info)
     user = auth.authenticate(username, password)
     if not user:
-        auth_login_limiter.record_failure()
-        return _json_error("账号或密码错误", 401)
+        info = auth_login_limiter.record_failure()
+        return _json_error("账号或密码错误", 401, info)
     auth_login_limiter.record_success()
     groups = auth.get_user_groups(user.id)
     max_age = _resolve_session_max_age(payload)

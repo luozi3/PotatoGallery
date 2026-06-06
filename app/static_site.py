@@ -503,7 +503,7 @@ def _render_extra_pages(
             if target.exists() and not allow_existing:
                 raise ValueError(f"extra page output already exists: {target}")
             target_dir.mkdir(parents=True, exist_ok=True)
-            template_name = str(tpl_path.relative_to(TEMPLATE_DIR))
+            template_name = tpl_path.relative_to(TEMPLATE_DIR).as_posix()
             html = env.get_template(template_name).render(**context)
             _atomic_write_text(target, html)
             extra_urls.append(url_path)

@@ -1,8 +1,8 @@
 (function () {
   const loginSection = document.querySelector("[data-admin-login]");
   const panel = document.querySelector("[data-admin-panel]");
-  const loginForm = document.querySelector("[data-admin-login-form]");
-  const loginError = document.querySelector("[data-admin-login-error]");
+  const accessMessage = document.querySelector("[data-admin-access-message]");
+  const accessLoginLink = document.querySelector("[data-admin-access-login]");
   const logoutBtn = document.querySelector("[data-admin-logout]");
   const adminAvatarMenu = document.querySelector("[data-user-avatar]");
   const statusBar = document.querySelector("[data-admin-status-bar]");
@@ -10,17 +10,25 @@
   const statusFlags = document.querySelectorAll("[data-admin-status-flag]");
   const adminUserLabel = document.querySelector("[data-admin-user]");
 
-  function showLogin(message) {
+  function adminLoginUrl() {
+    const next = `${location.pathname}${location.search || ""}`;
+    return `/auth/login/?next=${encodeURIComponent(next)}`;
+  }
+
+  function showAccessDenied(message, showLoginLink) {
     if (panel) panel.hidden = true;
     if (loginSection) loginSection.hidden = false;
-    if (loginError) loginError.textContent = message || "";
+    if (accessMessage) accessMessage.textContent = message || "";
+    if (accessLoginLink) {
+      accessLoginLink.href = adminLoginUrl();
+      accessLoginLink.hidden = !showLoginLink;
+    }
     if (logoutBtn) logoutBtn.hidden = true;
   }
 
   function showPanel() {
     if (loginSection) loginSection.hidden = true;
     if (panel) panel.hidden = false;
-    if (loginError) loginError.textContent = "";
     if (logoutBtn) logoutBtn.hidden = false;
     if (adminAvatarMenu) adminAvatarMenu.hidden = false;
   }
@@ -30,7 +38,13 @@
     const data = await resp.json().catch(() => ({}));
     if (!resp.ok) {
       const message = data.error || "请求失败";
-      throw new Error(message);
+      const err = new Error(message);
+      err.status = resp.status;
+      err.retryAfter = Number.parseInt(data.retry_after || 0, 10);
+      err.attemptsRemaining = Number.parseInt(data.attempts_remaining, 10);
+      err.maxAttempts = Number.parseInt(data.max_attempts, 10);
+      err.resetAt = Number.parseInt(data.reset_at || 0, 10);
+      throw err;
     }
     return data;
   }
@@ -73,31 +87,13 @@
       showPanel();
       return true;
     } catch (err) {
-      showLogin(err.message);
+      if (err && err.status === 401) {
+        location.assign(adminLoginUrl());
+        return false;
+      }
+      showAccessDenied(err && err.message ? err.message : "无管理员权限", false);
       return false;
     }
-  }
-
-  if (loginForm) {
-    loginForm.addEventListener("submit", async (event) => {
-      event.preventDefault();
-      const form = new FormData(loginForm);
-      const payload = {
-        username: form.get("username"),
-        password: form.get("password"),
-      };
-      try {
-        await fetchJSON("/upload/admin/login", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-        await ensureAuth();
-        initAdmin();
-      } catch (err) {
-        showLogin(err.message);
-      }
-    });
   }
 
   if (logoutBtn) {

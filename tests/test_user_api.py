@@ -16,10 +16,10 @@ def _login(client, username: str, password: str):
 
 def _admin_login(client, username: str, password: str):
     return client.post(
-        "/upload/admin/login",
+        "/auth/login",
         json={"username": username, "password": password},
         headers={"X-Forwarded-Proto": "https"},
-        base_url="https://example.com",
+        base_url="http://localhost",
     )
 
 

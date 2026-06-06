@@ -30,9 +30,9 @@ def seed_test_root(tmp_root: Path):
     schema_src = PROJECT_ROOT / "db" / "schema.sql"
     schema_dst = tmp_root / "db" / "schema.sql"
     schema_dst.parent.mkdir(parents=True, exist_ok=True)
-    schema_dst.write_text(schema_src.read_text(), encoding="utf-8")
+    schema_dst.write_text(schema_src.read_text(encoding="utf-8"), encoding="utf-8")
     conn = sqlite3.connect(tmp_root / "db" / "gallery.db")
-    conn.executescript(schema_dst.read_text())
+    conn.executescript(schema_dst.read_text(encoding="utf-8"))
     conn.commit()
     conn.close()
 
@@ -41,6 +41,7 @@ def reload_modules():
     modules = {}
     for name in [
         "app.config",
+        "app.rate_limit",
         "app.auth",
         "app.auth_api",
         "app.user_api",
@@ -59,6 +60,7 @@ def reload_modules():
 
 def setup_env(tmp_path: Path):
     os.environ["GALLERY_ROOT"] = str(tmp_path)
+    os.environ["GALLERY_USER_COOKIE_SECURE"] = "0"
     modules = reload_modules()
     return modules
 
