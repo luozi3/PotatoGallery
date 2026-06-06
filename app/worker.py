@@ -26,6 +26,15 @@ def parse_uuid_from_name(path: Path) -> Optional[str]:
 THUMB_NAME_PATTERN = re.compile(r"^L(\d{8})A(\d{3})\.(?:jpg|webp)$")
 
 
+def _local_timezone():
+    if ZoneInfo:
+        try:
+            return ZoneInfo("Asia/Shanghai")
+        except Exception:
+            pass
+    return datetime.timezone(datetime.timedelta(hours=8))
+
+
 def next_thumb_filename(today: Optional[datetime.date] = None) -> str:
     """
     生成短路径缩略图名：L + 日期 + 序号（如 L20251220A001）。
@@ -379,7 +388,7 @@ def collect_status_metrics() -> dict:
     """
     汇总运行状态，写入静态探针。
     """
-    tz = ZoneInfo("Asia/Shanghai") if ZoneInfo else datetime.timezone(datetime.timedelta(hours=8))
+    tz = _local_timezone()
     disk = shutil.disk_usage(config.STORAGE)
     paused = config.UPLOAD_PAUSE_FLAG.exists()
     statuses: dict = {"total": 0, "processed": 0, "published": 0, "quarantined": 0}
@@ -405,7 +414,10 @@ def collect_status_metrics() -> dict:
 
     raw_files = len([p for p in config.RAW_DIR.glob("*") if p.is_file()])
     thumb_files = len([p for p in config.THUMB_DIR.glob("*") if p.is_file()])
-    load1, load5, load15 = os.getloadavg()
+    try:
+        load1, load5, load15 = os.getloadavg()
+    except (AttributeError, OSError):
+        load1, load5, load15 = 0.0, 0.0, 0.0
     cpu_count = os.cpu_count() or 1
 
     meminfo = {}

@@ -16,9 +16,18 @@ from . import config
 
 
 def fsync_path(path: Path) -> None:
-    fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
+    flags = os.O_RDONLY
+    if hasattr(os, "O_DIRECTORY"):
+        flags |= os.O_DIRECTORY
+    try:
+        fd = os.open(path, flags)
+    except OSError:
+        # Directory fsync is not supported on every platform, especially Windows.
+        return
     try:
         os.fsync(fd)
+    except OSError:
+        return
     finally:
         os.close(fd)
 

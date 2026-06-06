@@ -22,16 +22,9 @@
       <div class="home-main">
         <div class="admin-main">
           <section class="admin-auth admin-surface" data-admin-login hidden>
-            <h1>管理员登录</h1>
-            <p class="muted">请输入后台账号与密码。</p>
-            <form class="admin-form" data-admin-login-form>
-              <label>账号</label>
-              <input type="text" name="username" autocomplete="username" required>
-              <label>密码</label>
-              <input type="password" name="password" autocomplete="current-password" required>
-              <button class="btn primary" type="submit">登录</button>
-              <p class="hint" data-admin-login-error></p>
-            </form>
+            <h1>需要管理员权限</h1>
+            <p class="muted" data-admin-access-message>正在检查登录状态。</p>
+            <a class="btn primary" href="/auth/login/" data-admin-access-login hidden>使用用户账号登录</a>
           </section>
 
           <section class="admin-panel admin-surface admin-images-panel" data-admin-panel hidden>

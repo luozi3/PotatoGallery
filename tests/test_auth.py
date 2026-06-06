@@ -1,3 +1,4 @@
+from conftest import TEST_PASSWORD
 import datetime
 import json
 
@@ -26,8 +27,8 @@ def test_invite_register_and_limit(tmp_path):
         "/auth/register",
         json={
             "username": "user1",
-            "password": "secret123",
-            "password_confirm": "secret123",
+            "password": TEST_PASSWORD,
+            "password_confirm": TEST_PASSWORD,
             "invite_code": "invite-1",
         },
         headers={"X-Forwarded-Proto": "https"},
@@ -45,8 +46,8 @@ def test_invite_register_and_limit(tmp_path):
         "/auth/register",
         json={
             "username": "user2",
-            "password": "secret123",
-            "password_confirm": "secret123",
+            "password": TEST_PASSWORD,
+            "password_confirm": TEST_PASSWORD,
             "invite_code": "invite-1",
         },
         headers={"X-Forwarded-Proto": "https"},
@@ -67,7 +68,7 @@ def test_auth_requires_https_and_rejects_bad_username(tmp_path):
 
     resp = client.post(
         "/auth/login",
-        json={"username": "user1", "password": "secret123"},
+        json={"username": "user1", "password": TEST_PASSWORD},
     )
     assert resp.status_code == 403
 
@@ -75,8 +76,8 @@ def test_auth_requires_https_and_rejects_bad_username(tmp_path):
         "/auth/register",
         json={
             "username": "bad' OR 1=1",
-            "password": "secret123",
-            "password_confirm": "secret123",
+            "password": TEST_PASSWORD,
+            "password_confirm": TEST_PASSWORD,
             "invite_code": "invite-2",
         },
         headers={"X-Forwarded-Proto": "https"},
@@ -95,21 +96,21 @@ def test_open_register_requires_password_confirmation(tmp_path):
 
     resp = client.post(
         "/auth/register",
-        json={"username": "user1", "password": "secret123"},
+        json={"username": "user1", "password": TEST_PASSWORD},
         headers={"X-Forwarded-Proto": "https"},
     )
     assert resp.status_code == 400
 
     resp = client.post(
         "/auth/register",
-        json={"username": "user1", "password": "secret123", "password_confirm": "wrong"},
+        json={"username": "user1", "password": TEST_PASSWORD, "password_confirm": "wrong"},
         headers={"X-Forwarded-Proto": "https"},
     )
     assert resp.status_code == 400
 
     resp = client.post(
         "/auth/register",
-        json={"username": "user1", "password": "secret123", "password_confirm": "secret123"},
+        json={"username": "user1", "password": TEST_PASSWORD, "password_confirm": TEST_PASSWORD},
         headers={"X-Forwarded-Proto": "https"},
     )
     assert resp.status_code == 201
@@ -131,8 +132,8 @@ def test_invite_expired_rejected(tmp_path):
         "/auth/register",
         json={
             "username": "user1",
-            "password": "secret123",
-            "password_confirm": "secret123",
+            "password": TEST_PASSWORD,
+            "password_confirm": TEST_PASSWORD,
             "invite_code": "invite-expired",
         },
         headers={"X-Forwarded-Proto": "https"},
@@ -159,18 +160,55 @@ def test_login_sets_custom_session_days_cookie(tmp_path):
     auth = modules["app.auth"]
     upload_service = modules["app.upload_service"]
 
-    auth.create_user("user1", "secret123", groups=["user"])
+    auth.create_user("user1", TEST_PASSWORD, groups=["user"])
     app = upload_service.create_app()
     client = app.test_client()
     resp = client.post(
         "/auth/login",
-        json={"username": "user1", "password": "secret123", "session_days": 30},
+        json={"username": "user1", "password": TEST_PASSWORD, "session_days": 30},
         headers={"X-Forwarded-Proto": "https"},
         base_url="https://example.com",
     )
     assert resp.status_code == 200
     cookies = resp.headers.getlist("Set-Cookie")
     assert any("Max-Age=2592000" in cookie for cookie in cookies)
+
+
+def test_login_rate_limit_reports_remaining_and_blocks(tmp_path):
+    seed_test_root(tmp_path)
+    modules = setup_env(tmp_path)
+    auth = modules["app.auth"]
+    upload_service = modules["app.upload_service"]
+
+    auth.create_user("user1", TEST_PASSWORD, groups=["user"])
+    app = upload_service.create_app()
+    client = app.test_client()
+
+    for index in range(5):
+        resp = client.post(
+            "/auth/login",
+            json={"username": "user1", "password": "wrong"},
+            headers={"X-Forwarded-Proto": "https", "X-Forwarded-For": "203.0.113.10"},
+            base_url="https://example.com",
+        )
+        assert resp.status_code == 401
+        data = resp.get_json()
+        assert data["max_attempts"] == 5
+        assert data["attempts_remaining"] == 4 - index
+        assert data["retry_after"] > 0
+        assert data["reset_at"] > 0
+
+    resp = client.post(
+        "/auth/login",
+        json={"username": "user1", "password": "wrong"},
+        headers={"X-Forwarded-Proto": "https", "X-Forwarded-For": "203.0.113.10"},
+        base_url="https://example.com",
+    )
+    assert resp.status_code == 429
+    data = resp.get_json()
+    assert data["attempts_remaining"] == 0
+    assert data["retry_after"] > 0
+    assert resp.headers["Retry-After"] == str(data["retry_after"])
 
 
 def test_register_does_not_auto_login(tmp_path):
@@ -184,7 +222,7 @@ def test_register_does_not_auto_login(tmp_path):
     client = app.test_client()
     resp = client.post(
         "/auth/register",
-        json={"username": "user1", "password": "secret123", "password_confirm": "secret123"},
+        json={"username": "user1", "password": TEST_PASSWORD, "password_confirm": TEST_PASSWORD},
         headers={"X-Forwarded-Proto": "https"},
         base_url="https://example.com",
     )
@@ -199,7 +237,7 @@ def test_delete_user_cleans_upload_and_images(tmp_path):
     auth = modules["app.auth"]
     db = modules["app.db"]
 
-    auth.create_user("user1", "secret123", groups=["user"])
+    auth.create_user("user1", TEST_PASSWORD, groups=["user"])
 
     with db.connect() as conn:
         user_row = conn.execute("SELECT id FROM auth_users WHERE username='user1'").fetchone()

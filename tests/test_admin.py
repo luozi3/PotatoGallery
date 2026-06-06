@@ -1,8 +1,18 @@
+from conftest import TEST_PASSWORD
 import json
 import time
 from uuid import uuid4
 
 from test_pipeline import make_image, seed_test_root, setup_env
+
+
+def _login_admin(client, username: str, password: str):
+    return client.post(
+        "/auth/login",
+        json={"username": username, "password": password},
+        headers={"X-Forwarded-Proto": "https"},
+        base_url="http://localhost",
+    )
 
 
 def test_admin_update_and_delete(tmp_path):
@@ -20,7 +30,7 @@ def test_admin_update_and_delete(tmp_path):
     data_dir.mkdir(parents=True, exist_ok=True)
     tags_cfg = {"tags": [{"tag": "测试", "slug": "test"}]}
     (data_dir / "tags.json").write_text(json.dumps(tags_cfg, ensure_ascii=False), encoding="utf-8")
-    auth.create_user("admin", "secret", groups=[config.ADMIN_GROUP])
+    auth.create_user("admin", TEST_PASSWORD, groups=[config.ADMIN_GROUP])
     uid = "a" * 32
     raw_path = config.RAW_DIR / f"{uid}.png"
     make_image(raw_path)
@@ -28,10 +38,7 @@ def test_admin_update_and_delete(tmp_path):
 
     app = upload_service.create_app()
     client = app.test_client()
-    resp = client.post(
-        "/upload/admin/login",
-        json={"username": "admin", "password": "secret"},
-    )
+    resp = _login_admin(client, "admin", TEST_PASSWORD)
     assert resp.status_code == 200
 
     resp = client.get("/upload/admin/images")
@@ -81,7 +88,7 @@ def test_admin_purge_trash_page_and_all(tmp_path):
     upload_service = modules["app.upload_service"]
 
     storage.ensure_dirs()
-    auth.create_user("admin", "secret", groups=[config.ADMIN_GROUP])
+    auth.create_user("admin", TEST_PASSWORD, groups=[config.ADMIN_GROUP])
     uid1 = "a" * 32
     uid2 = "b" * 32
     raw_path1 = config.RAW_DIR / f"{uid1}.png"
@@ -93,7 +100,7 @@ def test_admin_purge_trash_page_and_all(tmp_path):
 
     app = upload_service.create_app()
     client = app.test_client()
-    resp = client.post("/upload/admin/login", json={"username": "admin", "password": "secret"})
+    resp = _login_admin(client, "admin", TEST_PASSWORD)
     assert resp.status_code == 200
 
     resp = client.post(f"/upload/admin/images/{uid1}/delete")
@@ -127,21 +134,35 @@ def test_admin_purge_trash_page_and_all(tmp_path):
     assert row2 is None
 
 
-def test_admin_login_requires_group(tmp_path):
+def test_admin_requires_group(tmp_path):
     seed_test_root(tmp_path)
     modules = setup_env(tmp_path)
     config = modules["app.config"]
     auth = modules["app.auth"]
     upload_service = modules["app.upload_service"]
 
-    auth.create_user("viewer", "secret", groups=["viewer"])
+    auth.create_user("viewer", TEST_PASSWORD, groups=["viewer"])
     app = upload_service.create_app()
     client = app.test_client()
+    resp = _login_admin(client, "viewer", TEST_PASSWORD)
+    assert resp.status_code == 200
+    resp = client.get("/upload/admin/me")
+    assert resp.status_code == 403
+
+
+def test_admin_legacy_login_endpoint_is_disabled(tmp_path):
+    seed_test_root(tmp_path)
+    modules = setup_env(tmp_path)
+    upload_service = modules["app.upload_service"]
+
+    app = upload_service.create_app()
+    client = app.test_client()
+
     resp = client.post(
         "/upload/admin/login",
-        json={"username": "viewer", "password": "secret"},
+        json={"username": "admin", "password": TEST_PASSWORD},
     )
-    assert resp.status_code == 401
+    assert resp.status_code == 410
 
 
 def test_admin_invite_crud(tmp_path):
@@ -151,13 +172,10 @@ def test_admin_invite_crud(tmp_path):
     auth = modules["app.auth"]
     upload_service = modules["app.upload_service"]
 
-    auth.create_user("boss", "secret", groups=[config.ADMIN_GROUP])
+    auth.create_user("boss", TEST_PASSWORD, groups=[config.ADMIN_GROUP])
     app = upload_service.create_app()
     client = app.test_client()
-    resp = client.post(
-        "/upload/admin/login",
-        json={"username": "boss", "password": "secret"},
-    )
+    resp = _login_admin(client, "boss", TEST_PASSWORD)
     assert resp.status_code == 200
 
     payload = {
@@ -214,13 +232,10 @@ def test_admin_upload_status_progress(tmp_path):
     data_dir.mkdir(parents=True, exist_ok=True)
     tags_cfg = {"tags": [{"tag": "测试", "slug": "test"}]}
     (data_dir / "tags.json").write_text(json.dumps(tags_cfg, ensure_ascii=False), encoding="utf-8")
-    auth.create_user("admin", "secret", groups=[config.ADMIN_GROUP])
+    auth.create_user("admin", TEST_PASSWORD, groups=[config.ADMIN_GROUP])
     app = upload_service.create_app()
     client = app.test_client()
-    resp = client.post(
-        "/upload/admin/login",
-        json={"username": "admin", "password": "secret"},
-    )
+    resp = _login_admin(client, "admin", TEST_PASSWORD)
     assert resp.status_code == 200
 
     img_path = tmp_path / "input.png"
@@ -271,13 +286,10 @@ def test_admin_stress_generate_and_cleanup(tmp_path):
     upload_service = modules["app.upload_service"]
 
     storage.ensure_dirs()
-    auth.create_user("admin", "secret", groups=[config.ADMIN_GROUP])
+    auth.create_user("admin", TEST_PASSWORD, groups=[config.ADMIN_GROUP])
     app = upload_service.create_app()
     client = app.test_client()
-    resp = client.post(
-        "/upload/admin/login",
-        json={"username": "admin", "password": "secret"},
-    )
+    resp = _login_admin(client, "admin", TEST_PASSWORD)
     assert resp.status_code == 200
 
     resp = client.post("/upload/admin/stress/generate", json={"index": 1, "total": 2})
@@ -359,12 +371,12 @@ def test_search_index_and_tags_pages(tmp_path):
     assert worker.publish_ready_images()
     search_index = config.WWW_DIR / "static" / "data" / "search_index.json"
     assert search_index.exists()
-    payload = json.loads(search_index.read_text())
+    payload = json.loads(search_index.read_text(encoding="utf-8"))
     assert payload["images"]
     assert payload["tags"]
     tag_index = config.WWW_DIR / "static" / "data" / "tag_index.json"
     assert tag_index.exists()
-    tag_index_payload = json.loads(tag_index.read_text())
+    tag_index_payload = json.loads(tag_index.read_text(encoding="utf-8"))
     tagged = {item["tag"]: item for item in tag_index_payload.get("tags", [])}
     assert tagged["猫咪"]["type"] == "general"
     assert tagged["猫咪"]["type_color"] == "#336699"
@@ -383,13 +395,10 @@ def test_admin_tag_meta_crud(tmp_path):
     auth = modules["app.auth"]
     upload_service = modules["app.upload_service"]
 
-    auth.create_user("admin", "secret", groups=[config.ADMIN_GROUP])
+    auth.create_user("admin", TEST_PASSWORD, groups=[config.ADMIN_GROUP])
     app = upload_service.create_app()
     client = app.test_client()
-    resp = client.post(
-        "/upload/admin/login",
-        json={"username": "admin", "password": "secret"},
-    )
+    resp = _login_admin(client, "admin", TEST_PASSWORD)
     assert resp.status_code == 200
 
     resp = client.post(
@@ -426,13 +435,10 @@ def test_admin_tag_types_crud(tmp_path):
     auth = modules["app.auth"]
     upload_service = modules["app.upload_service"]
 
-    auth.create_user("admin", "secret", groups=[config.ADMIN_GROUP])
+    auth.create_user("admin", TEST_PASSWORD, groups=[config.ADMIN_GROUP])
     app = upload_service.create_app()
     client = app.test_client()
-    resp = client.post(
-        "/upload/admin/login",
-        json={"username": "admin", "password": "secret"},
-    )
+    resp = _login_admin(client, "admin", TEST_PASSWORD)
     assert resp.status_code == 200
 
     resp = client.post(
@@ -471,13 +477,10 @@ def test_admin_wiki_markdown_crud(tmp_path):
     auth = modules["app.auth"]
     upload_service = modules["app.upload_service"]
 
-    auth.create_user("admin", "secret", groups=[config.ADMIN_GROUP])
+    auth.create_user("admin", TEST_PASSWORD, groups=[config.ADMIN_GROUP])
     app = upload_service.create_app()
     client = app.test_client()
-    resp = client.post(
-        "/upload/admin/login",
-        json={"username": "admin", "password": "secret"},
-    )
+    resp = _login_admin(client, "admin", TEST_PASSWORD)
     assert resp.status_code == 200
 
     resp = client.post("/upload/admin/wiki", json={"markdown": "# Wiki\\n\\n测试内容"})

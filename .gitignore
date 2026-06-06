@@ -1,6 +1,8 @@
 venv/
+.venv-win/
 storage/
 db/gallery.db
+db/gallery.db-*
 *.db
 *.sqlite3
 dist/
@@ -21,3 +23,4 @@ static/js/live2d.js
 static/data/site.local.json
 config/upload.json
 config/upload.local.json
+config/.admin_secret

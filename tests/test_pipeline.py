@@ -1,3 +1,4 @@
+from conftest import TEST_PASSWORD
 import importlib
 import json
 import os
@@ -29,9 +30,9 @@ def seed_test_root(tmp_root: Path):
     schema_src = PROJECT_ROOT / "db" / "schema.sql"
     schema_dst = tmp_root / "db" / "schema.sql"
     schema_dst.parent.mkdir(parents=True, exist_ok=True)
-    schema_dst.write_text(schema_src.read_text(), encoding="utf-8")
+    schema_dst.write_text(schema_src.read_text(encoding="utf-8"), encoding="utf-8")
     conn = sqlite3.connect(tmp_root / "db" / "gallery.db")
-    conn.executescript(schema_dst.read_text())
+    conn.executescript(schema_dst.read_text(encoding="utf-8"))
     conn.commit()
     conn.close()
 
@@ -40,6 +41,7 @@ def reload_modules():
     modules = {}
     for name in [
         "app.config",
+        "app.rate_limit",
         "app.auth",
         "app.auth_api",
         "app.user_api",
@@ -58,6 +60,7 @@ def reload_modules():
 
 def setup_env(tmp_path: Path):
     os.environ["GALLERY_ROOT"] = str(tmp_path)
+    os.environ["GALLERY_USER_COOKIE_SECURE"] = "0"
     modules = reload_modules()
     return modules
 
@@ -88,8 +91,8 @@ def test_upload_and_raw_write(tmp_path):
     storage.ensure_dirs()
     app = upload_service.create_app()
     client = app.test_client()
-    auth.create_user("alice", "secret123", groups=["user"])
-    resp = login_user(client, "alice", "secret123")
+    auth.create_user("alice", TEST_PASSWORD, groups=["user"])
+    resp = login_user(client, "alice", TEST_PASSWORD)
     assert resp.status_code == 200
 
     img_path = tmp_path / "input.png"
@@ -180,8 +183,8 @@ def test_upload_paused_flag(tmp_path):
     config.UPLOAD_PAUSE_FLAG.write_text("paused", encoding="utf-8")
     app = upload_service.create_app()
     client = app.test_client()
-    auth.create_user("alice", "secret123", groups=["user"])
-    resp = login_user(client, "alice", "secret123")
+    auth.create_user("alice", TEST_PASSWORD, groups=["user"])
+    resp = login_user(client, "alice", TEST_PASSWORD)
     assert resp.status_code == 200
 
     img_path = tmp_path / "paused.png"
@@ -722,8 +725,8 @@ def test_upload_rejects_bad_content_type(tmp_path):
     storage.ensure_dirs()
     app = upload_service.create_app()
     client = app.test_client()
-    auth.create_user("alice", "secret123", groups=["user"])
-    resp = login_user(client, "alice", "secret123")
+    auth.create_user("alice", TEST_PASSWORD, groups=["user"])
+    resp = login_user(client, "alice", TEST_PASSWORD)
     assert resp.status_code == 200
 
     img_path = tmp_path / "bad.png"

@@ -12,11 +12,58 @@
   const registerForm = document.querySelector("[data-auth-register-form]");
   const loginError = document.querySelector("[data-auth-login-error]");
   const registerError = document.querySelector("[data-auth-register-error]");
+  const loginButton = loginForm
+    ? loginForm.querySelector('button[type="submit"]')
+    : null;
+  let loginRetryTimer = null;
 
   const next = new URLSearchParams(location.search).get("next") || "/";
 
   function setError(target, message) {
     if (target) target.textContent = message || "";
+  }
+
+  function formatRetry(seconds) {
+    const total = Math.max(Number.parseInt(seconds || 0, 10), 0);
+    if (total >= 60) {
+      const minutes = Math.floor(total / 60);
+      const rest = total % 60;
+      return rest ? `${minutes} 分 ${rest} 秒` : `${minutes} 分钟`;
+    }
+    return `${total} 秒`;
+  }
+
+  function clearLoginRetryTimer() {
+    if (loginRetryTimer) {
+      window.clearInterval(loginRetryTimer);
+      loginRetryTimer = null;
+    }
+  }
+
+  function setLoginError(err) {
+    let message = err && err.message ? err.message : "";
+    if (Number.isFinite(err && err.attemptsRemaining) && err.attemptsRemaining >= 0 && err.status !== 429) {
+      message = `${message}，还剩 ${err.attemptsRemaining} 次机会`;
+    }
+    clearLoginRetryTimer();
+    if (err && err.status === 429 && err.retryAfter > 0 && loginButton) {
+      let remaining = err.retryAfter;
+      loginButton.disabled = true;
+      const tick = () => {
+        setError(loginError, `${message}，${formatRetry(remaining)} 后可重试`);
+        if (remaining <= 0) {
+          clearLoginRetryTimer();
+          loginButton.disabled = false;
+          setError(loginError, "可以重新尝试登录。");
+        }
+        remaining -= 1;
+      };
+      tick();
+      loginRetryTimer = window.setInterval(tick, 1000);
+      return;
+    }
+    if (loginButton) loginButton.disabled = false;
+    setError(loginError, message);
   }
 
   function markLoggedIn() {
@@ -31,7 +78,13 @@
     const data = await resp.json().catch(() => ({}));
     if (!resp.ok) {
       const message = data.error || "请求失败";
-      throw new Error(message);
+      const err = new Error(message);
+      err.status = resp.status;
+      err.retryAfter = Number.parseInt(data.retry_after || 0, 10);
+      err.attemptsRemaining = Number.parseInt(data.attempts_remaining, 10);
+      err.maxAttempts = Number.parseInt(data.max_attempts, 10);
+      err.resetAt = Number.parseInt(data.reset_at || 0, 10);
+      throw err;
     }
     return data;
   }
@@ -80,7 +133,7 @@
         markLoggedIn();
         location.assign(next);
       } catch (err) {
-        setError(loginError, err.message);
+        setLoginError(err);
       }
     });
   }

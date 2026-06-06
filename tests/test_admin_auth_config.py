@@ -1,7 +1,17 @@
+from conftest import TEST_PASSWORD
 import json
 import os
 
 from test_pipeline import seed_test_root, setup_env
+
+
+def _login_admin(client, username: str, password: str):
+    return client.post(
+        "/auth/login",
+        json={"username": username, "password": password},
+        headers={"X-Forwarded-Proto": "https"},
+        base_url="http://localhost",
+    )
 
 
 def test_admin_can_toggle_registration_mode(tmp_path):
@@ -15,14 +25,11 @@ def test_admin_can_toggle_registration_mode(tmp_path):
     config = modules["app.config"]
     upload_service = modules["app.upload_service"]
 
-    auth.create_user("boss", "secret123", groups=[config.ADMIN_GROUP])
+    auth.create_user("boss", TEST_PASSWORD, groups=[config.ADMIN_GROUP])
     app = upload_service.create_app()
     client = app.test_client()
 
-    resp = client.post(
-        "/upload/admin/login",
-        json={"username": "boss", "password": "secret123"},
-    )
+    resp = _login_admin(client, "boss", TEST_PASSWORD)
     assert resp.status_code == 200
 
     resp = client.get("/upload/admin/auth-config")
@@ -54,14 +61,11 @@ def test_admin_auth_config_fallback_write(tmp_path):
 
     os.chmod(cfg_dir, 0o555)
     try:
-        auth.create_user("boss", "secret123", groups=[config.ADMIN_GROUP])
+        auth.create_user("boss", TEST_PASSWORD, groups=[config.ADMIN_GROUP])
         app = upload_service.create_app()
         client = app.test_client()
 
-        resp = client.post(
-            "/upload/admin/login",
-            json={"username": "boss", "password": "secret123"},
-        )
+        resp = _login_admin(client, "boss", TEST_PASSWORD)
         assert resp.status_code == 200
 
         resp = client.post("/upload/admin/auth-config", json={"registration_mode": "closed"})
